@@ -94,7 +94,7 @@ export default function ExtrasPermitsTab({
           <ChevronRight className="text-primary transition group-hover:translate-x-0.5" size={18} />
         </button>
         <button
-          className="group flex items-center justify-between rounded-2xl border border-line bg-white px-4 py-3 text-left transition hover:border-primary/40"
+          className="group flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-left transition hover:border-primary/40 hover:bg-primary/10"
           onClick={onOpenRequest}
           type="button"
         >
