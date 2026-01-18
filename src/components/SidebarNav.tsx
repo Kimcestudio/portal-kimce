@@ -26,7 +26,7 @@ export default function SidebarNav() {
   const pathname = usePathname();
 
   return (
-    <aside className="group/sidebar flex h-full w-20 flex-col items-center overflow-hidden rounded-[28px] bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 py-6 text-white shadow-card transition-[width] duration-300 ease-out hover:w-56">
+    <aside className="group/sidebar flex min-h-screen w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 py-6 text-white shadow-card transition-[width] duration-300 ease-out hover:w-56">
       <div className="mb-10 flex w-full items-center justify-center text-sm font-semibold">
         <span className="whitespace-nowrap transition-all duration-300 group-hover/sidebar:translate-x-1">
           doc.track
