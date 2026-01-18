@@ -21,7 +21,7 @@ const navItems = [
 
 export default function SidebarNav() {
   return (
-    <div className="group/sidebar flex h-full w-20 flex-col items-center overflow-hidden rounded-[28px] bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 py-6 text-white shadow-card transition-[width] duration-300 ease-out hover:w-56">
+    <aside className="group/sidebar flex h-full w-20 flex-col items-center overflow-hidden rounded-[28px] bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 py-6 text-white shadow-card transition-[width] duration-300 ease-out hover:w-56">
       <div className="mb-10 flex w-full items-center justify-center text-sm font-semibold">
         <span className="whitespace-nowrap transition-all duration-300 group-hover/sidebar:translate-x-1">
           doc.track
@@ -32,7 +32,7 @@ export default function SidebarNav() {
           <Link
             key={`${Icon.displayName ?? "icon"}-${index}`}
             href={href}
-            className={`flex items-center gap-4 rounded-2xl px-3 py-2 transition duration-200 ${
+            className={`flex h-12 items-center gap-3 rounded-2xl px-3 transition duration-200 ${
               active ? "bg-white/10" : "hover:bg-white/10"
             }`}
           >
@@ -57,7 +57,7 @@ export default function SidebarNav() {
                 <Icon size={18} className="transition duration-200 group-hover/sidebar:text-white" />
               </div>
             </div>
-            <span className="whitespace-nowrap text-sm font-medium text-white/90 opacity-0 -translate-x-2 transition-all duration-200 ease-out group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100">
+            <span className="whitespace-nowrap text-sm font-semibold text-white/90 opacity-0 -translate-x-2 transition-all duration-200 ease-out group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100">
               {label}
             </span>
           </Link>
@@ -66,6 +66,6 @@ export default function SidebarNav() {
       <div className="mt-8 flex w-full items-center justify-center">
         <div className="h-12 w-12 rounded-full bg-[url('https://images.unsplash.com/photo-1502685104226-ee32379fefbe?auto=format&fit=crop&w=120&q=80')] bg-cover bg-center shadow-soft" />
       </div>
-    </div>
+    </aside>
   );
 }
