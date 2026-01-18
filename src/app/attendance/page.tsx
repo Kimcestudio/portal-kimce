@@ -30,6 +30,7 @@ import {
   createRequest,
   endBreak,
   getTodayRecord,
+  listAllRecords,
   listRecentCorrections,
   listRecentExtras,
   listRecentRequests,
@@ -155,6 +156,10 @@ export default function AttendancePage() {
   );
   const workedMinutesWeek = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
   const diffMinutes = workedMinutesWeek - expectedMinutesWeek;
+  const totalBalanceMinutes = listAllRecords(userId).reduce((sum, record) => {
+    const recordDate = new Date(`${record.date}T00:00:00`);
+    return sum + (record.totalMinutes - expectedMinutesForDate(recordDate));
+  }, 0);
   const completedDays = weekRecords.filter(
     (record) => record.status === "CLOSED" && new Date(`${record.date}T00:00:00`).getDay() !== 0
   ).length;
@@ -300,6 +305,7 @@ export default function AttendancePage() {
           expectedMinutes={expectedMinutesWeek}
           diffMinutes={diffMinutes}
           completedDays={completedDays}
+          totalBalanceMinutes={totalBalanceMinutes}
         />
 
         <WeeklyProgressChart

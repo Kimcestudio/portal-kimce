@@ -7,6 +7,7 @@ interface WeeklySummaryMiniCardsProps {
   expectedMinutes: number;
   diffMinutes: number;
   completedDays: number;
+  totalBalanceMinutes: number;
 }
 
 export default function WeeklySummaryMiniCards({
@@ -14,15 +15,19 @@ export default function WeeklySummaryMiniCards({
   expectedMinutes,
   diffMinutes,
   completedDays,
+  totalBalanceMinutes,
 }: WeeklySummaryMiniCardsProps) {
   const balanceLabel = diffMinutes < 0 ? "Debes" : "A favor";
   const balanceValue = minutesToHHMM(Math.abs(diffMinutes));
   const progress = expectedMinutes === 0 ? 0 : Math.min(100, (workedMinutes / expectedMinutes) * 100);
   const BalanceIcon = diffMinutes < 0 ? AlertTriangle : TrendingUp;
   const balanceStyle = diffMinutes < 0 ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700";
+  const totalBalanceLabel = totalBalanceMinutes < 0 ? "Debes" : "A favor";
+  const totalBalanceValue = minutesToHHMM(Math.abs(totalBalanceMinutes));
+  const totalBalanceStyle = totalBalanceMinutes < 0 ? "bg-rose-100 text-rose-700" : "bg-green-100 text-green-700";
 
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-4">
       <PrimaryMetricCard
         title="Horas semana"
         value={minutesToHHMM(workedMinutes)}
@@ -53,6 +58,15 @@ export default function WeeklySummaryMiniCards({
             />
           ))}
         </div>
+      </div>
+      <div className="rounded-2xl border border-line bg-white p-4 shadow-soft">
+        <p className="text-xs text-muted">Balance total</p>
+        <p className="text-lg font-semibold text-ink">
+          {totalBalanceLabel} {totalBalanceValue}
+        </p>
+        <span className={`mt-3 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${totalBalanceStyle}`}>
+          Acumulado histórico
+        </span>
       </div>
     </div>
   );

@@ -177,6 +177,11 @@ export function listRecordsForWeek(userId: string, weekStartISO: string) {
   return records.filter((record) => record.userId === userId && record.date >= weekStartISO);
 }
 
+export function listAllRecords(userId: string) {
+  const records = getStore<AttendanceRecord[]>(STORAGE_KEYS.records, []);
+  return records.filter((record) => record.userId === userId);
+}
+
 export function createExtraActivity(
   userId: string,
   payload: Omit<ExtraActivity, "id" | "userId" | "status" | "createdAt">

@@ -27,7 +27,7 @@ interface TodayAttendanceCardProps {
 
 const statusLabels = {
   OFF: "Sin registro",
-  IN_SHIFT: "En turno",
+  IN_SHIFT: "Abierto",
   ON_BREAK: "En descanso",
   CLOSED: "Cerrado",
 } as const;
@@ -79,9 +79,11 @@ export default function TodayAttendanceCard({
   const isColored = status === "IN_SHIFT" || status === "ON_BREAK";
   const headingText = isColored ? "text-white/90" : "text-ink";
   const mutedText = isColored ? "text-white/70" : "text-muted";
+  const secondaryButton = isColored ? "bg-white/15 text-white hover:bg-white/20" : "bg-white text-ink";
+  const primaryButton = isColored ? "bg-white text-[#3F46C6]" : "bg-primary text-white";
 
   return (
-    <div className={`rounded-2xl border border-transparent p-6 shadow-soft ${cardStyles[status]}`}>
+    <div className={`rounded-3xl border border-transparent p-6 shadow-soft ${cardStyles[status]}`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className={`text-lg font-semibold ${headingText}`}>Hoy</h2>
@@ -91,7 +93,7 @@ export default function TodayAttendanceCard({
           <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${badgeStyles[status]}`}>
             <span className={`${status === "IN_SHIFT" ? "relative flex" : ""}`}>
               {status === "IN_SHIFT" ? (
-                <span className="absolute -left-1 top-1 h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+                <span className="absolute -left-1 top-1 h-1.5 w-1.5 rounded-full bg-white/80 animate-pulse" />
               ) : null}
               <StatusIcon size={14} />
             </span>
@@ -133,7 +135,7 @@ export default function TodayAttendanceCard({
       <div className="mt-6 grid gap-3 md:grid-cols-4">
         <button
           className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
-            status === "OFF" ? "bg-primary text-white" : "bg-white/70 text-ink"
+            status === "OFF" ? primaryButton : secondaryButton
           }`}
           onClick={onCheckIn}
           type="button"
@@ -144,7 +146,7 @@ export default function TodayAttendanceCard({
         </button>
         <button
           className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
-            status === "IN_SHIFT" ? "bg-primary text-white" : "bg-white/70 text-ink"
+            status === "IN_SHIFT" ? primaryButton : secondaryButton
           }`}
           onClick={onStartBreak}
           type="button"
@@ -155,7 +157,7 @@ export default function TodayAttendanceCard({
         </button>
         <button
           className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
-            status === "ON_BREAK" ? "bg-amber-500 text-white" : "bg-white/70 text-ink"
+            status === "ON_BREAK" ? "bg-white text-[#9a3412]" : secondaryButton
           }`}
           onClick={onEndBreak}
           type="button"
@@ -166,7 +168,7 @@ export default function TodayAttendanceCard({
         </button>
         <button
           className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
-            status === "IN_SHIFT" ? "bg-ink text-white" : "bg-white/70 text-ink"
+            status === "IN_SHIFT" ? primaryButton : secondaryButton
           }`}
           onClick={onCheckOut}
           type="button"
