@@ -5,15 +5,18 @@ import {
   Settings,
   Users,
   FileText,
+  Clock,
 } from "lucide-react";
+import Link from "next/link";
 
 const navItems = [
-  { icon: Home, label: "Inicio", active: true },
-  { icon: FileText, label: "Documentos" },
-  { icon: Calendar, label: "Calendario" },
-  { icon: Users, label: "Equipo" },
-  { icon: Mail, label: "Mensajes" },
-  { icon: Settings, label: "Configuración" },
+  { icon: Home, label: "Inicio", href: "/dashboard", active: true },
+  { icon: FileText, label: "Documentos", href: "/dashboard" },
+  { icon: Calendar, label: "Calendario", href: "/dashboard" },
+  { icon: Clock, label: "Horario", href: "/attendance" },
+  { icon: Users, label: "Equipo", href: "/dashboard" },
+  { icon: Mail, label: "Mensajes", href: "/dashboard" },
+  { icon: Settings, label: "Configuración", href: "/dashboard" },
 ];
 
 export default function SidebarNav() {
@@ -25,9 +28,10 @@ export default function SidebarNav() {
         </span>
       </div>
       <div className="flex flex-1 w-full flex-col gap-3">
-        {navItems.map(({ icon: Icon, label, active }, index) => (
-          <div
+        {navItems.map(({ icon: Icon, label, href, active }, index) => (
+          <Link
             key={`${Icon.displayName ?? "icon"}-${index}`}
+            href={href}
             className={`flex items-center gap-4 rounded-2xl px-3 py-2 transition duration-200 ${
               active ? "bg-white/10" : "hover:bg-white/10"
             }`}
@@ -56,7 +60,7 @@ export default function SidebarNav() {
             <span className="whitespace-nowrap text-sm font-medium text-white/90 opacity-0 -translate-x-2 transition-all duration-200 ease-out group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100">
               {label}
             </span>
-          </div>
+          </Link>
         ))}
       </div>
       <div className="mt-8 flex w-full items-center justify-center">
