@@ -8,6 +8,8 @@ import TodayAttendanceCard from "@/components/attendance/TodayAttendanceCard";
 import WeeklySummaryMiniCards from "@/components/attendance/WeeklySummaryMiniCards";
 import WeeklyTable from "@/components/attendance/WeeklyTable";
 import ExtrasPermitsTab from "@/components/attendance/ExtrasPermitsTab";
+import WeeklyProgressChart from "@/components/attendance/WeeklyProgressChart";
+import WeekStatusSummary from "@/components/attendance/WeekStatusSummary";
 import Modal from "@/components/attendance/Modal";
 import {
   formatISODate,
@@ -253,6 +255,19 @@ export default function AttendancePage() {
     setCorrectionOpen(true);
   };
 
+  const chartData = weekDates
+    .filter((date) => date.getDay() !== 0)
+    .map((date) => {
+      const dateISO = formatISODate(date);
+      const record = weekRecords.find((item) => item.date === dateISO);
+      const targetHours = date.getDay() === 6 ? 4 : 8;
+      return {
+        label: date.toLocaleDateString("es-ES", { weekday: "short" }),
+        hours: record ? Math.round((record.totalMinutes / 60) * 10) / 10 : 0,
+        target: targetHours,
+      };
+    });
+
   return (
     <AppShell sidebar={<SidebarNav />}>
       <div className="flex flex-col gap-4">
@@ -282,6 +297,14 @@ export default function AttendancePage() {
 
         <WeeklySummaryMiniCards
           workedMinutes={workedMinutesWeek}
+          expectedMinutes={expectedMinutesWeek}
+          diffMinutes={diffMinutes}
+          completedDays={completedDays}
+        />
+
+        <WeeklyProgressChart
+          data={chartData}
+          totalMinutes={workedMinutesWeek}
           expectedMinutes={expectedMinutesWeek}
           diffMinutes={diffMinutes}
           completedDays={completedDays}
@@ -333,6 +356,12 @@ export default function AttendancePage() {
               >
                 Semana siguiente
               </button>
+            </div>
+          </div>
+          <div className="mb-4 rounded-2xl border border-line bg-white px-4 py-3 shadow-soft">
+            <p className="text-xs font-semibold text-muted">Resumen visual</p>
+            <div className="mt-2">
+              <WeekStatusSummary weekDates={weekDates} records={weekRecords} />
             </div>
           </div>
           <WeeklyTable

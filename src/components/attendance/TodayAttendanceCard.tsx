@@ -1,4 +1,12 @@
-import { Clock, Coffee, LogIn, LogOut, Save } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  Coffee,
+  LogIn,
+  LogOut,
+  PlayCircle,
+  Save,
+} from "lucide-react";
 import type { AttendanceRecord } from "@/lib/storage/attendanceStorage";
 import { formatTime, minutesToHHMM } from "@/lib/attendanceUtils";
 
@@ -26,9 +34,16 @@ const statusLabels = {
 
 const statusStyles = {
   OFF: "bg-teal-100 text-teal-700",
-  IN_SHIFT: "bg-teal-100 text-teal-700",
+  IN_SHIFT: "bg-indigo-100 text-indigo-700",
   ON_BREAK: "bg-amber-100 text-amber-700",
   CLOSED: "bg-green-100 text-green-700",
+} as const;
+
+const statusIcons = {
+  OFF: PlayCircle,
+  IN_SHIFT: PlayCircle,
+  ON_BREAK: Clock,
+  CLOSED: CheckCircle2,
 } as const;
 
 export default function TodayAttendanceCard({
@@ -45,6 +60,8 @@ export default function TodayAttendanceCard({
   onCheckOut,
   message,
 }: TodayAttendanceCardProps) {
+  const StatusIcon = statusIcons[status];
+
   return (
     <div className="rounded-2xl border border-transparent bg-gradient-to-br from-[#eef0ff] via-[#f7f7ff] to-white p-6 shadow-soft">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -53,7 +70,13 @@ export default function TodayAttendanceCard({
           <p className="text-xs text-muted">Gestiona tu jornada en tiempo real.</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[status]}`}>
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[status]}`}>
+            <span className={`${status === "IN_SHIFT" ? "relative flex" : ""}`}>
+              {status === "IN_SHIFT" ? (
+                <span className="absolute -left-1 top-1 h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+              ) : null}
+              <StatusIcon size={14} />
+            </span>
             {statusLabels[status]}
           </span>
           {message ? (

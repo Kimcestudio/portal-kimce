@@ -72,6 +72,7 @@ export default function ExtrasPermitsTab({
 
   const filtered =
     filter === "ALL" ? unified : unified.filter((item) => item.status === filter);
+  const pendingCount = unified.filter((item) => item.status === "PENDING").length;
 
   return (
     <div className="space-y-4">
@@ -108,6 +109,13 @@ export default function ExtrasPermitsTab({
           </div>
           <ChevronRight className="text-muted transition group-hover:translate-x-0.5" size={18} />
         </button>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white/80 px-4 py-2 text-xs text-muted shadow-soft">
+        <span>
+          {pendingCount > 0
+            ? `Tienes ${pendingCount} solicitudes pendientes.`
+            : "No tienes solicitudes pendientes por revisar."}
+        </span>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-xs font-semibold text-muted">

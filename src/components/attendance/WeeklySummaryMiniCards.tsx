@@ -1,3 +1,4 @@
+import { AlertTriangle, TrendingUp } from "lucide-react";
 import { minutesToHHMM } from "@/lib/attendanceUtils";
 
 interface WeeklySummaryMiniCardsProps {
@@ -16,10 +17,12 @@ export default function WeeklySummaryMiniCards({
   const balanceLabel = diffMinutes < 0 ? "Debes" : "A favor";
   const balanceValue = minutesToHHMM(Math.abs(diffMinutes));
   const progress = expectedMinutes === 0 ? 0 : Math.min(100, (workedMinutes / expectedMinutes) * 100);
+  const BalanceIcon = diffMinutes < 0 ? AlertTriangle : TrendingUp;
+  const balanceStyle = diffMinutes < 0 ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700";
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
-      <div className="rounded-2xl border border-line bg-white p-4 shadow-soft">
+      <div className="rounded-2xl border border-primary/10 bg-primary/10 p-4 shadow-soft">
         <p className="text-xs text-muted">Horas semana</p>
         <p className="text-lg font-semibold text-ink">
           {minutesToHHMM(workedMinutes)} / {minutesToHHMM(expectedMinutes)}
@@ -33,16 +36,24 @@ export default function WeeklySummaryMiniCards({
         <p className="text-lg font-semibold text-ink">
           {balanceLabel} {balanceValue}
         </p>
-        <span className="mt-3 inline-flex rounded-full bg-[#eef0ff] px-2 py-0.5 text-xs font-semibold text-primary">
+        <span className={`mt-3 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${balanceStyle}`}>
+          <BalanceIcon size={12} />
           {diffMinutes >= 0 ? "A favor" : "Pendiente"}
         </span>
       </div>
       <div className="rounded-2xl border border-line bg-white p-4 shadow-soft">
         <p className="text-xs text-muted">Días completados</p>
         <p className="text-lg font-semibold text-ink">{completedDays}/6</p>
-        <span className="mt-3 inline-flex rounded-full bg-[#dcfce7] px-2 py-0.5 text-xs font-semibold text-[#15803d]">
-          Objetivo semanal
-        </span>
+        <div className="mt-3 flex items-center gap-1">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <span
+              key={index}
+              className={`h-2 w-2 rounded-full ${
+                index < completedDays ? "bg-[#22c55e]" : "bg-line"
+              }`}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
