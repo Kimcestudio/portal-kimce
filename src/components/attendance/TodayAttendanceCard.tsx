@@ -39,6 +39,20 @@ const statusStyles = {
   CLOSED: "bg-green-100 text-green-700",
 } as const;
 
+const cardStyles = {
+  OFF: "bg-white",
+  IN_SHIFT: "bg-gradient-to-br from-[#4F56D3] to-[#3F46C6] text-white",
+  ON_BREAK: "bg-gradient-to-br from-amber-400/90 to-orange-400/90 text-white",
+  CLOSED: "bg-[#eef0ff] text-ink",
+} as const;
+
+const badgeStyles = {
+  OFF: "bg-teal-100 text-teal-700",
+  IN_SHIFT: "bg-white/15 text-white",
+  ON_BREAK: "bg-white/20 text-white",
+  CLOSED: "bg-green-100 text-green-700",
+} as const;
+
 const statusIcons = {
   OFF: PlayCircle,
   IN_SHIFT: PlayCircle,
@@ -62,15 +76,19 @@ export default function TodayAttendanceCard({
 }: TodayAttendanceCardProps) {
   const StatusIcon = statusIcons[status];
 
+  const isColored = status === "IN_SHIFT" || status === "ON_BREAK";
+  const headingText = isColored ? "text-white/90" : "text-ink";
+  const mutedText = isColored ? "text-white/70" : "text-muted";
+
   return (
-    <div className="rounded-2xl border border-transparent bg-gradient-to-br from-[#eef0ff] via-[#f7f7ff] to-white p-6 shadow-soft">
+    <div className={`rounded-2xl border border-transparent p-6 shadow-soft ${cardStyles[status]}`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Hoy</h2>
-          <p className="text-xs text-muted">Gestiona tu jornada en tiempo real.</p>
+          <h2 className={`text-lg font-semibold ${headingText}`}>Hoy</h2>
+          <p className={`text-xs ${mutedText}`}>Gestiona tu jornada en tiempo real.</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${statusStyles[status]}`}>
+          <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${badgeStyles[status]}`}>
             <span className={`${status === "IN_SHIFT" ? "relative flex" : ""}`}>
               {status === "IN_SHIFT" ? (
                 <span className="absolute -left-1 top-1 h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
@@ -80,7 +98,7 @@ export default function TodayAttendanceCard({
             {statusLabels[status]}
           </span>
           {message ? (
-            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${isColored ? "bg-white/20 text-white" : "bg-amber-100 text-amber-700"}`}>
               {message}
             </span>
           ) : null}
@@ -88,25 +106,35 @@ export default function TodayAttendanceCard({
       </div>
       <div className="grid gap-4 md:grid-cols-4">
         <div>
-          <p className="text-xs text-muted">Entrada</p>
-          <p className="text-sm font-semibold text-ink">{formatTime(record?.checkInAt ?? null)}</p>
+          <p className={`text-xs ${mutedText}`}>Entrada</p>
+          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-ink"}`}>
+            {formatTime(record?.checkInAt ?? null)}
+          </p>
         </div>
         <div>
-          <p className="text-xs text-muted">Descanso acumulado</p>
-          <p className="text-sm font-semibold text-ink">{minutesToHHMM(breakMinutes)}</p>
+          <p className={`text-xs ${mutedText}`}>Descanso acumulado</p>
+          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-ink"}`}>
+            {minutesToHHMM(breakMinutes)}
+          </p>
         </div>
         <div>
-          <p className="text-xs text-muted">Salida</p>
-          <p className="text-sm font-semibold text-ink">{formatTime(record?.checkOutAt ?? null)}</p>
+          <p className={`text-xs ${mutedText}`}>Salida</p>
+          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-ink"}`}>
+            {formatTime(record?.checkOutAt ?? null)}
+          </p>
         </div>
         <div>
-          <p className="text-xs text-muted">Total hoy</p>
-          <p className="text-sm font-semibold text-ink">{minutesToHHMM(totalMinutes)}</p>
+          <p className={`text-xs ${mutedText}`}>Total hoy</p>
+          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-ink"}`}>
+            {minutesToHHMM(totalMinutes)}
+          </p>
         </div>
       </div>
       <div className="mt-6 grid gap-3 md:grid-cols-4">
         <button
-          className="flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted"
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
+            status === "OFF" ? "bg-primary text-white" : "bg-white/70 text-ink"
+          }`}
           onClick={onCheckIn}
           type="button"
           disabled={status !== "OFF"}
@@ -115,7 +143,9 @@ export default function TodayAttendanceCard({
           Marcar entrada
         </button>
         <button
-          className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-ink shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted"
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
+            status === "IN_SHIFT" ? "bg-primary text-white" : "bg-white/70 text-ink"
+          }`}
           onClick={onStartBreak}
           type="button"
           disabled={status !== "IN_SHIFT"}
@@ -124,7 +154,9 @@ export default function TodayAttendanceCard({
           Iniciar descanso
         </button>
         <button
-          className="flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-ink shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted"
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
+            status === "ON_BREAK" ? "bg-amber-500 text-white" : "bg-white/70 text-ink"
+          }`}
           onClick={onEndBreak}
           type="button"
           disabled={status !== "ON_BREAK"}
@@ -133,7 +165,9 @@ export default function TodayAttendanceCard({
           Finalizar descanso
         </button>
         <button
-          className="flex items-center justify-center gap-2 rounded-xl bg-ink px-4 py-2 text-sm font-semibold text-white shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted"
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
+            status === "IN_SHIFT" ? "bg-ink text-white" : "bg-white/70 text-ink"
+          }`}
           onClick={onCheckOut}
           type="button"
           disabled={status !== "IN_SHIFT"}
@@ -144,9 +178,11 @@ export default function TodayAttendanceCard({
       </div>
       <div className="mt-6 grid gap-3 md:grid-cols-[1fr_auto]">
         <div>
-          <label className="text-xs font-semibold text-muted">Nota del día</label>
+          <label className={`text-xs font-semibold ${mutedText}`}>Nota del día</label>
           <textarea
-            className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm text-ink"
+            className={`mt-2 w-full rounded-xl border px-3 py-2 text-sm ${
+              isColored ? "border-white/30 bg-white/90 text-ink" : "border-line text-ink"
+            }`}
             maxLength={120}
             rows={2}
             value={note}
@@ -154,7 +190,9 @@ export default function TodayAttendanceCard({
           />
         </div>
         <button
-          className="flex h-fit items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-ink shadow-soft transition hover:shadow-card"
+          className={`flex h-fit items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card ${
+            isColored ? "bg-white/90 text-ink" : "bg-white text-ink"
+          }`}
           onClick={onSaveNote}
           type="button"
         >

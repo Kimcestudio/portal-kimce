@@ -1,4 +1,5 @@
 import { AlertTriangle, TrendingUp } from "lucide-react";
+import PrimaryMetricCard from "@/components/attendance/PrimaryMetricCard";
 import { minutesToHHMM } from "@/lib/attendanceUtils";
 
 interface WeeklySummaryMiniCardsProps {
@@ -22,15 +23,13 @@ export default function WeeklySummaryMiniCards({
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
-      <div className="rounded-2xl border border-primary/10 bg-primary/10 p-4 shadow-soft">
-        <p className="text-xs text-muted">Horas semana</p>
-        <p className="text-lg font-semibold text-ink">
-          {minutesToHHMM(workedMinutes)} / {minutesToHHMM(expectedMinutes)}
-        </p>
-        <div className="mt-3 h-1.5 w-full rounded-full bg-line">
-          <div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} />
-        </div>
-      </div>
+      <PrimaryMetricCard
+        title="Horas semana"
+        value={minutesToHHMM(workedMinutes)}
+        target={minutesToHHMM(expectedMinutes)}
+        progress={progress}
+        pill={`${Math.round(progress)}%`}
+      />
       <div className="rounded-2xl border border-line bg-white p-4 shadow-soft">
         <p className="text-xs text-muted">Balance</p>
         <p className="text-lg font-semibold text-ink">
