@@ -11,15 +11,18 @@ import {
   Shield,
   Wallet,
   BarChart3,
+  LogOut,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import useRole from "@/components/auth/useRole";
+import { useOptionalAuth } from "@/components/auth/AuthProvider";
 
 type NavItem = {
   icon: React.ComponentType<{ size?: number }>;
   label: string;
   href: string;
+  action?: () => void;
 };
 
 const collaboratorNavItems: NavItem[] = [
@@ -35,12 +38,19 @@ const collaboratorNavItems: NavItem[] = [
 const adminNavItems: NavItem[] = [
   { icon: Wallet, label: "Finanzas", href: "/admin/finance" },
   { icon: BarChart3, label: "Reportes", href: "/admin/reports" },
-  { icon: Shield, label: "Gestión", href: "/admin/settings" },
+  { icon: Shield, label: "Gestión", href: "/admin/manage" },
+];
+
+const profileNavItems: NavItem[] = [
+  { icon: Users, label: "Mi perfil", href: "/profile" },
+  { icon: Calendar, label: "Historial", href: "/history" },
 ];
 
 export default function SidebarNav() {
   const pathname = usePathname();
   const role = useRole();
+  const auth = useOptionalAuth();
+  const signOutUser = auth?.signOutUser;
 
   return (
     <aside className="group/sidebar flex h-full w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 py-6 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-[width] duration-300 ease-out hover:w-56">
@@ -152,6 +162,74 @@ export default function SidebarNav() {
             </div>
           </div>
         ) : null}
+        <div className="space-y-3 pt-2">
+          <div className="mx-3 h-px bg-white/10" />
+          <p className="px-3 text-xs font-semibold uppercase tracking-wider text-white/50">
+            Perfil
+          </p>
+          <div className="flex w-full flex-col gap-3">
+            {profileNavItems.map(({ icon: Icon, label, href }) => {
+              const isActive = pathname === href || pathname.startsWith(`${href}/`);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  className={`relative flex h-12 items-center gap-3 rounded-2xl px-3 transition duration-200 ease-out ${
+                    isActive
+                      ? "bg-white/12 text-white"
+                      : "text-white/75 hover:bg-white/10 hover:text-white"
+                  } hover:-translate-y-0.5 hover:shadow-[0_8px_18px_rgba(15,23,42,0.25)]`}
+                >
+                  {isActive ? (
+                    <span className="absolute left-0 top-2 h-8 w-1 rounded-full bg-white/80" />
+                  ) : null}
+                  <div className="relative flex h-11 w-11 items-center justify-center">
+                    <span
+                      className={`absolute inset-0 rounded-full bg-[#5960dc] opacity-0 blur-md transition duration-200 ${
+                        isActive ? "opacity-40" : "group-hover/sidebar:opacity-30"
+                      }`}
+                    />
+                    <span
+                      className={`absolute inset-1 rounded-full bg-[#4f56d3]/60 opacity-0 transition duration-200 ${
+                        isActive ? "opacity-60" : "group-hover/sidebar:opacity-50"
+                      }`}
+                    />
+                    <div
+                      className={`relative z-10 flex h-10 w-10 items-center justify-center rounded-full transition duration-200 ${
+                        isActive
+                          ? "bg-[#4f56d3] text-white shadow-glow"
+                          : "bg-white/5 text-white/70 group-hover/sidebar:bg-[#2a3178]"
+                      } group-hover/sidebar:scale-110`}
+                    >
+                      <Icon size={18} className="transition duration-200 group-hover/sidebar:text-white" />
+                    </div>
+                  </div>
+                  <span className="whitespace-nowrap text-sm font-semibold text-white/90 opacity-0 -translate-x-2 transition-all duration-200 ease-out group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100">
+                    {label}
+                  </span>
+                </Link>
+              );
+            })}
+            {signOutUser ? (
+              <button
+                type="button"
+                onClick={signOutUser}
+                className="relative flex h-12 items-center gap-3 rounded-2xl px-3 text-left text-white/75 transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/10 hover:text-white hover:shadow-[0_8px_18px_rgba(15,23,42,0.25)]"
+              >
+                <div className="relative flex h-11 w-11 items-center justify-center">
+                  <span className="absolute inset-0 rounded-full bg-[#5960dc] opacity-0 blur-md transition duration-200 group-hover/sidebar:opacity-30" />
+                  <span className="absolute inset-1 rounded-full bg-[#4f56d3]/60 opacity-0 transition duration-200 group-hover/sidebar:opacity-50" />
+                  <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/5 text-white/70 transition duration-200 group-hover/sidebar:bg-[#2a3178] group-hover/sidebar:scale-110">
+                    <LogOut size={18} className="transition duration-200 group-hover/sidebar:text-white" />
+                  </div>
+                </div>
+                <span className="whitespace-nowrap text-sm font-semibold text-white/90 opacity-0 -translate-x-2 transition-all duration-200 ease-out group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100">
+                  Cerrar sesión
+                </span>
+              </button>
+            ) : null}
+          </div>
+        </div>
       </div>
       <div className="mt-8 flex w-full items-center justify-center">
         <div className="h-12 w-12 rounded-full bg-[url('https://images.unsplash.com/photo-1502685104226-ee32379fefbe?auto=format&fit=crop&w=120&q=80')] bg-cover bg-center shadow-soft" />
