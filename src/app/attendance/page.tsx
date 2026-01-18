@@ -288,10 +288,28 @@ export default function AttendancePage() {
         />
 
         <div className="rounded-2xl border border-line bg-white p-6 shadow-soft">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-ink">Extras y Permisos</h2>
+            <p className="text-xs text-muted">
+              Registra actividades extra o solicita permisos/vacaciones.
+            </p>
+          </div>
+          <ExtrasPermitsTab
+            extras={extras}
+            requests={requests}
+            corrections={corrections}
+            filter={filter}
+            onFilterChange={setFilter}
+            onOpenExtra={() => setExtraOpen(true)}
+            onOpenRequest={() => setRequestOpen(true)}
+          />
+        </div>
+
+        <div className="rounded-2xl border border-line bg-white p-6 shadow-soft">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-ink">Semana</h2>
-              <p className="text-xs text-muted">Registro diario y horas por día.</p>
+              <h2 className="text-lg font-semibold text-ink">Mi semana</h2>
+              <p className="text-xs text-muted">Tu registro diario y horas por día.</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -321,24 +339,6 @@ export default function AttendancePage() {
             weekDates={weekDates}
             records={weekRecords}
             onRequestCorrection={handleOpenCorrection}
-          />
-        </div>
-
-        <div className="rounded-2xl border border-line bg-white p-6 shadow-soft">
-          <div className="mb-4">
-            <h2 className="text-lg font-semibold text-ink">Extras y Permisos</h2>
-            <p className="text-xs text-muted">
-              Registra actividades extra o solicita permisos/vacaciones.
-            </p>
-          </div>
-          <ExtrasPermitsTab
-            extras={extras}
-            requests={requests}
-            corrections={corrections}
-            filter={filter}
-            onFilterChange={setFilter}
-            onOpenExtra={() => setExtraOpen(true)}
-            onOpenRequest={() => setRequestOpen(true)}
           />
         </div>
       </div>

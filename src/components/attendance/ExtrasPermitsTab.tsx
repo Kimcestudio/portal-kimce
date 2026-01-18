@@ -44,6 +44,7 @@ export default function ExtrasPermitsTab({
       date: item.date,
       detail: `${minutesToHHMM(item.minutes)}${item.project ? ` · ${item.project}` : ""}`,
       status: item.status,
+      actionLabel: "Ver detalle",
     })),
     ...requests.map((item) => ({
       id: item.id,
@@ -57,6 +58,7 @@ export default function ExtrasPermitsTab({
       date: item.date,
       detail: item.hours ? `${item.hours}h` : item.endDate ? `${item.date} → ${item.endDate}` : item.reason,
       status: item.status,
+      actionLabel: "Ver detalle",
     })),
     ...corrections.map((item) => ({
       id: item.id,
@@ -64,6 +66,7 @@ export default function ExtrasPermitsTab({
       date: item.date,
       detail: item.proposedChanges,
       status: item.status,
+      actionLabel: "Ver detalle",
     })),
   ];
 
@@ -128,16 +131,22 @@ export default function ExtrasPermitsTab({
       </div>
       <div className="space-y-3">
         {filtered.slice(0, 6).map((item) => (
-          <div key={item.id} className="flex items-center justify-between rounded-2xl border border-line bg-white px-4 py-3 shadow-soft">
+          <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white px-4 py-3 shadow-soft">
             <div>
               <p className="text-sm font-semibold text-ink">{item.type}</p>
               <p className="text-xs text-muted">
                 {item.date} · {item.detail}
               </p>
             </div>
-            <span className={`rounded-full px-3 py-1 text-xs font-semibold ${mapStatus(item.status)}`}>
-              {item.status}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${mapStatus(item.status)}`}>
+                {item.status}
+              </span>
+              <button className="flex items-center gap-1 text-xs font-semibold text-primary">
+                {item.actionLabel}
+                <ChevronRight size={14} />
+              </button>
+            </div>
           </div>
         ))}
         {filtered.length === 0 ? (
