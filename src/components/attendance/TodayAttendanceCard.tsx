@@ -32,13 +32,6 @@ const statusLabels = {
   CLOSED: "Cerrado",
 } as const;
 
-const statusStyles = {
-  OFF: "bg-teal-100 text-teal-700",
-  IN_SHIFT: "bg-indigo-100 text-indigo-700",
-  ON_BREAK: "bg-amber-100 text-amber-700",
-  CLOSED: "bg-green-100 text-green-700",
-} as const;
-
 const cardStyles = {
   OFF: "bg-white",
   IN_SHIFT: "bg-gradient-to-br from-[#4F56D3] to-[#3F46C6] text-white",
