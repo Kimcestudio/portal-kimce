@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import SidebarNav from "@/components/SidebarNav";
+import PageHeader from "@/components/PageHeader";
 import CalendarHeader from "@/components/calendar/CalendarHeader";
 import MonthGrid from "@/components/calendar/MonthGrid";
 import CalendarLegend from "@/components/calendar/CalendarLegend";
@@ -51,6 +52,7 @@ export default function CalendarPage() {
   return (
     <AppShell sidebar={<SidebarNav />}>
       <div className="flex flex-col gap-4">
+        <PageHeader userName="Alondra" />
         <CalendarHeader
           label={monthLabel}
           onPrev={handlePrev}

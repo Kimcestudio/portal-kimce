@@ -1,10 +1,7 @@
-import {
-  Calendar,
-  Menu,
-  Clock,
-} from "lucide-react";
+import { Clock } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import SidebarNav from "@/components/SidebarNav";
+import PageHeader from "@/components/PageHeader";
 import MetricCard from "@/components/MetricCard";
 import LineChartCard from "@/components/LineChartCard";
 import SchedulePanel from "@/components/SchedulePanel";
@@ -32,28 +29,16 @@ export default function DashboardPage() {
   return (
     <AppShell sidebar={<SidebarNav />} rightPanel={rightPanel}>
       <div className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <details className="md:hidden">
-            <summary className="list-none">
-              <button className="flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-soft">
-                <Menu size={20} />
-              </button>
-            </summary>
-            <div className="mt-4">
-              <SidebarNav />
-            </div>
-          </details>
-          <div className="flex flex-1 flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <h1 className="text-2xl font-semibold text-ink md:text-3xl">
-              Good morning, <span className="font-bold">dr Alice</span>
-            </h1>
+        <PageHeader
+          userName="Alondra"
+          rightSlot={
             <div className="flex items-center gap-2 text-sm text-muted">
               <Clock size={16} />
               <span>Your today’s shift:</span>
               <span className="font-semibold text-primary">8:00 am - 4:00 pm</span>
             </div>
-          </div>
-        </div>
+          }
+        />
 
         <div className="grid gap-4 md:grid-cols-3">
           <MetricCard

@@ -23,9 +23,23 @@ export default function WeeklyTable({ weekDates, records, onRequestCorrection }:
         {weekDates.map((date) => {
           const dateISO = date.toISOString().slice(0, 10);
           const record = records.find((item) => item.date === dateISO);
-          const status = record?.status === "CLOSED" ? "Completado" : record ? "En curso" : "Sin registro";
+          const isSunday = date.getDay() === 0;
+          const status = isSunday
+            ? "No laborable"
+            : record?.status === "CLOSED"
+            ? "Completado"
+            : record
+            ? "En curso"
+            : "Sin registro";
+          const badgeClass = isSunday
+            ? "bg-line text-muted"
+            : status === "Completado"
+            ? "bg-[#dcfce7] text-[#15803d]"
+            : status === "En curso"
+            ? "bg-[#eef0ff] text-primary"
+            : "bg-[#fef3c7] text-[#b45309]";
           return (
-            <div key={dateISO} className="grid grid-cols-5 gap-2 px-4 py-3 text-sm text-ink">
+            <div key={dateISO} className="grid grid-cols-5 gap-2 px-4 py-3 text-sm text-ink transition hover:bg-canvas/40">
               <div>
                 <div className="text-xs text-muted">{dayLabels[date.getDay()]}</div>
                 <div className="font-semibold">{date.getDate()}</div>
@@ -34,8 +48,10 @@ export default function WeeklyTable({ weekDates, records, onRequestCorrection }:
               <div className="text-sm">{formatTime(record?.checkOutAt ?? null)}</div>
               <div className="text-sm">{minutesToHHMM(record?.totalMinutes ?? 0)}</div>
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-muted">{status}</span>
-                {record ? (
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>
+                  {status}
+                </span>
+                {record && !isSunday ? (
                   <button
                     className="rounded-full border border-line px-2 py-1 text-[11px] font-semibold text-muted"
                     onClick={() => onRequestCorrection(dateISO, record.id)}

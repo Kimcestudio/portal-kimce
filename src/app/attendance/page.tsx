@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
 import SidebarNav from "@/components/SidebarNav";
+import PageHeader from "@/components/PageHeader";
 import TodayAttendanceCard from "@/components/attendance/TodayAttendanceCard";
 import WeeklySummaryMiniCards from "@/components/attendance/WeeklySummaryMiniCards";
 import WeeklyTable from "@/components/attendance/WeeklyTable";
@@ -36,8 +37,6 @@ import {
 } from "@/lib/storage/attendanceStorage";
 
 const userId = "demo-user";
-const role = "COLLABORATOR";
-
 type AttendanceStatus = "OFF" | "IN_SHIFT" | "ON_BREAK" | "CLOSED";
 
 type CorrectionDraft = {
@@ -80,8 +79,7 @@ export default function AttendancePage() {
   const [extras, setExtras] = useState<ExtraActivity[]>([]);
   const [requests, setRequests] = useState<Request[]>([]);
   const [corrections, setCorrections] = useState<CorrectionRequest[]>([]);
-  const [activeTab, setActiveTab] = useState<"week" | "extras">("week");
-  const [filter, setFilter] = useState<"ALL" | "PENDING">("ALL");
+  const [filter, setFilter] = useState<"ALL" | "PENDING" | "APPROVED" | "REJECTED">("ALL");
   const [extraOpen, setExtraOpen] = useState(false);
   const [requestOpen, setRequestOpen] = useState(false);
   const [correctionOpen, setCorrectionOpen] = useState(false);
@@ -258,15 +256,14 @@ export default function AttendancePage() {
   return (
     <AppShell sidebar={<SidebarNav />}>
       <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-ink">Horario</h1>
-            <p className="text-sm text-muted">Usuario: {role}</p>
-          </div>
-          <div className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-muted shadow-soft">
-            Semana actual · {formatISODate(weekStart)}
-          </div>
-        </div>
+        <PageHeader
+          userName="Alondra"
+          rightSlot={
+            <div className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-muted shadow-soft">
+              Semana actual · {formatISODate(weekStart)}
+            </div>
+          }
+        />
 
         <TodayAttendanceCard
           status={status}
@@ -292,70 +289,57 @@ export default function AttendancePage() {
 
         <div className="rounded-2xl border border-line bg-white p-6 shadow-soft">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-2">
+            <div>
+              <h2 className="text-lg font-semibold text-ink">Semana</h2>
+              <p className="text-xs text-muted">Registro diario y horas por día.</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
               <button
-                className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                  activeTab === "week" ? "bg-primary text-white" : "bg-canvas text-muted"
-                }`}
-                onClick={() => setActiveTab("week")}
+                className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-muted"
+                onClick={() => setWeekOffset((prev) => prev - 1)}
                 type="button"
               >
-                Semana
+                Semana anterior
               </button>
               <button
-                className={`rounded-full px-4 py-2 text-sm font-semibold ${
-                  activeTab === "extras" ? "bg-primary text-white" : "bg-canvas text-muted"
-                }`}
-                onClick={() => setActiveTab("extras")}
+                className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-muted"
+                onClick={() => setWeekOffset(0)}
                 type="button"
               >
-                Extras y Permisos
+                Semana actual
+              </button>
+              <button
+                className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-muted"
+                onClick={() => setWeekOffset((prev) => prev + 1)}
+                type="button"
+              >
+                Semana siguiente
               </button>
             </div>
-            {activeTab === "week" ? (
-              <div className="flex gap-2">
-                <button
-                  className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-muted"
-                  onClick={() => setWeekOffset((prev) => prev - 1)}
-                  type="button"
-                >
-                  Semana anterior
-                </button>
-                <button
-                  className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-muted"
-                  onClick={() => setWeekOffset(0)}
-                  type="button"
-                >
-                  Semana actual
-                </button>
-                <button
-                  className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-muted"
-                  onClick={() => setWeekOffset((prev) => prev + 1)}
-                  type="button"
-                >
-                  Semana siguiente
-                </button>
-              </div>
-            ) : null}
           </div>
+          <WeeklyTable
+            weekDates={weekDates}
+            records={weekRecords}
+            onRequestCorrection={handleOpenCorrection}
+          />
+        </div>
 
-          {activeTab === "week" ? (
-            <WeeklyTable
-              weekDates={weekDates}
-              records={weekRecords}
-              onRequestCorrection={handleOpenCorrection}
-            />
-          ) : (
-            <ExtrasPermitsTab
-              extras={extras}
-              requests={requests}
-              corrections={corrections}
-              filter={filter}
-              onFilterChange={setFilter}
-              onOpenExtra={() => setExtraOpen(true)}
-              onOpenRequest={() => setRequestOpen(true)}
-            />
-          )}
+        <div className="rounded-2xl border border-line bg-white p-6 shadow-soft">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-ink">Extras y Permisos</h2>
+            <p className="text-xs text-muted">
+              Registra actividades extra o solicita permisos/vacaciones.
+            </p>
+          </div>
+          <ExtrasPermitsTab
+            extras={extras}
+            requests={requests}
+            corrections={corrections}
+            filter={filter}
+            onFilterChange={setFilter}
+            onOpenExtra={() => setExtraOpen(true)}
+            onOpenRequest={() => setRequestOpen(true)}
+          />
         </div>
       </div>
 
