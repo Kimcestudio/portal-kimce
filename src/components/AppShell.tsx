@@ -8,7 +8,7 @@ interface AppShellProps {
 
 export default function AppShell({ sidebar, children, rightPanel }: AppShellProps) {
   return (
-    <div className="flex h-screen bg-[#f5f7ff] text-ink">
+    <div className="flex h-screen bg-[#f5f7ff] p-3 text-ink">
       <aside className="hidden h-full shrink-0 md:flex">{sidebar}</aside>
       <div className="flex flex-1 overflow-hidden">
         <main className="h-full flex-1 overflow-y-auto px-4 py-4">
