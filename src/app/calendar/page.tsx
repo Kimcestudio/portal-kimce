@@ -50,7 +50,7 @@ export default function CalendarPage() {
 
   return (
     <AppShell sidebar={<SidebarNav />}>
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-4">
         <CalendarHeader
           label={monthLabel}
           onPrev={handlePrev}
@@ -58,7 +58,7 @@ export default function CalendarPage() {
           onToday={handleToday}
         />
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_240px]">
+        <div className="grid gap-4 lg:grid-cols-[1fr_240px]">
           <div className="rounded-2xl border border-line bg-white p-4 shadow-soft">
             <MonthGrid
               weeks={monthMatrix}

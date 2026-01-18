@@ -9,10 +9,10 @@ interface AppShellProps {
 export default function AppShell({ sidebar, children, rightPanel }: AppShellProps) {
   return (
     <div className="min-h-screen bg-[#f5f7ff] text-ink">
-      <div className="mx-auto flex h-screen max-w-[1400px] gap-6 px-6 py-6">
+      <div className="mx-auto flex h-screen max-w-[1280px] gap-4 px-4 py-4">
         <aside className="hidden h-full shrink-0 md:flex">{sidebar}</aside>
         <main className="flex-1 min-w-0 overflow-y-auto rounded-[28px] bg-canvas">
-          <div className="px-6 py-6">
+          <div className="px-4 py-4">
             <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
               {children}
             </div>
