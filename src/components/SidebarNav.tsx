@@ -26,7 +26,7 @@ export default function SidebarNav() {
   const pathname = usePathname();
 
   return (
-    <aside className="group/sidebar flex h-full w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 py-6 text-white shadow-card transition-[width] duration-300 ease-out hover:w-56">
+    <aside className="group/sidebar flex h-full w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 py-6 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-[width] duration-300 ease-out hover:w-56">
       <div className="mb-10 flex w-full items-center justify-center text-sm font-semibold">
         <span className="whitespace-nowrap transition-all duration-300 group-hover/sidebar:translate-x-1">
           doc.track
@@ -41,10 +41,13 @@ export default function SidebarNav() {
             <Link
               key={href}
               href={href}
-              className={`flex h-12 items-center gap-3 rounded-2xl px-3 transition duration-200 ${
-                isActive ? "bg-white/10" : "hover:bg-white/10"
-              }`}
+              className={`relative flex h-12 items-center gap-3 rounded-2xl px-3 transition duration-200 ease-out ${
+                isActive ? "bg-white/12 text-white" : "text-white/75 hover:bg-white/10 hover:text-white"
+              } hover:-translate-y-0.5 hover:shadow-[0_8px_18px_rgba(15,23,42,0.25)]`}
             >
+              {isActive ? (
+                <span className="absolute left-0 top-2 h-8 w-1 rounded-full bg-white/80" />
+              ) : null}
               <div className="relative flex h-11 w-11 items-center justify-center">
                 <span
                   className={`absolute inset-0 rounded-full bg-[#5960dc] opacity-0 blur-md transition duration-200 ${
