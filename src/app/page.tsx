@@ -13,7 +13,7 @@ export default function HomePage() {
       router.replace("/login");
       return;
     }
-    router.replace(user.role === "admin" ? "/admin/overview" : "/app/overview");
+    router.replace(user.role === "admin" ? "/admin/dashboard" : "/app/dashboard");
   }, [router]);
 
   return (

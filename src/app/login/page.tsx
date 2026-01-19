@@ -24,7 +24,7 @@ function LoginForm() {
         router.replace(redirect);
         return;
       }
-      router.replace(user.role === "admin" ? "/admin/overview" : "/app/overview");
+      router.replace(user.role === "admin" ? "/admin/dashboard" : "/app/dashboard");
     } catch (err) {
       setError((err as Error).message);
     } finally {

@@ -21,7 +21,7 @@ export default function RequireAuth({ children, role }: RequireAuthProps) {
       return;
     }
     if (role && user.role !== role) {
-      router.replace(user.role === "admin" ? "/admin/overview" : "/app/overview");
+      router.replace(user.role === "admin" ? "/admin/dashboard" : "/app/dashboard");
     }
   }, [loading, user, role, router, pathname]);
 
