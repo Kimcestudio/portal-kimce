@@ -19,6 +19,7 @@ import { usePathname } from "next/navigation";
 import useRole from "@/components/auth/useRole";
 import { useOptionalAuth } from "@/components/auth/AuthProvider";
 import { readFileAsDataUrl } from "@/services/firebase/media";
+import { useEffect, useMemo, useState } from "react";
 
 type NavItem = {
   icon: React.ComponentType<{ size?: number }>;
@@ -51,6 +52,7 @@ const adminItems: NavItem[] = [
   { icon: Mail, label: "Solicitudes", href: "/admin/requests" },
   { icon: Users, label: "Usuarios y Roles", href: "/admin/users" },
   { icon: Wallet, label: "Finanzas", href: "/admin/finance" },
+  { icon: BarChart3, label: "Reportes", href: "/admin/reports" },
 ];
 
 const adminProfileItems: NavItem[] = [
@@ -142,14 +144,30 @@ export default function SidebarNav() {
   const signOutUser = auth?.signOutUser;
   const updateUser = auth?.updateUser;
   const user = auth?.user;
+  const [view, setView] = useState<"collaborator" | "admin">("collaborator");
 
-  const profileItems =
-    role === "ADMIN"
-      ? adminProfileItems
-      : collaboratorProfileItems;
+  useEffect(() => {
+    if (role !== "ADMIN") {
+      setView("collaborator");
+      return;
+    }
+    const stored = window.localStorage.getItem("sidebar_view");
+    setView(stored === "admin" ? "admin" : "collaborator");
+  }, [role]);
 
-  const generalItems =
-    role === "ADMIN" ? adminGeneralItems : collaboratorGeneralItems;
+  useEffect(() => {
+    if (role !== "ADMIN") return;
+    window.localStorage.setItem("sidebar_view", view);
+  }, [role, view]);
+
+  const profileItems = role === "ADMIN" ? adminProfileItems : collaboratorProfileItems;
+
+  const generalItems = useMemo(() => {
+    if (role === "ADMIN" && view === "admin") return adminGeneralItems;
+    return collaboratorGeneralItems;
+  }, [role, view]);
+
+  const showAdminSection = role === "ADMIN" && view === "admin";
 
   return (
     <aside className="group/sidebar flex h-screen w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-[width] duration-300 ease-out hover:w-56">
@@ -157,10 +175,36 @@ export default function SidebarNav() {
         <span className="whitespace-nowrap transition-all duration-300 group-hover/sidebar:translate-x-1">
           doc.track
         </span>
+        {role === "ADMIN" ? (
+          <div className="mt-4 w-full rounded-full bg-white/10 p-1">
+            <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              <button
+                type="button"
+                onClick={() => setView("collaborator")}
+                className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
+                  view === "collaborator"
+                    ? "bg-[#4f56d3] text-white shadow-glow"
+                    : "hover:bg-white/10"
+                }`}
+              >
+                Vista Colaborador
+              </button>
+              <button
+                type="button"
+                onClick={() => setView("admin")}
+                className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
+                  view === "admin" ? "bg-[#4f56d3] text-white shadow-glow" : "hover:bg-white/10"
+                }`}
+              >
+                Vista Admin
+              </button>
+            </div>
+          </div>
+        ) : null}
       </header>
       <nav className="flex w-full flex-1 min-h-0 flex-col gap-4 overflow-y-auto py-2 pr-1">
         <Section title="GENERAL" items={generalItems} />
-        {role === "ADMIN" ? (
+        {showAdminSection ? (
           <div className="space-y-3 pt-2">
             <div className="mx-3 h-px bg-white/10" />
             <Section title="ADMIN" items={adminItems} />
