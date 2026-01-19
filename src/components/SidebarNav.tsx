@@ -145,13 +145,13 @@ export default function SidebarNav() {
     role === "ADMIN" ? adminGeneralItems : collaboratorGeneralItems;
 
   return (
-    <aside className="group/sidebar flex h-full w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 py-6 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-[width] duration-300 ease-out hover:w-56">
-      <div className="mb-10 flex w-full items-center justify-center text-sm font-semibold">
+    <aside className="group/sidebar flex h-screen w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-[width] duration-300 ease-out hover:w-56">
+      <header className="shrink-0 pb-4 pt-6">
         <span className="whitespace-nowrap transition-all duration-300 group-hover/sidebar:translate-x-1">
           doc.track
         </span>
-      </div>
-      <div className="flex w-full flex-1 flex-col gap-4">
+      </header>
+      <nav className="flex w-full flex-1 min-h-0 flex-col gap-4 overflow-y-auto py-2 pr-1">
         <Section title="GENERAL" items={generalItems} />
         {role === "ADMIN" ? (
           <div className="space-y-3 pt-2">
@@ -175,8 +175,8 @@ export default function SidebarNav() {
               )
             : null}
         </div>
-      </div>
-      <div className="mt-8 flex w-full items-center justify-center">
+      </nav>
+      <footer className="shrink-0 pb-6 pt-4">
         <div className="flex w-full items-center gap-3 rounded-2xl bg-white/10 p-3">
           <label className="relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-full border border-white/20">
             <input
@@ -207,7 +207,7 @@ export default function SidebarNav() {
             <p className="text-xs text-white/60">{user?.position ?? "Puesto"}</p>
           </div>
         </div>
-      </div>
+      </footer>
     </aside>
   );
 }
