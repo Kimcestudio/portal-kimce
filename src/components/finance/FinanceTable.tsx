@@ -1,12 +1,15 @@
+import { useState } from "react";
 import Badge from "@/components/ui/Badge";
-import type { FinanceTransaction } from "@/lib/finance/types";
+import type { FinanceMovement, FinanceMovementStatus } from "@/lib/finance/types";
 import { formatCurrency } from "@/lib/finance/utils";
 
 interface FinanceTableProps {
-  transactions: FinanceTransaction[];
+  movements: FinanceMovement[];
+  onStatusChange?: (id: string, status: FinanceMovementStatus) => void;
+  disabled?: boolean;
 }
 
-export default function FinanceTable({ transactions }: FinanceTableProps) {
+export default function FinanceTable({ movements, onStatusChange, disabled }: FinanceTableProps) {
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
       <table className="w-full text-left text-sm">
@@ -21,32 +24,85 @@ export default function FinanceTable({ transactions }: FinanceTableProps) {
           </tr>
         </thead>
         <tbody>
-          {transactions.map((transaction) => (
-            <tr key={transaction.id} className="border-t border-slate-100">
+          {movements.map((movement) => (
+            <tr key={movement.id} className="border-t border-slate-100">
               <td className="px-4 py-3 text-xs text-slate-500">
-                {new Date(transaction.date).toLocaleDateString("es-PE")}
+                {new Date(movement.date).toLocaleDateString("es-PE")}
               </td>
               <td className="px-4 py-3">
-                <p className="font-semibold text-slate-900">{transaction.category}</p>
-                <p className="text-xs text-slate-500">{transaction.referenceId}</p>
+                <p className="font-semibold text-slate-900">
+                  {movement.type === "Ingreso" ? movement.clientName ?? movement.concept : movement.concept}
+                </p>
+                <p className="text-xs text-slate-500">{movement.referenceCode ?? movement.category}</p>
               </td>
               <td className="px-4 py-3 text-xs text-slate-500">
-                {transaction.accountFrom ?? transaction.accountTo ?? "-"}
+                {movement.accountFrom ?? movement.accountTo ?? "-"}
               </td>
-              <td className="px-4 py-3 text-xs text-slate-500">{transaction.responsible}</td>
+              <td className="px-4 py-3 text-xs text-slate-500">{movement.responsible}</td>
               <td className="px-4 py-3">
-                <Badge
-                  tone={transaction.status === "paid" ? "success" : "warning"}
-                  label={transaction.status === "paid" ? "Cancelado" : "Pendiente"}
+                <StatusChip
+                  status={movement.status}
+                  onChange={(status) => onStatusChange?.(movement.id, status)}
+                  disabled={disabled || !onStatusChange}
                 />
               </td>
               <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                {formatCurrency(transaction.finalAmount)}
+                {formatCurrency(movement.amount)}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function StatusChip({
+  status,
+  onChange,
+  disabled,
+}: {
+  status: FinanceMovementStatus;
+  onChange?: (status: FinanceMovementStatus) => void;
+  disabled?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const tone = status === "Cancelado" ? "success" : "warning";
+
+  return (
+    <div className="relative inline-flex">
+      <button
+        type="button"
+        className="rounded-full"
+        onClick={() => setOpen((prev) => !prev)}
+        disabled={disabled}
+      >
+        <Badge tone={tone} label={status} />
+      </button>
+      {open ? (
+        <div className="absolute left-0 top-9 z-20 min-w-[160px] rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
+          <button
+            type="button"
+            className="w-full rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
+            onClick={() => {
+              onChange?.("Cancelado");
+              setOpen(false);
+            }}
+          >
+            Cambiar a Cancelado
+          </button>
+          <button
+            type="button"
+            className="w-full rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
+            onClick={() => {
+              onChange?.("Pendiente");
+              setOpen(false);
+            }}
+          >
+            Cambiar a Pendiente
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

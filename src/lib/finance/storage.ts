@@ -4,23 +4,23 @@ import type {
   FinanceCategory,
   FinanceClient,
   FinanceCollaborator,
-  FinanceExpensePlan,
+  FinanceContract,
   FinanceMonthClosure,
-  FinanceTransaction,
-  FinanceTransactionStatus,
+  FinanceMovement,
+  FinanceMovementStatus,
 } from "@/lib/finance/types";
-import { calcFinalAmount, getMonthKey } from "@/lib/finance/utils";
+import { getMonthKey } from "@/lib/finance/utils";
 
-const TRANSACTIONS_COLLECTION = "financeTransactions";
-const ACCOUNTS_COLLECTION = "financeAccounts";
-const CATEGORIES_COLLECTION = "financeCategories";
-const MONTH_CLOSURE_COLLECTION = "financeMonthClosures";
-const CLIENTS_COLLECTION = "financeClients";
-const COLLABORATORS_COLLECTION = "financeCollaborators";
-const EXPENSES_COLLECTION = "financeExpensePlans";
+const MOVEMENTS_COLLECTION = "finance_movements";
+const ACCOUNTS_COLLECTION = "finance_accounts";
+const CATEGORIES_COLLECTION = "finance_categories";
+const MONTH_CLOSURE_COLLECTION = "finance_month_closures";
+const CLIENTS_COLLECTION = "finance_clients";
+const COLLABORATORS_COLLECTION = "finance_collaborators";
+const CONTRACTS_COLLECTION = "finance_contracts";
 
-export function listFinanceTransactions() {
-  return getCollection<FinanceTransaction>(TRANSACTIONS_COLLECTION, []);
+export function listFinanceMovements() {
+  return getCollection<FinanceMovement>(MOVEMENTS_COLLECTION, []);
 }
 
 export function listFinanceAccounts() {
@@ -43,12 +43,12 @@ export function listFinanceCollaborators() {
   return getCollection<FinanceCollaborator>(COLLABORATORS_COLLECTION, []);
 }
 
-export function listFinanceExpensePlans() {
-  return getCollection<FinanceExpensePlan>(EXPENSES_COLLECTION, []);
+export function listFinanceContracts() {
+  return getCollection<FinanceContract>(CONTRACTS_COLLECTION, []);
 }
 
-export function saveFinanceTransactions(transactions: FinanceTransaction[]) {
-  setCollection(TRANSACTIONS_COLLECTION, transactions);
+export function saveFinanceMovements(movements: FinanceMovement[]) {
+  setCollection(MOVEMENTS_COLLECTION, movements);
 }
 
 export function saveFinanceAccounts(accounts: FinanceAccount[]) {
@@ -71,74 +71,69 @@ export function saveFinanceCollaborators(collaborators: FinanceCollaborator[]) {
   setCollection(COLLABORATORS_COLLECTION, collaborators);
 }
 
-export function saveFinanceExpensePlans(expenses: FinanceExpensePlan[]) {
-  setCollection(EXPENSES_COLLECTION, expenses);
+export function saveFinanceContracts(contracts: FinanceContract[]) {
+  setCollection(CONTRACTS_COLLECTION, contracts);
 }
 
 export function generateReferenceId() {
   return `REF-${Math.random().toString(36).slice(2, 8).toUpperCase()}-${Date.now().toString(36)}`;
 }
 
-export function createFinanceTransaction(input: Partial<FinanceTransaction>) {
-  const transactions = listFinanceTransactions();
+export function createFinanceMovement(input: Partial<FinanceMovement>) {
+  const movements = listFinanceMovements();
   const now = new Date();
   const date = input.date ?? now.toISOString();
-  const transaction: FinanceTransaction = {
-    id: input.id ?? `txn_${Date.now()}`,
+  const movement: FinanceMovement = {
+    id: input.id ?? `mov_${Date.now()}`,
     date,
-    type: input.type ?? "expense",
-    category: input.category ?? "General",
-    client: input.client,
-    projectService: input.projectService,
+    monthKey: input.monthKey ?? getMonthKey(new Date(date)),
+    type: input.type ?? "GastoVariable",
+    status: (input.status as FinanceMovementStatus) ?? "Pendiente",
     amount: input.amount ?? 0,
-    bonus: input.bonus,
-    discount: input.discount,
-    refund: input.refund,
-    finalAmount: input.finalAmount ??
-      calcFinalAmount({
-        amount: input.amount ?? 0,
-        bonus: input.bonus,
-        discount: input.discount,
-        refund: input.refund,
-      }),
-    responsible: input.responsible ?? "Sin asignar",
+    currency: "PEN",
     accountFrom: input.accountFrom,
     accountTo: input.accountTo,
-    status: (input.status as FinanceTransactionStatus) ?? "pending",
-    paidAt: input.paidAt,
-    referenceId: input.referenceId ?? generateReferenceId(),
-    notes: input.notes,
-    receiptUrl: input.receiptUrl,
-    monthKey: input.monthKey ?? getMonthKey(new Date(date)),
-    collaboratorId: input.collaboratorId,
-    expenseKind: input.expenseKind,
+    responsible: input.responsible ?? "Sin asignar",
+    category: input.category ?? "General",
+    clientId: input.clientId,
+    clientName: input.clientName,
+    concept: input.concept ?? input.clientName ?? "Sin concepto",
+    referenceCode: input.referenceCode,
+    createdAt: input.createdAt ?? now.toISOString(),
+    updatedAt: input.updatedAt ?? now.toISOString(),
   };
 
-  const duplicates = findPossibleDuplicates(transaction, transactions);
-  return { transaction, duplicates };
+  const duplicates = findPossibleDuplicates(movement, movements);
+  return { movement, duplicates };
 }
 
-export function addFinanceTransaction(transaction: FinanceTransaction) {
-  const transactions = listFinanceTransactions();
-  const next = [transaction, ...transactions];
-  saveFinanceTransactions(next);
+export function addFinanceMovement(movement: FinanceMovement) {
+  const movements = listFinanceMovements();
+  const next = [movement, ...movements];
+  saveFinanceMovements(next);
   return next;
 }
 
+export function updateFinanceMovementStatus(id: string, status: FinanceMovementStatus) {
+  const movements = listFinanceMovements();
+  const index = movements.findIndex((movement) => movement.id === id);
+  if (index === -1) return movements;
+  movements[index] = { ...movements[index], status, updatedAt: new Date().toISOString() };
+  saveFinanceMovements(movements);
+  return movements;
+}
+
 export function findPossibleDuplicates(
-  candidate: Pick<FinanceTransaction, "date" | "type" | "finalAmount" | "accountFrom" | "accountTo" | "referenceId">,
-  transactions: FinanceTransaction[] = listFinanceTransactions()
+  candidate: Pick<FinanceMovement, "date" | "type" | "amount" | "accountFrom" | "accountTo" | "referenceCode">,
+  movements: FinanceMovement[] = listFinanceMovements()
 ) {
   const targetDate = new Date(candidate.date).toISOString().slice(0, 10);
-  return transactions.filter((transaction) => {
-    const dateMatch = transaction.date.slice(0, 10) === targetDate;
-    const amountMatch = Math.abs(transaction.finalAmount - candidate.finalAmount) < 0.01;
-    const typeMatch = transaction.type === candidate.type;
-    const accountMatch =
-      transaction.accountFrom === candidate.accountFrom && transaction.accountTo === candidate.accountTo;
-    const referenceMatch = candidate.referenceId
-      ? transaction.referenceId === candidate.referenceId
-      : true;
+  return movements.filter((movement) => {
+    const dateMatch = movement.date.slice(0, 10) === targetDate;
+    const amountMatch = Math.abs(movement.amount - candidate.amount) < 0.01;
+    const typeMatch = movement.type === candidate.type;
+    const accountMatch = movement.accountFrom === candidate.accountFrom && movement.accountTo === candidate.accountTo;
+    const referenceMatch = candidate.referenceCode ? movement.referenceCode === candidate.referenceCode : true;
     return dateMatch && amountMatch && typeMatch && accountMatch && referenceMatch;
   });
 }
@@ -153,6 +148,7 @@ export function closeFinanceMonth(closure: FinanceMonthClosure) {
 export function seedFinanceData() {
   const now = new Date();
   const monthKey = getMonthKey(now);
+
   if (listFinanceAccounts().length === 0) {
     const accounts: FinanceAccount[] = [
       { id: "LUIS", name: "Cuenta Luis", currency: "PEN", initialBalance: 14000, active: true },
@@ -168,11 +164,10 @@ export function seedFinanceData() {
       { id: "ventas", label: "Ventas", type: "income" },
       { id: "membresias", label: "Membresías", type: "income" },
       { id: "servicios", label: "Servicios", type: "income" },
-      { id: "personal", label: "Personal", type: "collaborator_payment" },
+      { id: "personal", label: "Personal", type: "expense" },
       { id: "operativos", label: "Operativos", type: "expense" },
       { id: "marketing", label: "Marketing", type: "expense" },
-      { id: "sunat", label: "SUNAT", type: "tax" },
-      { id: "transferencias", label: "Transferencias", type: "transfer" },
+      { id: "sunat", label: "SUNAT", type: "expense" },
     ];
     saveFinanceCategories(categories);
   }
@@ -182,20 +177,20 @@ export function seedFinanceData() {
       {
         id: "client-1",
         name: "Clínica San Pablo",
-        type: "retainer",
-        agreedAmount: 8200,
-        frequency: "monthly",
-        expectedDate: new Date(now.getFullYear(), now.getMonth(), 5).toISOString(),
-        status: "active",
+        isRecurring: true,
+        recurringAmount: 8200,
+        recurringDay: 5,
+        defaultAccountTo: "LUIS",
+        active: true,
       },
       {
         id: "client-2",
         name: "Innova Dental",
-        type: "project",
-        agreedAmount: 5400,
-        frequency: "milestone",
-        expectedDate: new Date(now.getFullYear(), now.getMonth(), 18).toISOString(),
-        status: "active",
+        isRecurring: false,
+        recurringAmount: 5400,
+        recurringDay: 18,
+        defaultAccountTo: "KIMCE",
+        active: true,
       },
     ];
     saveFinanceClients(clients);
@@ -203,168 +198,146 @@ export function seedFinanceData() {
 
   if (listFinanceCollaborators().length === 0) {
     const collaborators: FinanceCollaborator[] = [
-      {
-        id: "collab-1",
-        name: "Alondra Ruiz",
-        role: "UX Designer",
-        contractType: "freelance",
-        paymentAmount: 2200,
-        frequency: "monthly",
-        paymentDate: new Date(now.getFullYear(), now.getMonth(), 10).toISOString(),
-        status: "active",
-      },
-      {
-        id: "collab-2",
-        name: "Diego Rivera",
-        role: "Project Manager",
-        contractType: "fixed",
-        paymentAmount: 3200,
-        frequency: "monthly",
-        paymentDate: new Date(now.getFullYear(), now.getMonth(), 14).toISOString(),
-        status: "active",
-      },
+      { id: "collab-1", displayName: "Alondra Ruiz", role: "UX Designer", active: true },
+      { id: "collab-2", displayName: "Diego Rivera", role: "Project Manager", active: true },
     ];
     saveFinanceCollaborators(collaborators);
   }
 
-  if (listFinanceExpensePlans().length === 0) {
-    const plans: FinanceExpensePlan[] = [
+  if (listFinanceContracts().length === 0) {
+    const contracts: FinanceContract[] = [
       {
-        id: "expense-1",
-        label: "SUNAT mensual",
-        category: "SUNAT",
-        account: "KIMCE",
-        responsible: "Luis",
-        frequency: "monthly",
-        impactCash: true,
-        status: "pending",
-        amount: 680,
-        expenseKind: "fixed",
+        id: "contract-1",
+        collaboratorId: "collab-1",
+        collaboratorName: "Alondra Ruiz",
+        amount: 2200,
+        frequency: "mensual",
+        payDay: 10,
+        startDate: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(),
+        defaultAccountFrom: "ALONDRA",
+        active: true,
       },
       {
-        id: "expense-2",
-        label: "Software productivo",
-        category: "Operativos",
-        account: "LUIS",
-        responsible: "Luis",
-        frequency: "monthly",
-        impactCash: true,
-        status: "pending",
-        amount: 420,
-        expenseKind: "fixed",
-      },
-      {
-        id: "expense-3",
-        label: "Reunión con cliente",
-        category: "Operativos",
-        account: "ALONDRA",
-        responsible: "Alondra",
-        frequency: "one_off",
-        impactCash: true,
-        status: "paid",
-        amount: 180,
-        expenseKind: "variable",
+        id: "contract-2",
+        collaboratorId: "collab-2",
+        collaboratorName: "Diego Rivera",
+        amount: 3200,
+        frequency: "mensual",
+        payDay: 14,
+        startDate: new Date(now.getFullYear(), now.getMonth(), 1).toISOString(),
+        defaultAccountFrom: "LUIS",
+        active: true,
       },
     ];
-    saveFinanceExpensePlans(plans);
+    saveFinanceContracts(contracts);
   }
 
-  const existing = listFinanceTransactions();
+  const existing = listFinanceMovements();
   if (existing.length > 0) return;
 
-  const demo: FinanceTransaction[] = [
+  const demo: FinanceMovement[] = [
     {
-      id: "txn-1001",
+      id: "mov-1001",
       date: new Date(now.getFullYear(), now.getMonth(), 2).toISOString(),
-      type: "income",
-      category: "Ventas",
-      client: "Clínica San Pablo",
+      monthKey,
+      type: "Ingreso",
+      status: "Cancelado",
       amount: 8200,
-      finalAmount: 8200,
-      responsible: "Luis",
-      accountFrom: undefined,
+      currency: "PEN",
       accountTo: "LUIS",
-      status: "paid",
-      paidAt: new Date(now.getFullYear(), now.getMonth(), 3).toISOString(),
-      referenceId: "REF-VENTA-001",
-      monthKey,
-      notes: "Paquete atención mensual",
+      responsible: "Luis",
+      category: "Ventas",
+      clientId: "client-1",
+      clientName: "Clínica San Pablo",
+      concept: "Clínica San Pablo",
+      referenceCode: "REF-VENTA-001",
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
     },
     {
-      id: "txn-1002",
+      id: "mov-1002",
       date: new Date(now.getFullYear(), now.getMonth(), 4).toISOString(),
-      type: "income",
-      category: "Membresías",
-      client: "Innova Dental",
+      monthKey,
+      type: "Ingreso",
+      status: "Pendiente",
       amount: 3600,
-      finalAmount: 3600,
-      responsible: "Alondra",
+      currency: "PEN",
       accountTo: "KIMCE",
-      status: "pending",
-      referenceId: "REF-MEMB-002",
-      monthKey,
+      responsible: "Alondra",
+      category: "Membresías",
+      clientId: "client-2",
+      clientName: "Innova Dental",
+      concept: "Innova Dental",
+      referenceCode: "REF-MEMB-002",
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
     },
     {
-      id: "txn-1003",
+      id: "mov-1003",
       date: new Date(now.getFullYear(), now.getMonth(), 6).toISOString(),
-      type: "expense",
-      category: "Operativos",
+      monthKey,
+      type: "GastoVariable",
+      status: "Cancelado",
       amount: 1400,
-      finalAmount: 1400,
-      responsible: "Luis",
+      currency: "PEN",
       accountFrom: "LUIS",
-      status: "paid",
-      paidAt: new Date(now.getFullYear(), now.getMonth(), 6).toISOString(),
-      referenceId: "REF-OP-003",
-      monthKey,
-      expenseKind: "variable",
+      responsible: "Luis",
+      category: "Operativos",
+      concept: "Operativos",
+      referenceCode: "REF-OP-003",
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
     },
     {
-      id: "txn-1004",
+      id: "mov-1004",
       date: new Date(now.getFullYear(), now.getMonth(), 9).toISOString(),
-      type: "collaborator_payment",
-      category: "Personal",
+      monthKey,
+      type: "PagoColaborador",
+      status: "Cancelado",
       amount: 2200,
-      finalAmount: 2200,
-      responsible: "Alondra",
+      currency: "PEN",
       accountFrom: "ALONDRA",
-      status: "paid",
-      paidAt: new Date(now.getFullYear(), now.getMonth(), 9).toISOString(),
-      referenceId: "REF-PAGO-004",
-      monthKey,
-      notes: "Pago proyecto UX",
-      collaboratorId: "collab-1",
+      responsible: "Alondra",
+      category: "Personal",
+      concept: "Pago a Alondra Ruiz",
+      referenceCode: "REF-PAGO-004",
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
     },
     {
-      id: "txn-1005",
+      id: "mov-1005",
       date: new Date(now.getFullYear(), now.getMonth(), 12).toISOString(),
-      type: "tax",
-      category: "SUNAT",
-      amount: 680,
-      finalAmount: 680,
-      responsible: "Luis",
-      accountFrom: "KIMCE",
-      status: "pending",
-      referenceId: "REF-TAX-005",
       monthKey,
-      expenseKind: "fixed",
+      type: "GastoFijo",
+      status: "Pendiente",
+      amount: 680,
+      currency: "PEN",
+      accountFrom: "KIMCE",
+      responsible: "Luis",
+      category: "SUNAT",
+      concept: "SUNAT",
+      referenceCode: "REF-TAX-005",
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
     },
     {
-      id: "txn-1006",
+      id: "mov-1006",
       date: new Date(now.getFullYear(), now.getMonth(), 14).toISOString(),
-      type: "transfer",
-      category: "Transferencias",
+      monthKey,
+      type: "Transferencia",
+      status: "Cancelado",
       amount: 2500,
-      finalAmount: 2500,
-      responsible: "Luis",
+      currency: "PEN",
       accountFrom: "LUIS",
       accountTo: "KIMCE",
-      status: "paid",
-      paidAt: new Date(now.getFullYear(), now.getMonth(), 14).toISOString(),
-      referenceId: "REF-TR-006",
-      monthKey,
+      responsible: "Luis",
+      category: "Transferencias",
+      concept: "Transferencia LUIS -> KIMCE",
+      referenceCode: "REF-TR-006",
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
     },
   ];
 
-  saveFinanceTransactions(demo);
+  saveFinanceMovements(demo);
 }

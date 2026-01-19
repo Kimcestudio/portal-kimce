@@ -1,41 +1,47 @@
 import type {
   FinanceAccount,
-  FinanceExpensePlan,
   FinanceFilters,
-  FinanceTransaction,
+  FinanceMovement,
+  FinanceMovementStatus,
 } from "@/lib/finance/types";
-import { formatCurrency, getMonthKey, getWeekIndex } from "@/lib/finance/utils";
+import { getMonthKey } from "@/lib/finance/utils";
 
-const EXPENSE_TYPES = ["expense", "collaborator_payment", "tax"] as const;
+const EXPENSE_TYPES = ["PagoColaborador", "GastoFijo", "GastoVariable"] as const;
 
-export function filterTransactions(transactions: FinanceTransaction[], filters: FinanceFilters) {
-  return transactions.filter((transaction) => {
-    if (transaction.monthKey !== filters.monthKey) return false;
-    if (filters.status !== "all" && transaction.status !== filters.status) return false;
+export function filterMovements(movements: FinanceMovement[], filters: FinanceFilters) {
+  return movements.filter((movement) => {
+    if (movement.monthKey !== filters.monthKey) return false;
+    if (filters.status !== "all" && movement.status !== filters.status) return false;
     if (filters.account !== "all") {
-      const accountMatch =
-        transaction.accountFrom === filters.account || transaction.accountTo === filters.account;
+      const accountMatch = movement.accountFrom === filters.account || movement.accountTo === filters.account;
       if (!accountMatch) return false;
     }
-    if (filters.responsible !== "all" && transaction.responsible !== filters.responsible) return false;
-    if (filters.category !== "all" && transaction.category !== filters.category) return false;
+    if (filters.responsible !== "all" && movement.responsible !== filters.responsible) return false;
+    if (filters.category !== "all" && movement.category !== filters.category) return false;
+    if (filters.type !== "all" && movement.type !== filters.type) return false;
     return true;
   });
 }
 
-export function calculateKPIs(transactions: FinanceTransaction[], monthKey: string) {
-  const monthTransactions = transactions.filter((transaction) => transaction.monthKey === monthKey);
-  const incomePaid = sumBy(monthTransactions, (item) =>
-    item.type === "income" && item.status === "paid" ? item.finalAmount : 0
+export function calcKpis(movements: FinanceMovement[], monthKey: string) {
+  const monthMovements = movements.filter((movement) => movement.monthKey === monthKey);
+  const incomePaid = sumBy(monthMovements, (item) =>
+    item.type === "Ingreso" && item.status === "Cancelado" ? item.amount : 0
   );
-  const incomePending = sumBy(monthTransactions, (item) =>
-    item.type === "income" && item.status === "pending" ? item.finalAmount : 0
+  const incomePending = sumBy(monthMovements, (item) =>
+    item.type === "Ingreso" && item.status === "Pendiente" ? item.amount : 0
   );
-  const expensesPaid = sumBy(monthTransactions, (item) =>
-    EXPENSE_TYPES.includes(item.type) && item.status === "paid" ? item.finalAmount : 0
+  const expensesPaid = sumBy(monthMovements, (item) =>
+    EXPENSE_TYPES.includes(item.type) && item.status === "Cancelado" ? item.amount : 0
   );
-  const expensesPending = sumBy(monthTransactions, (item) =>
-    EXPENSE_TYPES.includes(item.type) && item.status === "pending" ? item.finalAmount : 0
+  const expensesPending = sumBy(monthMovements, (item) =>
+    EXPENSE_TYPES.includes(item.type) && item.status === "Pendiente" ? item.amount : 0
+  );
+  const sunatPaid = sumBy(monthMovements, (item) =>
+    item.category === "SUNAT" && item.status === "Cancelado" ? item.amount : 0
+  );
+  const sunatPending = sumBy(monthMovements, (item) =>
+    item.category === "SUNAT" && item.status === "Pendiente" ? item.amount : 0
   );
   const netIncome = incomePaid - expensesPaid;
   const margin = incomePaid > 0 ? (netIncome / incomePaid) * 100 : 0;
@@ -47,96 +53,53 @@ export function calculateKPIs(transactions: FinanceTransaction[], monthKey: stri
     expensesPending,
     netIncome,
     margin,
+    sunatPaid,
+    sunatPending,
   };
-}
-
-export function calculateProjections(
-  transactions: FinanceTransaction[],
-  expensePlans: FinanceExpensePlan[],
-  monthKey: string,
-  totalCash: number
-) {
-  const base = calculateKPIs(transactions, monthKey);
-  const plannedExpenses = expensePlans
-    .filter((plan) => plan.status === "pending")
-    .reduce((total, plan) => total + plan.amount, 0);
-  const incomeProjection = base.incomePaid + base.incomePending;
-  const expenseProjection = base.expensesPaid + base.expensesPending + plannedExpenses;
-  const projectedProfit = incomeProjection - expenseProjection;
-  const projectedCash = totalCash + base.incomePending - base.expensesPending - plannedExpenses;
-
-  return {
-    incomeProjection,
-    expenseProjection,
-    projectedProfit,
-    projectedCash,
-    plannedExpenses,
-  };
-}
-
-export function groupWeeklyTotals(transactions: FinanceTransaction[], monthKey: string) {
-  const base = transactions.filter((item) => item.monthKey === monthKey && item.status === "paid");
-  const totals: Record<number, { income: number; expenses: number }> = {};
-  base.forEach((item) => {
-    const week = getWeekIndex(new Date(item.date));
-    if (!totals[week]) totals[week] = { income: 0, expenses: 0 };
-    if (item.type === "income") {
-      totals[week].income += item.finalAmount;
-    } else if (EXPENSE_TYPES.includes(item.type)) {
-      totals[week].expenses += item.finalAmount;
-    }
-  });
-
-  return Object.keys(totals)
-    .map((week) => ({
-      name: `Semana ${week}`,
-      ingresos: Math.round(totals[Number(week)].income),
-      gastos: Math.round(totals[Number(week)].expenses),
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export function groupExpenseCategories(transactions: FinanceTransaction[], monthKey: string) {
-  const expenses = transactions.filter(
-    (item) => item.monthKey === monthKey && EXPENSE_TYPES.includes(item.type) && item.status === "paid"
-  );
-  const totals: Record<string, number> = {};
-  expenses.forEach((item) => {
-    totals[item.category] = (totals[item.category] ?? 0) + item.finalAmount;
-  });
-  return Object.entries(totals).map(([name, value]) => ({ name, value: Math.round(value) }));
 }
 
 export function calculateAccountBalances(
-  transactions: FinanceTransaction[],
+  movements: FinanceMovement[],
   accounts: FinanceAccount[],
   monthKey: string
 ) {
-  const paidTransactions = transactions.filter(
-    (item) => item.status === "paid" && item.monthKey <= monthKey
+  const paidMovements = movements.filter(
+    (item) => item.status === "Cancelado" && item.monthKey <= monthKey
   );
   const balances = accounts.map((account) => ({
     ...account,
     balance: account.initialBalance,
   }));
 
-  paidTransactions.forEach((transaction) => {
-    if (transaction.accountFrom) {
-      const account = balances.find((item) => item.id === transaction.accountFrom);
-      if (account) account.balance -= transaction.finalAmount;
+  paidMovements.forEach((movement) => {
+    if (movement.type === "Transferencia") {
+      if (movement.accountFrom) {
+        const account = balances.find((item) => item.id === movement.accountFrom);
+        if (account) account.balance -= movement.amount;
+      }
+      if (movement.accountTo) {
+        const account = balances.find((item) => item.id === movement.accountTo);
+        if (account) account.balance += movement.amount;
+      }
+      return;
     }
-    if (transaction.accountTo) {
-      const account = balances.find((item) => item.id === transaction.accountTo);
-      if (account) account.balance += transaction.finalAmount;
+
+    if (movement.accountFrom) {
+      const account = balances.find((item) => item.id === movement.accountFrom);
+      if (account) account.balance -= movement.amount;
+    }
+    if (movement.accountTo) {
+      const account = balances.find((item) => item.id === movement.accountTo);
+      if (account) account.balance += movement.amount;
     }
   });
 
   return balances;
 }
 
-export function getPendingItems(transactions: FinanceTransaction[], monthKey: string) {
-  const pending = transactions.filter((item) => item.monthKey === monthKey && item.status === "pending");
-  const pendingIncome = pending.filter((item) => item.type === "income");
+export function getPendingItems(movements: FinanceMovement[], monthKey: string) {
+  const pending = movements.filter((item) => item.monthKey === monthKey && item.status === "Pendiente");
+  const pendingIncome = pending.filter((item) => item.type === "Ingreso");
   const pendingExpenses = pending.filter((item) => EXPENSE_TYPES.includes(item.type));
   return {
     pendingIncome: pendingIncome.slice(0, 5),
@@ -144,15 +107,34 @@ export function getPendingItems(transactions: FinanceTransaction[], monthKey: st
   };
 }
 
-export function getMonthlyRunway(transactions: FinanceTransaction[], monthKey: string, totalCash: number) {
+export function calculateProjections(
+  movements: FinanceMovement[],
+  monthKey: string,
+  totalCash: number
+) {
+  const base = calcKpis(movements, monthKey);
+  const incomeProjection = base.incomePaid + base.incomePending;
+  const expenseProjection = base.expensesPaid + base.expensesPending;
+  const projectedProfit = incomeProjection - expenseProjection;
+  const projectedCash = totalCash + base.incomePending - base.expensesPending;
+
+  return {
+    incomeProjection,
+    expenseProjection,
+    projectedProfit,
+    projectedCash,
+  };
+}
+
+export function getMonthlyRunway(movements: FinanceMovement[], monthKey: string, totalCash: number) {
   const twoMonthsAgo = new Date();
   const [year, month] = monthKey.split("-").map(Number);
   twoMonthsAgo.setFullYear(year, month - 3, 1);
   const cutoff = getMonthKey(twoMonthsAgo);
 
-  const expenses = transactions.filter(
+  const expenses = movements.filter(
     (item) =>
-      item.status === "paid" &&
+      item.status === "Cancelado" &&
       EXPENSE_TYPES.includes(item.type) &&
       item.monthKey >= cutoff &&
       item.monthKey <= monthKey
@@ -160,7 +142,7 @@ export function getMonthlyRunway(transactions: FinanceTransaction[], monthKey: s
 
   if (expenses.length === 0) return null;
 
-  const averageWeekly = sumBy(expenses, (item) => item.finalAmount) / 8;
+  const averageWeekly = sumBy(expenses, (item) => item.amount) / 8;
   if (averageWeekly <= 0) return null;
 
   return totalCash / averageWeekly;
@@ -176,15 +158,10 @@ export function getMonthComparison(current: { incomePaid: number; expensesPaid: 
   };
 }
 
-export function buildTransactionRow(transaction: FinanceTransaction) {
-  const statusLabel = transaction.status === "paid" ? "Cancelado" : "Pendiente";
-  return {
-    ...transaction,
-    statusLabel,
-    formattedAmount: formatCurrency(transaction.finalAmount),
-  };
-}
-
 function sumBy<T>(items: T[], selector: (item: T) => number) {
   return items.reduce((total, item) => total + selector(item), 0);
+}
+
+export function getStatusLabel(status: FinanceMovementStatus) {
+  return status === "Cancelado" ? "Cancelado" : "Pendiente";
 }

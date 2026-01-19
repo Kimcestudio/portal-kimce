@@ -1,10 +1,10 @@
 import Badge from "@/components/ui/Badge";
-import type { FinanceTransaction } from "@/lib/finance/types";
+import type { FinanceMovement } from "@/lib/finance/types";
 import { formatCurrency } from "@/lib/finance/utils";
 
 interface FinancePendingListProps {
   title: string;
-  items: FinanceTransaction[];
+  items: FinanceMovement[];
   emptyLabel: string;
 }
 
@@ -22,10 +22,12 @@ export default function FinancePendingList({ title, items, emptyLabel }: Finance
           items.map((item) => (
             <div key={item.id} className="flex items-center justify-between text-sm">
               <div>
-                <p className="font-semibold text-slate-900">{item.category}</p>
-                <p className="text-xs text-slate-500">{item.referenceId}</p>
+                <p className="font-semibold text-slate-900">
+                  {item.type === "Ingreso" ? item.clientName ?? item.concept : item.concept}
+                </p>
+                <p className="text-xs text-slate-500">{item.referenceCode ?? item.category}</p>
               </div>
-              <span className="font-semibold text-slate-900">{formatCurrency(item.finalAmount)}</span>
+              <span className="font-semibold text-slate-900">{formatCurrency(item.amount)}</span>
             </div>
           ))
         )}

@@ -1,66 +1,52 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Bar,
-  BarChart,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import PageHeader from "@/components/PageHeader";
 import FinanceGate from "@/components/admin/FinanceGate";
 import { useAuth } from "@/components/auth/AuthProvider";
 import FinanceTabs from "@/components/finance/FinanceTabs";
 import FinanceHeroCard from "@/components/finance/FinanceHeroCard";
 import FinanceKpiCard from "@/components/finance/FinanceKpiCard";
-import FinanceChartCard from "@/components/finance/FinanceChartCard";
 import FinanceFilterBar from "@/components/finance/FinanceFilterBar";
 import FinanceTable from "@/components/finance/FinanceTable";
 import FinancePendingList from "@/components/finance/FinancePendingList";
-import FinanceModal, { type NewFinanceTransaction } from "@/components/finance/FinanceModal";
+import FinanceModal, { type NewFinanceMovement } from "@/components/finance/FinanceModal";
 import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
 import {
+  calcKpis,
   calculateAccountBalances,
-  calculateKPIs,
   calculateProjections,
-  filterTransactions,
+  filterMovements,
   getMonthComparison,
   getMonthlyRunway,
   getPendingItems,
-  groupExpenseCategories,
-  groupWeeklyTotals,
 } from "@/lib/finance/analytics";
 import {
-  addFinanceTransaction,
+  addFinanceMovement,
   closeFinanceMonth,
-  createFinanceTransaction,
+  createFinanceMovement,
   listFinanceAccounts,
   listFinanceCategories,
   listFinanceClients,
   listFinanceCollaborators,
-  listFinanceExpensePlans,
-  listFinanceTransactions,
+  listFinanceContracts,
+  listFinanceMovements,
   listMonthClosures,
+  saveFinanceClients,
+  saveFinanceContracts,
   seedFinanceData,
+  updateFinanceMovementStatus,
 } from "@/lib/finance/storage";
 import type {
   FinanceClient,
-  FinanceCollaborator,
-  FinanceExpensePlan,
+  FinanceContract,
   FinanceFilters,
-  FinanceMonthClosure,
+  FinanceMovement,
+  FinanceMovementStatus,
   FinanceTabKey,
-  FinanceTransaction,
-  FinanceTransactionType,
+  ValidationReference,
 } from "@/lib/finance/types";
 import { formatCurrency, getMonthKey, getMonthLabel, getPreviousMonthKey } from "@/lib/finance/utils";
-
-const donutColors = ["#6366f1", "#22c55e", "#f59e0b", "#f97316", "#ef4444"];
 
 const tabLabels: Record<FinanceTabKey, string> = {
   dashboard: "Dashboard",
@@ -74,18 +60,22 @@ const tabLabels: Record<FinanceTabKey, string> = {
 export default function FinanceModulePage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<FinanceTabKey>("dashboard");
-  const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
+  const [movements, setMovements] = useState<FinanceMovement[]>([]);
   const [accounts, setAccounts] = useState(() => listFinanceAccounts());
   const [categories, setCategories] = useState(() => listFinanceCategories());
   const [clients, setClients] = useState<FinanceClient[]>([]);
-  const [collaborators, setCollaborators] = useState<FinanceCollaborator[]>([]);
-  const [expensePlans, setExpensePlans] = useState<FinanceExpensePlan[]>([]);
-  const [closures, setClosures] = useState<FinanceMonthClosure[]>([]);
+  const [contracts, setContracts] = useState<FinanceContract[]>([]);
+  const [closures, setClosures] = useState(listMonthClosures());
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
-  const [pendingDuplicate, setPendingDuplicate] = useState<FinanceTransaction | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [pendingDuplicate, setPendingDuplicate] = useState<FinanceMovement | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [validationMode, setValidationMode] = useState(false);
+  const [referenceValues, setReferenceValues] = useState<ValidationReference | null>(null);
+  const [showValidationModal, setShowValidationModal] = useState(false);
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [showContractModal, setShowContractModal] = useState(false);
 
   const [filters, setFilters] = useState<FinanceFilters>({
     monthKey: getMonthKey(new Date()),
@@ -93,33 +83,111 @@ export default function FinanceModulePage() {
     account: "all",
     responsible: "all",
     category: "all",
+    type: "all",
   });
 
   useEffect(() => {
     seedFinanceData();
-    setTransactions(listFinanceTransactions());
+    setMovements(listFinanceMovements());
     setAccounts(listFinanceAccounts());
     setCategories(listFinanceCategories());
     setClients(listFinanceClients());
-    setCollaborators(listFinanceCollaborators());
-    setExpensePlans(listFinanceExpensePlans());
+    setContracts(listFinanceContracts());
     setClosures(listMonthClosures());
     setIsLoading(false);
   }, []);
 
+  useEffect(() => {
+    if (contracts.length === 0) return;
+    const existing = listFinanceMovements();
+    const monthKey = filters.monthKey;
+    const generated = contracts
+      .filter((contract) => contract.active)
+      .filter((contract) => !existing.some((movement) => movement.monthKey === monthKey && movement.referenceCode === contract.id))
+      .map((contract) => {
+        const date = new Date();
+        date.setDate(contract.payDay);
+        const createdAt = new Date().toISOString();
+        return {
+          id: `mov-${contract.id}-${monthKey}`,
+          date: date.toISOString(),
+          monthKey,
+          type: "PagoColaborador" as const,
+          status: "Pendiente" as const,
+          amount: contract.amount,
+          currency: "PEN" as const,
+          accountFrom: contract.defaultAccountFrom,
+          responsible: contract.collaboratorName,
+          category: "Personal",
+          concept: `Pago ${contract.collaboratorName}`,
+          referenceCode: contract.id,
+          createdAt,
+          updatedAt: createdAt,
+        };
+      });
+
+    if (generated.length > 0) {
+      const next = [...generated, ...existing];
+      setMovements(next);
+    }
+  }, [contracts, filters.monthKey]);
+
+  useEffect(() => {
+    if (clients.length === 0) return;
+    const existing = listFinanceMovements();
+    const monthKey = filters.monthKey;
+    const generated = clients
+      .filter((client) => client.active && client.isRecurring)
+      .filter((client) => !existing.some((movement) => movement.monthKey === monthKey && movement.referenceCode === `CLIENT-${client.id}`))
+      .map((client) => {
+        const date = new Date();
+        date.setDate(client.recurringDay);
+        const createdAt = new Date().toISOString();
+        return {
+          id: `mov-client-${client.id}-${monthKey}`,
+          date: date.toISOString(),
+          monthKey,
+          type: "Ingreso" as const,
+          status: "Pendiente" as const,
+          amount: client.recurringAmount,
+          currency: "PEN" as const,
+          accountTo: client.defaultAccountTo,
+          responsible: "Equipo",
+          category: "Ventas",
+          clientId: client.id,
+          clientName: client.name,
+          concept: client.name,
+          referenceCode: `CLIENT-${client.id}`,
+          createdAt,
+          updatedAt: createdAt,
+        };
+      });
+
+    if (generated.length > 0) {
+      const next = [...generated, ...existing];
+      setMovements(next);
+    }
+  }, [clients, filters.monthKey]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = setTimeout(() => setToast(null), 2000);
+    return () => clearTimeout(timeout);
+  }, [toast]);
+
   const responsibles = useMemo(() => {
-    const unique = new Set(transactions.map((item) => item.responsible).filter(Boolean));
+    const unique = new Set(movements.map((item) => item.responsible).filter(Boolean));
     const list = Array.from(unique);
     return list.length > 0 ? list : ["Luis", "Alondra", "Kimce"];
-  }, [transactions]);
+  }, [movements]);
 
-  const filteredTransactions = useMemo(() => filterTransactions(transactions, filters), [transactions, filters]);
+  const filteredMovements = useMemo(() => filterMovements(movements, filters), [movements, filters]);
 
-  const kpis = useMemo(() => calculateKPIs(transactions, filters.monthKey), [transactions, filters.monthKey]);
+  const kpis = useMemo(() => calcKpis(movements, filters.monthKey), [movements, filters.monthKey]);
 
   const accountBalances = useMemo(
-    () => calculateAccountBalances(transactions, accounts, filters.monthKey),
-    [transactions, accounts, filters.monthKey]
+    () => calculateAccountBalances(movements, accounts, filters.monthKey),
+    [movements, accounts, filters.monthKey]
   );
 
   const totalCash = useMemo(
@@ -128,28 +196,18 @@ export default function FinanceModulePage() {
   );
 
   const projections = useMemo(
-    () => calculateProjections(transactions, expensePlans, filters.monthKey, totalCash),
-    [transactions, expensePlans, filters.monthKey, totalCash]
-  );
-
-  const weeklyData = useMemo(
-    () => groupWeeklyTotals(transactions, filters.monthKey),
-    [transactions, filters.monthKey]
-  );
-
-  const expenseData = useMemo(
-    () => groupExpenseCategories(transactions, filters.monthKey),
-    [transactions, filters.monthKey]
+    () => calculateProjections(movements, filters.monthKey, totalCash),
+    [movements, filters.monthKey, totalCash]
   );
 
   const runwayWeeks = useMemo(
-    () => getMonthlyRunway(transactions, filters.monthKey, totalCash),
-    [transactions, filters.monthKey, totalCash]
+    () => getMonthlyRunway(movements, filters.monthKey, totalCash),
+    [movements, filters.monthKey, totalCash]
   );
 
   const pendingItems = useMemo(
-    () => getPendingItems(transactions, filters.monthKey),
-    [transactions, filters.monthKey]
+    () => getPendingItems(movements, filters.monthKey),
+    [movements, filters.monthKey]
   );
 
   const currentClosure = useMemo(
@@ -167,13 +225,6 @@ export default function FinanceModulePage() {
     return getMonthComparison(currentClosure.snapshot, previousClosure?.snapshot);
   }, [currentClosure, previousClosure]);
 
-  const paginatedTransactions = useMemo(() => {
-    const start = (currentPage - 1) * 6;
-    return filteredTransactions.slice(start, start + 6);
-  }, [filteredTransactions, currentPage]);
-
-  const totalPages = Math.ceil(filteredTransactions.length / 6) || 1;
-
   const isLocked = currentClosure?.locked ?? false;
 
   const openModal = () => {
@@ -183,65 +234,64 @@ export default function FinanceModulePage() {
     setIsModalOpen(true);
   };
 
-  const handleCreateTransaction = (values: NewFinanceTransaction) => {
+  const handleCreateMovement = (values: NewFinanceMovement) => {
     if (isLocked) return;
-    const paidAt = values.status === "paid" ? new Date(values.date).toISOString() : undefined;
-    const { transaction, duplicates } = createFinanceTransaction({
+    const clientName = values.type === "Ingreso" ? values.clientName : undefined;
+    const { movement, duplicates } = createFinanceMovement({
       date: new Date(values.date).toISOString(),
-      type: values.type as FinanceTransactionType,
+      type: values.type,
       amount: values.amount,
       accountFrom: values.accountFrom || undefined,
       accountTo: values.accountTo || undefined,
       responsible: values.responsible || "Sin asignar",
       category: values.category,
       status: values.status,
-      notes: values.description,
-      referenceId: values.referenceId || undefined,
-      paidAt,
-      client: values.client || undefined,
-      collaboratorId: values.collaboratorId || undefined,
-      expenseKind: values.expenseKind,
+      concept: values.type === "Ingreso" ? clientName ?? "Ingreso" : values.description ?? values.category,
+      referenceCode: values.referenceCode || undefined,
+      clientId: values.clientId || undefined,
+      clientName,
     });
 
-    if (duplicates.length > 0 && (!pendingDuplicate || pendingDuplicate.referenceId !== transaction.referenceId)) {
+    if (duplicates.length > 0 && (!pendingDuplicate || pendingDuplicate.referenceCode !== movement.referenceCode)) {
       setDuplicateWarning(
         "Se detectó un posible duplicado con la misma fecha, tipo y monto. Confirma el guardado si deseas continuar."
       );
-      setPendingDuplicate(transaction);
+      setPendingDuplicate(movement);
       return;
     }
 
-    addFinanceTransaction(transaction);
-    setTransactions(listFinanceTransactions());
-    setAccounts(listFinanceAccounts());
-    setCategories(listFinanceCategories());
+    addFinanceMovement(movement);
+    setMovements(listFinanceMovements());
     setIsModalOpen(false);
     setDuplicateWarning(null);
     setPendingDuplicate(null);
   };
 
-  const handleKpiClick = (tab: FinanceTabKey, status?: FinanceFilters["status"]) => {
-    setActiveTab(tab);
-    setFilters((prev) => ({ ...prev, status: status ?? "all" }));
+  const handleStatusChange = (id: string, status: FinanceMovementStatus) => {
+    if (isLocked) return;
+    updateFinanceMovementStatus(id, status);
+    setMovements(listFinanceMovements());
+    setToast("Estado actualizado");
   };
 
-  const renderEmptyState = () => (
-    <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white p-8 text-center text-sm text-slate-500">
-      <p className="font-semibold text-slate-700">Aún no hay movimientos este mes</p>
-      <p className="mt-2">Registra el primer movimiento para activar el dashboard.</p>
-      <button
-        type="button"
-        onClick={openModal}
-        className="mt-4 rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)]"
-        disabled={isLocked}
-      >
-        Nuevo movimiento
-      </button>
-    </div>
-  );
+  const handleKpiClick = (tab: FinanceTabKey, status?: FinanceMovementStatus, type?: FinanceFilters["type"]) => {
+    setActiveTab(tab);
+    setFilters((prev) => ({
+      ...prev,
+      status: status ?? "all",
+      type: type ?? prev.type,
+    }));
+  };
 
-  const fixedExpenses = expensePlans.filter((plan) => plan.expenseKind === "fixed");
-  const variableExpenses = expensePlans.filter((plan) => plan.expenseKind === "variable");
+  const validationDelta = useMemo(() => {
+    if (!validationMode || !referenceValues) return null;
+    const deltaIngresos = kpis.incomePaid - referenceValues.ingresosRef;
+    const deltaPagos = kpis.expensesPaid - referenceValues.pagosRef;
+    const deltaSunat = kpis.sunatPaid - referenceValues.sunatRef;
+    const deltaGastos = kpis.expensesPaid - referenceValues.gastosRef;
+    const hasDiff = [deltaIngresos, deltaPagos, deltaSunat, deltaGastos].some((delta) => delta !== 0);
+    return { hasDiff, deltaIngresos, deltaPagos, deltaSunat, deltaGastos };
+  }, [validationMode, referenceValues, kpis]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -258,14 +308,23 @@ export default function FinanceModulePage() {
                 {getMonthLabel(filters.monthKey)} · Control mensual de ingresos, gastos y caja.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={openModal}
-              className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)] disabled:opacity-40"
-              disabled={isLocked}
-            >
-              Nuevo movimiento
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                onClick={() => setShowValidationModal(true)}
+              >
+                Modo validación
+              </button>
+              <button
+                type="button"
+                onClick={openModal}
+                className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)] disabled:opacity-40"
+                disabled={isLocked}
+              >
+                Nuevo movimiento
+              </button>
+            </div>
           </div>
 
           {isLocked ? (
@@ -274,12 +333,37 @@ export default function FinanceModulePage() {
             </div>
           ) : null}
 
+          {validationDelta?.hasDiff ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+              Diferencia detectada. Delta ingresos: {formatCurrency(validationDelta.deltaIngresos)} · Delta pagos:{" "}
+              {formatCurrency(validationDelta.deltaPagos)} · Delta SUNAT: {formatCurrency(validationDelta.deltaSunat)} ·
+              Delta gastos: {formatCurrency(validationDelta.deltaGastos)}
+            </div>
+          ) : null}
+
+          {validationMode && referenceValues ? (
+            <div className="rounded-2xl border border-slate-200/60 bg-white p-4 text-xs text-slate-600">
+              <p className="font-semibold text-slate-700">Validación vs Excel</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <span>Ingresos: {formatCurrency(kpis.incomePaid)} / {formatCurrency(referenceValues.ingresosRef)}</span>
+                <span>Pagos: {formatCurrency(kpis.expensesPaid)} / {formatCurrency(referenceValues.pagosRef)}</span>
+                <span>SUNAT: {formatCurrency(kpis.sunatPaid)} / {formatCurrency(referenceValues.sunatRef)}</span>
+                <span>Gastos: {formatCurrency(kpis.expensesPaid)} / {formatCurrency(referenceValues.gastosRef)}</span>
+              </div>
+            </div>
+          ) : null}
+
+          {toast ? (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-700">
+              {toast}
+            </div>
+          ) : null}
+
           <FinanceTabs active={activeTab} onChange={(key) => setActiveTab(key)} />
           <FinanceFilterBar
             filters={filters}
             onChange={(next) => {
               setFilters(next);
-              setCurrentPage(1);
             }}
             accounts={accounts}
             categories={categories}
@@ -288,8 +372,6 @@ export default function FinanceModulePage() {
 
           {isLoading ? (
             <FinanceSkeleton />
-          ) : filteredTransactions.length === 0 ? (
-            renderEmptyState()
           ) : (
             <div className="space-y-6">
               {activeTab === "dashboard" ? (
@@ -307,7 +389,7 @@ export default function FinanceModulePage() {
                       value={kpis.incomePaid}
                       tone="blue"
                       subtitle="Solo cancelados"
-                      onClick={() => handleKpiClick("movimientos", "paid")}
+                      onClick={() => handleKpiClick("movimientos", "Cancelado", "Ingreso")}
                     />
                     <FinanceKpiCard
                       title="Caja total"
@@ -321,14 +403,14 @@ export default function FinanceModulePage() {
                       value={kpis.incomePending}
                       tone="amber"
                       subtitle="No impacta caja"
-                      onClick={() => handleKpiClick("movimientos", "pending")}
+                      onClick={() => handleKpiClick("movimientos", "Pendiente", "Ingreso")}
                     />
                     <FinanceKpiCard
                       title="Gastos pagados"
                       value={kpis.expensesPaid}
                       tone="rose"
-                      subtitle="Incluye SUNAT y pagos"
-                      onClick={() => handleKpiClick("gastos", "paid")}
+                      subtitle="Incluye SUNAT"
+                      onClick={() => handleKpiClick("gastos", "Cancelado")}
                     />
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -336,18 +418,14 @@ export default function FinanceModulePage() {
                       title="Proyección ingresos"
                       value={projections.incomeProjection}
                       tone="blue"
-                      subtitle={`Real + pendiente ${formatCurrency(kpis.incomePaid)} / ${formatCurrency(
-                        kpis.incomePending
-                      )}`}
-                      onClick={() => handleKpiClick("movimientos", "pending")}
+                      subtitle="Confirmados + pendientes"
+                      onClick={() => handleKpiClick("movimientos", "Pendiente", "Ingreso")}
                     />
                     <FinanceKpiCard
                       title="Proyección gastos"
                       value={projections.expenseProjection}
                       tone="rose"
-                      subtitle={`Real + previsto ${formatCurrency(kpis.expensesPaid)} / ${formatCurrency(
-                        projections.plannedExpenses
-                      )}`}
+                      subtitle="Pagados + pendientes"
                       onClick={() => handleKpiClick("gastos")}
                     />
                     <FinanceKpiCard
@@ -355,7 +433,6 @@ export default function FinanceModulePage() {
                       value={projections.projectedProfit}
                       tone="green"
                       subtitle="Proyección del mes"
-                      onClick={() => handleKpiClick("dashboard")}
                     />
                     <FinanceKpiCard
                       title="Cash flow proyectado"
@@ -365,48 +442,7 @@ export default function FinanceModulePage() {
                       onClick={() => handleKpiClick("cuentas")}
                     />
                   </div>
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <FinanceChartCard title="Ingresos vs Gastos" description="Comparativo semanal del mes">
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={weeklyData} barSize={18}>
-                            <XAxis dataKey="name" tickLine={false} axisLine={false} />
-                            <YAxis tickLine={false} axisLine={false} />
-                            <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                            <Bar dataKey="ingresos" fill="#6366f1" radius={[8, 8, 0, 0]} />
-                            <Bar dataKey="gastos" fill="#f97316" radius={[8, 8, 0, 0]} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </FinanceChartCard>
-                    <FinanceChartCard title="Gastos por categoría" description="Distribución de pagos">
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <PieChart>
-                            <Pie data={expenseData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90}>
-                              {expenseData.map((entry, index) => (
-                                <Cell key={`${entry.name}-${index}`} fill={donutColors[index % donutColors.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </FinanceChartCard>
-                  </div>
                   <div className="grid gap-4 lg:grid-cols-3">
-                    <FinanceChartCard title="Caja por cuenta" description="Saldo actual acumulado">
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={accountBalances} layout="vertical" barSize={14}>
-                            <XAxis type="number" hide />
-                            <YAxis type="category" dataKey="id" width={80} />
-                            <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                            <Bar dataKey="balance" fill="#22c55e" radius={[6, 6, 6, 6]} />
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </FinanceChartCard>
                     <FinancePendingList
                       title="Pendientes por cobrar"
                       items={pendingItems.pendingIncome}
@@ -417,15 +453,6 @@ export default function FinanceModulePage() {
                       items={pendingItems.pendingExpenses}
                       emptyLabel="No hay gastos pendientes por pagar."
                     />
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                      <h3 className="text-sm font-semibold text-slate-900">Utilidad neta</h3>
-                      <p className="text-xs text-slate-500">Ingresos cobrados - gastos pagados</p>
-                      <p className="mt-3 text-2xl font-semibold text-slate-900">
-                        {formatCurrency(kpis.netIncome)}
-                      </p>
-                    </div>
                     <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                       <h3 className="text-sm font-semibold text-slate-900">Runway estimado</h3>
                       <p className="text-xs text-slate-500">Semanas de operación con caja actual</p>
@@ -439,180 +466,74 @@ export default function FinanceModulePage() {
 
               {activeTab === "movimientos" ? (
                 <div className="space-y-4">
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-sm font-semibold text-slate-900">Clientes activos</h3>
-                          <p className="text-xs text-slate-500">Ingresos vinculados a clientes.</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
-                        >
-                          Nuevo cliente
-                        </button>
-                      </div>
-                      <div className="mt-4 space-y-3 text-sm">
-                        {clients.map((client) => (
-                          <div key={client.id} className="flex items-center justify-between">
-                            <div>
-                              <p className="font-semibold text-slate-900">{client.name}</p>
-                              <p className="text-xs text-slate-500">{client.type} · {client.frequency}</p>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-600">
-                              {formatCurrency(client.agreedAmount)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                  <div className="flex items-center justify-between rounded-2xl border border-slate-200/60 bg-white p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900">Clientes activos</h3>
+                      <p className="text-xs text-slate-500">Ingresos vinculados a clientes.</p>
                     </div>
-                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                      <h3 className="text-sm font-semibold text-slate-900">Historial por cliente</h3>
-                      <p className="text-xs text-slate-500">Últimos ingresos registrados.</p>
-                      <div className="mt-4 space-y-3 text-sm">
-                        {transactions
-                          .filter((item) => item.type === "income")
-                          .slice(0, 4)
-                          .map((item) => (
-                            <div key={item.id} className="flex items-center justify-between">
-                              <div>
-                                <p className="font-semibold text-slate-900">{item.client ?? "Sin cliente"}</p>
-                                <p className="text-xs text-slate-500">{item.category}</p>
-                              </div>
-                              <span className="text-xs font-semibold text-slate-600">
-                                {formatCurrency(item.finalAmount)}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                      onClick={() => setShowClientModal(true)}
+                      disabled={isLocked}
+                    >
+                      Nuevo cliente
+                    </button>
                   </div>
-                  <FinanceTable transactions={paginatedTransactions} />
-                  <PaginationControls
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    onChange={setCurrentPage}
+                  <FinanceTable
+                    movements={filteredMovements}
+                    onStatusChange={handleStatusChange}
+                    disabled={isLocked}
                   />
                 </div>
               ) : null}
 
               {activeTab === "pagos" ? (
                 <div className="space-y-4">
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-sm font-semibold text-slate-900">Colaboradores activos</h3>
-                          <p className="text-xs text-slate-500">Pagos programados del mes.</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
-                        >
-                          Nuevo colaborador
-                        </button>
-                      </div>
-                      <div className="mt-4 space-y-3 text-sm">
-                        {collaborators.map((collaborator) => (
-                          <div key={collaborator.id} className="flex items-center justify-between">
-                            <div>
-                              <p className="font-semibold text-slate-900">{collaborator.name}</p>
-                              <p className="text-xs text-slate-500">{collaborator.role}</p>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-600">
-                              {formatCurrency(collaborator.paymentAmount)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                  <div className="flex items-center justify-between rounded-2xl border border-slate-200/60 bg-white p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900">Contratos activos</h3>
+                      <p className="text-xs text-slate-500">Pagos programados del mes.</p>
                     </div>
-                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                      <h3 className="text-sm font-semibold text-slate-900">Pagos pendientes del mes</h3>
-                      <p className="text-xs text-slate-500">Generados desde contratos activos.</p>
-                      <div className="mt-4 space-y-3 text-sm">
-                        {collaborators.map((collaborator) => (
-                          <div key={collaborator.id} className="flex items-center justify-between">
-                            <div>
-                              <p className="font-semibold text-slate-900">{collaborator.name}</p>
-                              <p className="text-xs text-slate-500">Pago {collaborator.frequency}</p>
-                            </div>
-                            <span className="text-xs font-semibold text-amber-600">
-                              {formatCurrency(collaborator.paymentAmount)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                      onClick={() => setShowContractModal(true)}
+                      disabled={isLocked}
+                    >
+                      Nuevo colaborador
+                    </button>
                   </div>
                   <FinanceTable
-                    transactions={filteredTransactions.filter((item) => item.type === "collaborator_payment")}
+                    movements={filteredMovements.filter((movement) => movement.type === "PagoColaborador")}
+                    onStatusChange={handleStatusChange}
+                    disabled={isLocked}
                   />
                 </div>
               ) : null}
 
               {activeTab === "gastos" ? (
                 <div className="space-y-4">
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-sm font-semibold text-slate-900">Gastos fijos</h3>
-                          <p className="text-xs text-slate-500">Obligaciones mensuales previstas.</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
-                        >
-                          Nuevo gasto fijo
-                        </button>
-                      </div>
-                      <div className="mt-4 space-y-3 text-sm">
-                        {fixedExpenses.map((plan) => (
-                          <div key={plan.id} className="flex items-center justify-between">
-                            <div>
-                              <p className="font-semibold text-slate-900">{plan.label}</p>
-                              <p className="text-xs text-slate-500">{plan.category}</p>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-600">
-                              {formatCurrency(plan.amount)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
+                  <div className="flex items-center justify-between rounded-2xl border border-slate-200/60 bg-white p-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-900">Gastos fijos y variables</h3>
+                      <p className="text-xs text-slate-500">Separados por tipo de gasto.</p>
                     </div>
-                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-sm font-semibold text-slate-900">Gastos variables</h3>
-                          <p className="text-xs text-slate-500">Gastos no recurrentes.</p>
-                        </div>
-                        <button
-                          type="button"
-                          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
-                        >
-                          Nuevo gasto variable
-                        </button>
-                      </div>
-                      <div className="mt-4 space-y-3 text-sm">
-                        {variableExpenses.map((plan) => (
-                          <div key={plan.id} className="flex items-center justify-between">
-                            <div>
-                              <p className="font-semibold text-slate-900">{plan.label}</p>
-                              <p className="text-xs text-slate-500">{plan.category}</p>
-                            </div>
-                            <span className="text-xs font-semibold text-slate-600">
-                              {formatCurrency(plan.amount)}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                    <button
+                      type="button"
+                      className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                      onClick={openModal}
+                      disabled={isLocked}
+                    >
+                      Nuevo gasto
+                    </button>
                   </div>
                   <FinanceTable
-                    transactions={filteredTransactions.filter((item) =>
-                      ["expense", "tax"].includes(item.type)
+                    movements={filteredMovements.filter((movement) =>
+                      ["GastoFijo", "GastoVariable"].includes(movement.type)
                     )}
+                    onStatusChange={handleStatusChange}
+                    disabled={isLocked}
                   />
                 </div>
               ) : null}
@@ -664,29 +585,23 @@ export default function FinanceModulePage() {
                   <div className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                     <h3 className="text-sm font-semibold text-slate-900">Checklist de cierre</h3>
                     <p className="text-xs text-slate-500">Acciones sugeridas antes de bloquear el mes.</p>
-                    <ul className="mt-4 space-y-3 text-sm text-slate-600">
-                      <li>✔ Revisar pagos pendientes y conciliaciones.</li>
-                      <li>✔ Validar transferencias entre cuentas.</li>
-                      <li>✔ Documentar notas del cierre y responsables.</li>
-                    </ul>
                     <button
                       type="button"
                       className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
                       disabled={isLocked}
                       onClick={() => {
                         if (!user) return;
-                        const snapshot = {
-                          monthKey: filters.monthKey,
-                          incomePaid: kpis.incomePaid,
-                          expensesPaid: kpis.expensesPaid,
-                          netIncome: kpis.netIncome,
-                        };
                         closeFinanceMonth({
                           monthKey: filters.monthKey,
                           closedBy: user.uid,
                           closedAt: new Date().toISOString(),
                           locked: true,
-                          snapshot,
+                          snapshot: {
+                            monthKey: filters.monthKey,
+                            incomePaid: kpis.incomePaid,
+                            expensesPaid: kpis.expensesPaid,
+                            netIncome: kpis.netIncome,
+                          },
                         });
                         setClosures(listMonthClosures());
                       }}
@@ -704,50 +619,50 @@ export default function FinanceModulePage() {
       <FinanceModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        onSubmit={handleCreateTransaction}
+        onSubmit={handleCreateMovement}
         accounts={accounts}
         categories={categories}
         responsibles={responsibles}
         clients={clients}
-        collaborators={collaborators}
+        collaborators={listFinanceCollaborators()}
         duplicateWarning={duplicateWarning}
+        disabled={isLocked}
       />
-    </div>
-  );
-}
 
-function PaginationControls({
-  currentPage,
-  totalPages,
-  onChange,
-}: {
-  currentPage: number;
-  totalPages: number;
-  onChange: (page: number) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between text-xs text-slate-500">
-      <span>
-        Página {currentPage} de {totalPages}
-      </span>
-      <div className="flex gap-2">
-        <button
-          type="button"
-          className="rounded-full border border-slate-200 px-3 py-1 font-semibold text-slate-600 disabled:opacity-40"
-          onClick={() => onChange(Math.max(1, currentPage - 1))}
-          disabled={currentPage === 1}
-        >
-          Anterior
-        </button>
-        <button
-          type="button"
-          className="rounded-full border border-slate-200 px-3 py-1 font-semibold text-slate-600 disabled:opacity-40"
-          onClick={() => onChange(Math.min(totalPages, currentPage + 1))}
-          disabled={currentPage === totalPages}
-        >
-          Siguiente
-        </button>
-      </div>
+      {showValidationModal ? (
+        <ValidationModal
+          onClose={() => setShowValidationModal(false)}
+          onSave={(values) => {
+            setReferenceValues(values);
+            setValidationMode(true);
+            setShowValidationModal(false);
+          }}
+        />
+      ) : null}
+
+      {showClientModal ? (
+        <ClientModal
+          onClose={() => setShowClientModal(false)}
+          onSave={(client) => {
+            const next = [client, ...clients];
+            saveFinanceClients(next);
+            setClients(next);
+            setShowClientModal(false);
+          }}
+        />
+      ) : null}
+
+      {showContractModal ? (
+        <ContractModal
+          onClose={() => setShowContractModal(false)}
+          onSave={(contract) => {
+            const next = [contract, ...contracts];
+            saveFinanceContracts(next);
+            setContracts(next);
+            setShowContractModal(false);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -757,6 +672,165 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
       <span>{label}</span>
       <span className="font-semibold text-slate-900">{value}</span>
+    </div>
+  );
+}
+
+function ValidationModal({ onClose, onSave }: { onClose: () => void; onSave: (values: ValidationReference) => void }) {
+  const [values, setValues] = useState({ ingresosRef: 0, pagosRef: 0, sunatRef: 0, gastosRef: 0 });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-[0_30px_60px_rgba(15,23,42,0.35)]">
+        <h3 className="text-lg font-semibold text-slate-900">Modo validación</h3>
+        <p className="text-xs text-slate-500">Ingresa valores de referencia del Excel.</p>
+        <div className="mt-4 grid gap-3">
+          {(
+            [
+              { key: "ingresosRef", label: "Ingresos" },
+              { key: "pagosRef", label: "Pagos" },
+              { key: "sunatRef", label: "SUNAT" },
+              { key: "gastosRef", label: "Gastos" },
+            ] as const
+          ).map((item) => (
+            <label key={item.key} className="text-xs font-semibold text-slate-500">
+              {item.label}
+              <input
+                className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                type="number"
+                value={values[item.key]}
+                onChange={(event) => setValues({ ...values, [item.key]: Number(event.target.value) })}
+              />
+            </label>
+          ))}
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
+            onClick={onClose}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white"
+            onClick={() => onSave(values)}
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client: FinanceClient) => void }) {
+  const [form, setForm] = useState({
+    name: "",
+    isRecurring: true,
+    recurringAmount: 0,
+    recurringDay: 1,
+    defaultAccountTo: "LUIS",
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-[0_30px_60px_rgba(15,23,42,0.35)]">
+        <h3 className="text-lg font-semibold text-slate-900">Nuevo cliente</h3>
+        <div className="mt-4 grid gap-3">
+          <label className="text-xs font-semibold text-slate-500">
+            Nombre
+            <input
+              className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+              value={form.name}
+              onChange={(event) => setForm({ ...form, name: event.target.value })}
+            />
+          </label>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
+            onClick={onClose}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white"
+            onClick={() =>
+              onSave({
+                id: `client-${Date.now()}`,
+                name: form.name,
+                isRecurring: form.isRecurring,
+                recurringAmount: form.recurringAmount,
+                recurringDay: form.recurringDay,
+                defaultAccountTo: form.defaultAccountTo as FinanceClient["defaultAccountTo"],
+                active: true,
+              })
+            }
+          >
+            Guardar cliente
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContractModal({ onClose, onSave }: { onClose: () => void; onSave: (contract: FinanceContract) => void }) {
+  const [form, setForm] = useState({
+    collaboratorName: "",
+    amount: 0,
+    frequency: "mensual",
+    payDay: 1,
+    defaultAccountFrom: "LUIS",
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+      <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-[0_30px_60px_rgba(15,23,42,0.35)]">
+        <h3 className="text-lg font-semibold text-slate-900">Nuevo contrato</h3>
+        <div className="mt-4 grid gap-3">
+          <label className="text-xs font-semibold text-slate-500">
+            Colaborador
+            <input
+              className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+              value={form.collaboratorName}
+              onChange={(event) => setForm({ ...form, collaboratorName: event.target.value })}
+            />
+          </label>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
+            onClick={onClose}
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white"
+            onClick={() =>
+              onSave({
+                id: `contract-${Date.now()}`,
+                collaboratorId: `collab-${Date.now()}`,
+                collaboratorName: form.collaboratorName,
+                amount: form.amount,
+                frequency: form.frequency as FinanceContract["frequency"],
+                payDay: form.payDay,
+                startDate: new Date().toISOString(),
+                defaultAccountFrom: form.defaultAccountFrom as FinanceContract["defaultAccountFrom"],
+                active: true,
+              })
+            }
+          >
+            Guardar contrato
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

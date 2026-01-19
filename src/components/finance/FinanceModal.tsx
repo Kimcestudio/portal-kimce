@@ -6,51 +6,52 @@ import type {
   FinanceCategory,
   FinanceClient,
   FinanceCollaborator,
-  FinanceTransactionType,
+  FinanceMovementType,
 } from "@/lib/finance/types";
 
-export type NewFinanceTransaction = {
-  type: FinanceTransactionType;
+export type NewFinanceMovement = {
+  type: FinanceMovementType;
   amount: number;
   accountFrom?: string;
   accountTo?: string;
   responsible: string;
   category: string;
   description?: string;
-  status: "pending" | "paid";
+  status: "Pendiente" | "Cancelado";
   date: string;
-  referenceId?: string;
-  client?: string;
+  referenceCode?: string;
+  clientId?: string;
+  clientName?: string;
   collaboratorId?: string;
-  expenseKind?: "fixed" | "variable";
 };
 
 interface FinanceModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (values: NewFinanceTransaction) => void;
+  onSubmit: (values: NewFinanceMovement) => void;
   accounts: FinanceAccount[];
   categories: FinanceCategory[];
   responsibles: string[];
   clients: FinanceClient[];
   collaborators: FinanceCollaborator[];
   duplicateWarning?: string | null;
+  disabled?: boolean;
 }
 
 const defaultValue = () => ({
-  type: "expense" as FinanceTransactionType,
+  type: "GastoVariable" as FinanceMovementType,
   amount: 0,
   accountFrom: "",
   accountTo: "",
   responsible: "",
   category: "General",
   description: "",
-  status: "pending" as const,
+  status: "Pendiente" as const,
   date: new Date().toISOString().slice(0, 10),
-  referenceId: "",
-  client: "",
+  referenceCode: "",
+  clientId: "",
+  clientName: "",
   collaboratorId: "",
-  expenseKind: "variable" as const,
 });
 
 export default function FinanceModal({
@@ -63,17 +64,16 @@ export default function FinanceModal({
   clients,
   collaborators,
   duplicateWarning,
+  disabled,
 }: FinanceModalProps) {
   const [form, setForm] = useState(defaultValue());
 
   const categoryOptions = useMemo(() => {
-    if (form.type === "income") {
+    if (form.type === "Ingreso") {
       return categories.filter((item) => item.type === "income" || item.type === "all");
     }
-    if (form.type === "expense" || form.type === "collaborator_payment" || form.type === "tax") {
-      return categories.filter((item) =>
-        ["expense", "collaborator_payment", "tax", "all"].includes(item.type)
-      );
+    if (form.type === "PagoColaborador" || form.type === "GastoFijo" || form.type === "GastoVariable") {
+      return categories.filter((item) => item.type === "expense" || item.type === "all");
     }
     return categories;
   }, [categories, form.type]);
@@ -95,6 +95,7 @@ export default function FinanceModal({
               setForm(defaultValue());
               onClose();
             }}
+            disabled={disabled}
           >
             Cerrar
           </button>
@@ -107,17 +108,18 @@ export default function FinanceModal({
               onChange={(event) =>
                 setForm({
                   ...form,
-                  type: event.target.value as FinanceTransactionType,
+                  type: event.target.value as FinanceMovementType,
                   category: "General",
                 })
               }
+              disabled={disabled}
             >
-              <option value="income">Ingreso</option>
-              <option value="expense">Gasto</option>
-              <option value="collaborator_payment">Pago colaborador</option>
-              <option value="transfer">Transferencia</option>
-              <option value="tax">Impuesto</option>
-              <option value="refund">Reembolso</option>
+              <option value="Ingreso">Ingreso</option>
+              <option value="PagoColaborador">Pago colaborador</option>
+              <option value="GastoFijo">Gasto fijo</option>
+              <option value="GastoVariable">Gasto variable</option>
+              <option value="Transferencia">Transferencia</option>
+              <option value="Fondo">Fondo</option>
             </select>
           </Field>
           <Field label="Monto">
@@ -126,51 +128,47 @@ export default function FinanceModal({
               type="number"
               value={form.amount}
               onChange={(event) => setForm({ ...form, amount: Number(event.target.value) })}
+              disabled={disabled}
             />
           </Field>
-          {form.type === "income" ? (
+          {form.type === "Ingreso" ? (
             <Field label="Cliente">
               <select
                 className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
-                value={form.client}
-                onChange={(event) => setForm({ ...form, client: event.target.value })}
+                value={form.clientId}
+                onChange={(event) => {
+                  const client = clients.find((item) => item.id === event.target.value);
+                  setForm({
+                    ...form,
+                    clientId: event.target.value,
+                    clientName: client?.name ?? "",
+                  });
+                }}
+                disabled={disabled}
               >
                 <option value="">-</option>
                 {clients.map((client) => (
-                  <option key={client.id} value={client.name}>
+                  <option key={client.id} value={client.id}>
                     {client.name}
                   </option>
                 ))}
               </select>
             </Field>
           ) : null}
-          {form.type === "collaborator_payment" ? (
+          {form.type === "PagoColaborador" ? (
             <Field label="Colaborador">
               <select
                 className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
                 value={form.collaboratorId}
                 onChange={(event) => setForm({ ...form, collaboratorId: event.target.value })}
+                disabled={disabled}
               >
                 <option value="">-</option>
                 {collaborators.map((collaborator) => (
                   <option key={collaborator.id} value={collaborator.id}>
-                    {collaborator.name}
+                    {collaborator.displayName}
                   </option>
                 ))}
-              </select>
-            </Field>
-          ) : null}
-          {form.type === "expense" ? (
-            <Field label="Tipo de gasto">
-              <select
-                className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
-                value={form.expenseKind}
-                onChange={(event) =>
-                  setForm({ ...form, expenseKind: event.target.value as "fixed" | "variable" })
-                }
-              >
-                <option value="fixed">Fijo</option>
-                <option value="variable">Variable</option>
               </select>
             </Field>
           ) : null}
@@ -179,6 +177,7 @@ export default function FinanceModal({
               className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
               value={form.accountFrom}
               onChange={(event) => setForm({ ...form, accountFrom: event.target.value })}
+              disabled={disabled}
             >
               <option value="">-</option>
               {accounts.map((account) => (
@@ -193,6 +192,7 @@ export default function FinanceModal({
               className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
               value={form.accountTo}
               onChange={(event) => setForm({ ...form, accountTo: event.target.value })}
+              disabled={disabled}
             >
               <option value="">-</option>
               {accounts.map((account) => (
@@ -207,6 +207,7 @@ export default function FinanceModal({
               className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
               value={form.responsible}
               onChange={(event) => setForm({ ...form, responsible: event.target.value })}
+              disabled={disabled}
             >
               <option value="">-</option>
               {responsibles.map((name) => (
@@ -221,6 +222,7 @@ export default function FinanceModal({
               className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
               value={form.category}
               onChange={(event) => setForm({ ...form, category: event.target.value })}
+              disabled={disabled}
             >
               {categoryOptions.map((category) => (
                 <option key={category.id} value={category.label}>
@@ -233,10 +235,11 @@ export default function FinanceModal({
             <select
               className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
               value={form.status}
-              onChange={(event) => setForm({ ...form, status: event.target.value as "pending" | "paid" })}
+              onChange={(event) => setForm({ ...form, status: event.target.value as "Pendiente" | "Cancelado" })}
+              disabled={disabled}
             >
-              <option value="pending">Pendiente</option>
-              <option value="paid">Cancelado</option>
+              <option value="Pendiente">Pendiente</option>
+              <option value="Cancelado">Cancelado</option>
             </select>
           </Field>
           <Field label="Fecha">
@@ -245,14 +248,16 @@ export default function FinanceModal({
               type="date"
               value={form.date}
               onChange={(event) => setForm({ ...form, date: event.target.value })}
+              disabled={disabled}
             />
           </Field>
           <Field label="Referencia">
             <input
               className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
               type="text"
-              value={form.referenceId}
-              onChange={(event) => setForm({ ...form, referenceId: event.target.value })}
+              value={form.referenceCode}
+              onChange={(event) => setForm({ ...form, referenceCode: event.target.value })}
+              disabled={disabled}
             />
           </Field>
         </div>
@@ -263,6 +268,7 @@ export default function FinanceModal({
               rows={3}
               value={form.description}
               onChange={(event) => setForm({ ...form, description: event.target.value })}
+              disabled={disabled}
             />
           </Field>
         </div>
@@ -279,6 +285,7 @@ export default function FinanceModal({
               setForm(defaultValue());
               onClose();
             }}
+            disabled={disabled}
           >
             Cancelar
           </button>
@@ -286,6 +293,7 @@ export default function FinanceModal({
             type="button"
             className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)]"
             onClick={() => onSubmit(form)}
+            disabled={disabled}
           >
             Guardar movimiento
           </button>

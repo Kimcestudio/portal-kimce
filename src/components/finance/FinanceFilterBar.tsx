@@ -32,8 +32,22 @@ export default function FinanceFilterBar({
         onChange={(value) => onChange({ ...filters, status: value as FinanceFilters["status"] })}
         options={[
           { value: "all", label: "Todo" },
-          { value: "pending", label: "Pendiente" },
-          { value: "paid", label: "Cancelado" },
+          { value: "Pendiente", label: "Pendiente" },
+          { value: "Cancelado", label: "Cancelado" },
+        ]}
+      />
+      <Select
+        label="Tipo"
+        value={filters.type}
+        onChange={(value) => onChange({ ...filters, type: value as FinanceFilters["type"] })}
+        options={[
+          { value: "all", label: "Todos" },
+          { value: "Ingreso", label: "Ingreso" },
+          { value: "PagoColaborador", label: "Pago colaborador" },
+          { value: "GastoFijo", label: "Gasto fijo" },
+          { value: "GastoVariable", label: "Gasto variable" },
+          { value: "Transferencia", label: "Transferencia" },
+          { value: "Fondo", label: "Fondo" },
         ]}
       />
       <Select

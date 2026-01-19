@@ -1,38 +1,33 @@
-export type FinanceTransactionType =
-  | "income"
-  | "expense"
-  | "collaborator_payment"
-  | "transfer"
-  | "refund"
-  | "tax";
+export type FinanceMovementType =
+  | "Ingreso"
+  | "PagoColaborador"
+  | "GastoFijo"
+  | "GastoVariable"
+  | "Transferencia"
+  | "Fondo";
 
-export type FinanceTransactionStatus = "pending" | "paid";
+export type FinanceMovementStatus = "Pendiente" | "Cancelado";
 
 export type FinanceAccountName = "LUIS" | "ALONDRA" | "KIMCE";
 
-export interface FinanceTransaction {
+export interface FinanceMovement {
   id: string;
   date: string;
-  type: FinanceTransactionType;
-  category: string;
-  client?: string;
-  projectService?: string;
+  monthKey: string;
+  type: FinanceMovementType;
+  status: FinanceMovementStatus;
   amount: number;
-  bonus?: number;
-  discount?: number;
-  refund?: number;
-  finalAmount: number;
-  responsible: string;
+  currency: "PEN";
   accountFrom?: FinanceAccountName;
   accountTo?: FinanceAccountName;
-  status: FinanceTransactionStatus;
-  paidAt?: string;
-  referenceId: string;
-  notes?: string;
-  receiptUrl?: string;
-  monthKey: string;
-  collaboratorId?: string;
-  expenseKind?: "fixed" | "variable";
+  responsible: string;
+  category: string;
+  clientId?: string;
+  clientName?: string;
+  concept: string;
+  referenceCode?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface FinanceAccount {
@@ -62,42 +57,37 @@ export interface FinanceMonthClosure {
 export interface FinanceCategory {
   id: string;
   label: string;
-  type: FinanceTransactionType | "all";
+  type: "income" | "expense" | "all";
 }
 
 export interface FinanceClient {
   id: string;
   name: string;
-  type: "retainer" | "project" | "internal";
-  agreedAmount: number;
-  frequency: "one_off" | "monthly" | "milestone";
-  expectedDate: string;
-  status: "active" | "closed";
+  isRecurring: boolean;
+  recurringAmount: number;
+  recurringDay: number;
+  defaultAccountTo: FinanceAccountName;
+  active: boolean;
 }
 
 export interface FinanceCollaborator {
   id: string;
-  name: string;
+  displayName: string;
   role: string;
-  contractType: "fixed" | "freelance";
-  paymentAmount: number;
-  frequency: "monthly" | "per_project";
-  paymentDate: string;
-  contractEnd?: string;
-  status: "active" | "inactive";
+  active: boolean;
 }
 
-export interface FinanceExpensePlan {
+export interface FinanceContract {
   id: string;
-  label: string;
-  category: string;
-  account: FinanceAccountName;
-  responsible: string;
-  frequency: "one_off" | "monthly";
-  impactCash: boolean;
-  status: "pending" | "paid";
+  collaboratorId: string;
+  collaboratorName: string;
   amount: number;
-  expenseKind: "fixed" | "variable";
+  frequency: "mensual" | "quincenal" | "por_proyecto";
+  payDay: number;
+  startDate: string;
+  endDate?: string;
+  defaultAccountFrom: FinanceAccountName;
+  active: boolean;
 }
 
 export type FinanceTabKey =
@@ -110,8 +100,16 @@ export type FinanceTabKey =
 
 export type FinanceFilters = {
   monthKey: string;
-  status: "all" | FinanceTransactionStatus;
+  status: "all" | FinanceMovementStatus;
   account: "all" | FinanceAccountName;
   responsible: "all" | string;
   category: "all" | string;
+  type: "all" | FinanceMovementType;
+};
+
+export type ValidationReference = {
+  ingresosRef: number;
+  pagosRef: number;
+  sunatRef: number;
+  gastosRef: number;
 };
