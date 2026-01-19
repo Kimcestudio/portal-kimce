@@ -6,6 +6,7 @@ interface FinanceKpiCardProps {
   value: number;
   tone?: "blue" | "green" | "amber" | "rose" | "slate";
   subtitle?: string;
+  onClick?: () => void;
 }
 
 const toneStyles: Record<NonNullable<FinanceKpiCardProps["tone"]>, string> = {
@@ -16,14 +17,31 @@ const toneStyles: Record<NonNullable<FinanceKpiCardProps["tone"]>, string> = {
   slate: "bg-gradient-to-br from-[#f8fafc] via-[#f1f5f9] to-white",
 };
 
-export default function FinanceKpiCard({ title, value, subtitle, tone = "slate" }: FinanceKpiCardProps) {
+export default function FinanceKpiCard({
+  title,
+  value,
+  subtitle,
+  tone = "slate",
+  onClick,
+}: FinanceKpiCardProps) {
   return (
-    <Card className={`border border-transparent ${toneStyles[tone]}`}>
-      <div className="space-y-2 p-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
-        <p className="text-2xl font-semibold text-slate-900">{formatCurrency(value)}</p>
-        {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
-      </div>
+    <Card
+      className={`border border-transparent ${toneStyles[tone]} ${
+        onClick ? "cursor-pointer" : ""
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onClick}
+        className="w-full text-left"
+        disabled={!onClick}
+      >
+        <div className="space-y-2 p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">{title}</p>
+          <p className="text-2xl font-semibold text-slate-900">{formatCurrency(value)}</p>
+          {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
+        </div>
+      </button>
     </Card>
   );
 }

@@ -1,7 +1,13 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { FinanceAccount, FinanceCategory, FinanceTransactionType } from "@/lib/finance/types";
+import type {
+  FinanceAccount,
+  FinanceCategory,
+  FinanceClient,
+  FinanceCollaborator,
+  FinanceTransactionType,
+} from "@/lib/finance/types";
 
 export type NewFinanceTransaction = {
   type: FinanceTransactionType;
@@ -14,6 +20,9 @@ export type NewFinanceTransaction = {
   status: "pending" | "paid";
   date: string;
   referenceId?: string;
+  client?: string;
+  collaboratorId?: string;
+  expenseKind?: "fixed" | "variable";
 };
 
 interface FinanceModalProps {
@@ -23,6 +32,8 @@ interface FinanceModalProps {
   accounts: FinanceAccount[];
   categories: FinanceCategory[];
   responsibles: string[];
+  clients: FinanceClient[];
+  collaborators: FinanceCollaborator[];
   duplicateWarning?: string | null;
 }
 
@@ -37,6 +48,9 @@ const defaultValue = () => ({
   status: "pending" as const,
   date: new Date().toISOString().slice(0, 10),
   referenceId: "",
+  client: "",
+  collaboratorId: "",
+  expenseKind: "variable" as const,
 });
 
 export default function FinanceModal({
@@ -46,6 +60,8 @@ export default function FinanceModal({
   accounts,
   categories,
   responsibles,
+  clients,
+  collaborators,
   duplicateWarning,
 }: FinanceModalProps) {
   const [form, setForm] = useState(defaultValue());
@@ -88,7 +104,13 @@ export default function FinanceModal({
             <select
               className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
               value={form.type}
-              onChange={(event) => setForm({ ...form, type: event.target.value as FinanceTransactionType })}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  type: event.target.value as FinanceTransactionType,
+                  category: "General",
+                })
+              }
             >
               <option value="income">Ingreso</option>
               <option value="expense">Gasto</option>
@@ -106,6 +128,52 @@ export default function FinanceModal({
               onChange={(event) => setForm({ ...form, amount: Number(event.target.value) })}
             />
           </Field>
+          {form.type === "income" ? (
+            <Field label="Cliente">
+              <select
+                className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                value={form.client}
+                onChange={(event) => setForm({ ...form, client: event.target.value })}
+              >
+                <option value="">-</option>
+                {clients.map((client) => (
+                  <option key={client.id} value={client.name}>
+                    {client.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+          {form.type === "collaborator_payment" ? (
+            <Field label="Colaborador">
+              <select
+                className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                value={form.collaboratorId}
+                onChange={(event) => setForm({ ...form, collaboratorId: event.target.value })}
+              >
+                <option value="">-</option>
+                {collaborators.map((collaborator) => (
+                  <option key={collaborator.id} value={collaborator.id}>
+                    {collaborator.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          ) : null}
+          {form.type === "expense" ? (
+            <Field label="Tipo de gasto">
+              <select
+                className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                value={form.expenseKind}
+                onChange={(event) =>
+                  setForm({ ...form, expenseKind: event.target.value as "fixed" | "variable" })
+                }
+              >
+                <option value="fixed">Fijo</option>
+                <option value="variable">Variable</option>
+              </select>
+            </Field>
+          ) : null}
           <Field label="Cuenta origen">
             <select
               className="w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"

@@ -27,7 +27,9 @@ import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
 import {
   calculateAccountBalances,
   calculateKPIs,
+  calculateProjections,
   filterTransactions,
+  getMonthComparison,
   getMonthlyRunway,
   getPendingItems,
   groupExpenseCategories,
@@ -35,21 +37,39 @@ import {
 } from "@/lib/finance/analytics";
 import {
   addFinanceTransaction,
+  closeFinanceMonth,
   createFinanceTransaction,
   listFinanceAccounts,
   listFinanceCategories,
+  listFinanceClients,
+  listFinanceCollaborators,
+  listFinanceExpensePlans,
   listFinanceTransactions,
+  listMonthClosures,
   seedFinanceData,
 } from "@/lib/finance/storage";
 import type {
+  FinanceClient,
+  FinanceCollaborator,
+  FinanceExpensePlan,
   FinanceFilters,
+  FinanceMonthClosure,
   FinanceTabKey,
   FinanceTransaction,
   FinanceTransactionType,
 } from "@/lib/finance/types";
-import { formatCurrency, getMonthKey } from "@/lib/finance/utils";
+import { formatCurrency, getMonthKey, getMonthLabel, getPreviousMonthKey } from "@/lib/finance/utils";
 
 const donutColors = ["#6366f1", "#22c55e", "#f59e0b", "#f97316", "#ef4444"];
+
+const tabLabels: Record<FinanceTabKey, string> = {
+  dashboard: "Dashboard",
+  movimientos: "Movimientos",
+  pagos: "Pagos a colaboradores",
+  gastos: "Gastos",
+  cuentas: "Cuentas & Caja",
+  cierre: "Cierre de mes",
+};
 
 export default function FinanceModulePage() {
   const { user } = useAuth();
@@ -57,6 +77,10 @@ export default function FinanceModulePage() {
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [accounts, setAccounts] = useState(() => listFinanceAccounts());
   const [categories, setCategories] = useState(() => listFinanceCategories());
+  const [clients, setClients] = useState<FinanceClient[]>([]);
+  const [collaborators, setCollaborators] = useState<FinanceCollaborator[]>([]);
+  const [expensePlans, setExpensePlans] = useState<FinanceExpensePlan[]>([]);
+  const [closures, setClosures] = useState<FinanceMonthClosure[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [duplicateWarning, setDuplicateWarning] = useState<string | null>(null);
@@ -76,6 +100,10 @@ export default function FinanceModulePage() {
     setTransactions(listFinanceTransactions());
     setAccounts(listFinanceAccounts());
     setCategories(listFinanceCategories());
+    setClients(listFinanceClients());
+    setCollaborators(listFinanceCollaborators());
+    setExpensePlans(listFinanceExpensePlans());
+    setClosures(listMonthClosures());
     setIsLoading(false);
   }, []);
 
@@ -89,16 +117,6 @@ export default function FinanceModulePage() {
 
   const kpis = useMemo(() => calculateKPIs(transactions, filters.monthKey), [transactions, filters.monthKey]);
 
-  const weeklyData = useMemo(
-    () => groupWeeklyTotals(transactions, filters.monthKey),
-    [transactions, filters.monthKey]
-  );
-
-  const expenseData = useMemo(
-    () => groupExpenseCategories(transactions, filters.monthKey),
-    [transactions, filters.monthKey]
-  );
-
   const accountBalances = useMemo(
     () => calculateAccountBalances(transactions, accounts, filters.monthKey),
     [transactions, accounts, filters.monthKey]
@@ -107,6 +125,21 @@ export default function FinanceModulePage() {
   const totalCash = useMemo(
     () => accountBalances.reduce((total, account) => total + account.balance, 0),
     [accountBalances]
+  );
+
+  const projections = useMemo(
+    () => calculateProjections(transactions, expensePlans, filters.monthKey, totalCash),
+    [transactions, expensePlans, filters.monthKey, totalCash]
+  );
+
+  const weeklyData = useMemo(
+    () => groupWeeklyTotals(transactions, filters.monthKey),
+    [transactions, filters.monthKey]
+  );
+
+  const expenseData = useMemo(
+    () => groupExpenseCategories(transactions, filters.monthKey),
+    [transactions, filters.monthKey]
   );
 
   const runwayWeeks = useMemo(
@@ -119,6 +152,21 @@ export default function FinanceModulePage() {
     [transactions, filters.monthKey]
   );
 
+  const currentClosure = useMemo(
+    () => closures.find((closure) => closure.monthKey === filters.monthKey),
+    [closures, filters.monthKey]
+  );
+
+  const previousClosure = useMemo(
+    () => closures.find((closure) => closure.monthKey === getPreviousMonthKey(filters.monthKey)),
+    [closures, filters.monthKey]
+  );
+
+  const comparison = useMemo(() => {
+    if (!currentClosure) return null;
+    return getMonthComparison(currentClosure.snapshot, previousClosure?.snapshot);
+  }, [currentClosure, previousClosure]);
+
   const paginatedTransactions = useMemo(() => {
     const start = (currentPage - 1) * 6;
     return filteredTransactions.slice(start, start + 6);
@@ -126,13 +174,17 @@ export default function FinanceModulePage() {
 
   const totalPages = Math.ceil(filteredTransactions.length / 6) || 1;
 
+  const isLocked = currentClosure?.locked ?? false;
+
   const openModal = () => {
+    if (isLocked) return;
     setDuplicateWarning(null);
     setPendingDuplicate(null);
     setIsModalOpen(true);
   };
 
   const handleCreateTransaction = (values: NewFinanceTransaction) => {
+    if (isLocked) return;
     const paidAt = values.status === "paid" ? new Date(values.date).toISOString() : undefined;
     const { transaction, duplicates } = createFinanceTransaction({
       date: new Date(values.date).toISOString(),
@@ -146,6 +198,9 @@ export default function FinanceModulePage() {
       notes: values.description,
       referenceId: values.referenceId || undefined,
       paidAt,
+      client: values.client || undefined,
+      collaboratorId: values.collaboratorId || undefined,
+      expenseKind: values.expenseKind,
     });
 
     if (duplicates.length > 0 && (!pendingDuplicate || pendingDuplicate.referenceId !== transaction.referenceId)) {
@@ -165,6 +220,11 @@ export default function FinanceModulePage() {
     setPendingDuplicate(null);
   };
 
+  const handleKpiClick = (tab: FinanceTabKey, status?: FinanceFilters["status"]) => {
+    setActiveTab(tab);
+    setFilters((prev) => ({ ...prev, status: status ?? "all" }));
+  };
+
   const renderEmptyState = () => (
     <div className="rounded-2xl border border-dashed border-slate-200/80 bg-white p-8 text-center text-sm text-slate-500">
       <p className="font-semibold text-slate-700">Aún no hay movimientos este mes</p>
@@ -173,11 +233,15 @@ export default function FinanceModulePage() {
         type="button"
         onClick={openModal}
         className="mt-4 rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)]"
+        disabled={isLocked}
       >
         Nuevo movimiento
       </button>
     </div>
   );
+
+  const fixedExpenses = expensePlans.filter((plan) => plan.expenseKind === "fixed");
+  const variableExpenses = expensePlans.filter((plan) => plan.expenseKind === "variable");
 
   return (
     <div className="flex flex-col gap-4">
@@ -186,19 +250,29 @@ export default function FinanceModulePage() {
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-400">
+                Admin / Finanzas / {tabLabels[activeTab]}
+              </p>
               <h1 className="text-2xl font-semibold text-slate-900">Finanzas</h1>
               <p className="text-sm text-slate-500">
-                Control mensual de ingresos, gastos y caja en un solo lugar.
+                {getMonthLabel(filters.monthKey)} · Control mensual de ingresos, gastos y caja.
               </p>
             </div>
             <button
               type="button"
               onClick={openModal}
-              className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)]"
+              className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)] disabled:opacity-40"
+              disabled={isLocked}
             >
               Nuevo movimiento
             </button>
           </div>
+
+          {isLocked ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+              Este mes está cerrado. Las ediciones están bloqueadas hasta el próximo periodo.
+            </div>
+          ) : null}
 
           <FinanceTabs active={activeTab} onChange={(key) => setActiveTab(key)} />
           <FinanceFilterBar
@@ -233,24 +307,62 @@ export default function FinanceModulePage() {
                       value={kpis.incomePaid}
                       tone="blue"
                       subtitle="Solo cancelados"
+                      onClick={() => handleKpiClick("movimientos", "paid")}
                     />
                     <FinanceKpiCard
                       title="Caja total"
                       value={totalCash}
                       tone="green"
                       subtitle="Suma cuentas activas"
+                      onClick={() => handleKpiClick("cuentas")}
                     />
                     <FinanceKpiCard
                       title="Pendiente por cobrar"
                       value={kpis.incomePending}
                       tone="amber"
                       subtitle="No impacta caja"
+                      onClick={() => handleKpiClick("movimientos", "pending")}
                     />
                     <FinanceKpiCard
                       title="Gastos pagados"
                       value={kpis.expensesPaid}
                       tone="rose"
                       subtitle="Incluye SUNAT y pagos"
+                      onClick={() => handleKpiClick("gastos", "paid")}
+                    />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <FinanceKpiCard
+                      title="Proyección ingresos"
+                      value={projections.incomeProjection}
+                      tone="blue"
+                      subtitle={`Real + pendiente ${formatCurrency(kpis.incomePaid)} / ${formatCurrency(
+                        kpis.incomePending
+                      )}`}
+                      onClick={() => handleKpiClick("movimientos", "pending")}
+                    />
+                    <FinanceKpiCard
+                      title="Proyección gastos"
+                      value={projections.expenseProjection}
+                      tone="rose"
+                      subtitle={`Real + previsto ${formatCurrency(kpis.expensesPaid)} / ${formatCurrency(
+                        projections.plannedExpenses
+                      )}`}
+                      onClick={() => handleKpiClick("gastos")}
+                    />
+                    <FinanceKpiCard
+                      title="Utilidad proyectada"
+                      value={projections.projectedProfit}
+                      tone="green"
+                      subtitle="Proyección del mes"
+                      onClick={() => handleKpiClick("dashboard")}
+                    />
+                    <FinanceKpiCard
+                      title="Cash flow proyectado"
+                      value={projections.projectedCash}
+                      tone="slate"
+                      subtitle="Caja esperada fin de mes"
+                      onClick={() => handleKpiClick("cuentas")}
                     />
                   </div>
                   <div className="grid gap-4 lg:grid-cols-2">
@@ -327,6 +439,55 @@ export default function FinanceModulePage() {
 
               {activeTab === "movimientos" ? (
                 <div className="space-y-4">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900">Clientes activos</h3>
+                          <p className="text-xs text-slate-500">Ingresos vinculados a clientes.</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                        >
+                          Nuevo cliente
+                        </button>
+                      </div>
+                      <div className="mt-4 space-y-3 text-sm">
+                        {clients.map((client) => (
+                          <div key={client.id} className="flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold text-slate-900">{client.name}</p>
+                              <p className="text-xs text-slate-500">{client.type} · {client.frequency}</p>
+                            </div>
+                            <span className="text-xs font-semibold text-slate-600">
+                              {formatCurrency(client.agreedAmount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                      <h3 className="text-sm font-semibold text-slate-900">Historial por cliente</h3>
+                      <p className="text-xs text-slate-500">Últimos ingresos registrados.</p>
+                      <div className="mt-4 space-y-3 text-sm">
+                        {transactions
+                          .filter((item) => item.type === "income")
+                          .slice(0, 4)
+                          .map((item) => (
+                            <div key={item.id} className="flex items-center justify-between">
+                              <div>
+                                <p className="font-semibold text-slate-900">{item.client ?? "Sin cliente"}</p>
+                                <p className="text-xs text-slate-500">{item.category}</p>
+                              </div>
+                              <span className="text-xs font-semibold text-slate-600">
+                                {formatCurrency(item.finalAmount)}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  </div>
                   <FinanceTable transactions={paginatedTransactions} />
                   <PaginationControls
                     currentPage={currentPage}
@@ -337,17 +498,123 @@ export default function FinanceModulePage() {
               ) : null}
 
               {activeTab === "pagos" ? (
-                <FinanceTable
-                  transactions={filteredTransactions.filter((item) => item.type === "collaborator_payment")}
-                />
+                <div className="space-y-4">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900">Colaboradores activos</h3>
+                          <p className="text-xs text-slate-500">Pagos programados del mes.</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                        >
+                          Nuevo colaborador
+                        </button>
+                      </div>
+                      <div className="mt-4 space-y-3 text-sm">
+                        {collaborators.map((collaborator) => (
+                          <div key={collaborator.id} className="flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold text-slate-900">{collaborator.name}</p>
+                              <p className="text-xs text-slate-500">{collaborator.role}</p>
+                            </div>
+                            <span className="text-xs font-semibold text-slate-600">
+                              {formatCurrency(collaborator.paymentAmount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                      <h3 className="text-sm font-semibold text-slate-900">Pagos pendientes del mes</h3>
+                      <p className="text-xs text-slate-500">Generados desde contratos activos.</p>
+                      <div className="mt-4 space-y-3 text-sm">
+                        {collaborators.map((collaborator) => (
+                          <div key={collaborator.id} className="flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold text-slate-900">{collaborator.name}</p>
+                              <p className="text-xs text-slate-500">Pago {collaborator.frequency}</p>
+                            </div>
+                            <span className="text-xs font-semibold text-amber-600">
+                              {formatCurrency(collaborator.paymentAmount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <FinanceTable
+                    transactions={filteredTransactions.filter((item) => item.type === "collaborator_payment")}
+                  />
+                </div>
               ) : null}
 
               {activeTab === "gastos" ? (
-                <FinanceTable
-                  transactions={filteredTransactions.filter((item) =>
-                    ["expense", "tax"].includes(item.type)
-                  )}
-                />
+                <div className="space-y-4">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900">Gastos fijos</h3>
+                          <p className="text-xs text-slate-500">Obligaciones mensuales previstas.</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                        >
+                          Nuevo gasto fijo
+                        </button>
+                      </div>
+                      <div className="mt-4 space-y-3 text-sm">
+                        {fixedExpenses.map((plan) => (
+                          <div key={plan.id} className="flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold text-slate-900">{plan.label}</p>
+                              <p className="text-xs text-slate-500">{plan.category}</p>
+                            </div>
+                            <span className="text-xs font-semibold text-slate-600">
+                              {formatCurrency(plan.amount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h3 className="text-sm font-semibold text-slate-900">Gastos variables</h3>
+                          <p className="text-xs text-slate-500">Gastos no recurrentes.</p>
+                        </div>
+                        <button
+                          type="button"
+                          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                        >
+                          Nuevo gasto variable
+                        </button>
+                      </div>
+                      <div className="mt-4 space-y-3 text-sm">
+                        {variableExpenses.map((plan) => (
+                          <div key={plan.id} className="flex items-center justify-between">
+                            <div>
+                              <p className="font-semibold text-slate-900">{plan.label}</p>
+                              <p className="text-xs text-slate-500">{plan.category}</p>
+                            </div>
+                            <span className="text-xs font-semibold text-slate-600">
+                              {formatCurrency(plan.amount)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <FinanceTable
+                    transactions={filteredTransactions.filter((item) =>
+                      ["expense", "tax"].includes(item.type)
+                    )}
+                  />
+                </div>
               ) : null}
 
               {activeTab === "cuentas" ? (
@@ -383,6 +650,16 @@ export default function FinanceModulePage() {
                       <SummaryRow label="Utilidad neta" value={formatCurrency(kpis.netIncome)} />
                       <SummaryRow label="Pendiente por pagar" value={formatCurrency(kpis.expensesPending)} />
                     </div>
+                    {comparison ? (
+                      <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+                        <p className="font-semibold text-slate-700">Comparativo vs mes anterior</p>
+                        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                          <span>Ingresos: {comparison.income.toFixed(1)}%</span>
+                          <span>Gastos: {comparison.expenses.toFixed(1)}%</span>
+                          <span>Utilidad: {comparison.net.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="rounded-2xl border border-slate-200/60 bg-white p-5 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                     <h3 className="text-sm font-semibold text-slate-900">Checklist de cierre</h3>
@@ -394,9 +671,27 @@ export default function FinanceModulePage() {
                     </ul>
                     <button
                       type="button"
-                      className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
+                      className="mt-4 rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+                      disabled={isLocked}
+                      onClick={() => {
+                        if (!user) return;
+                        const snapshot = {
+                          monthKey: filters.monthKey,
+                          incomePaid: kpis.incomePaid,
+                          expensesPaid: kpis.expensesPaid,
+                          netIncome: kpis.netIncome,
+                        };
+                        closeFinanceMonth({
+                          monthKey: filters.monthKey,
+                          closedBy: user.uid,
+                          closedAt: new Date().toISOString(),
+                          locked: true,
+                          snapshot,
+                        });
+                        setClosures(listMonthClosures());
+                      }}
                     >
-                      Marcar mes como cerrado
+                      {isLocked ? "Mes cerrado" : "Marcar mes como cerrado"}
                     </button>
                   </div>
                 </div>
@@ -413,6 +708,8 @@ export default function FinanceModulePage() {
         accounts={accounts}
         categories={categories}
         responsibles={responsibles}
+        clients={clients}
+        collaborators={collaborators}
         duplicateWarning={duplicateWarning}
       />
     </div>

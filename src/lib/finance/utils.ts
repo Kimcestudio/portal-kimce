@@ -19,6 +19,12 @@ export function getMonthLabel(monthKey: string) {
   );
 }
 
+export function getPreviousMonthKey(monthKey: string) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const date = new Date(year, month - 2, 1);
+  return getMonthKey(date);
+}
+
 export function buildMonthOptions(count = 6) {
   const options = [] as { value: string; label: string }[];
   const now = new Date();

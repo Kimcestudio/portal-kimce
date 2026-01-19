@@ -1,4 +1,9 @@
-import type { FinanceAccount, FinanceFilters, FinanceTransaction } from "@/lib/finance/types";
+import type {
+  FinanceAccount,
+  FinanceExpensePlan,
+  FinanceFilters,
+  FinanceTransaction,
+} from "@/lib/finance/types";
 import { formatCurrency, getMonthKey, getWeekIndex } from "@/lib/finance/utils";
 
 const EXPENSE_TYPES = ["expense", "collaborator_payment", "tax"] as const;
@@ -20,8 +25,12 @@ export function filterTransactions(transactions: FinanceTransaction[], filters: 
 
 export function calculateKPIs(transactions: FinanceTransaction[], monthKey: string) {
   const monthTransactions = transactions.filter((transaction) => transaction.monthKey === monthKey);
-  const incomePaid = sumBy(monthTransactions, (item) => (item.type === "income" && item.status === "paid" ? item.finalAmount : 0));
-  const incomePending = sumBy(monthTransactions, (item) => (item.type === "income" && item.status === "pending" ? item.finalAmount : 0));
+  const incomePaid = sumBy(monthTransactions, (item) =>
+    item.type === "income" && item.status === "paid" ? item.finalAmount : 0
+  );
+  const incomePending = sumBy(monthTransactions, (item) =>
+    item.type === "income" && item.status === "pending" ? item.finalAmount : 0
+  );
   const expensesPaid = sumBy(monthTransactions, (item) =>
     EXPENSE_TYPES.includes(item.type) && item.status === "paid" ? item.finalAmount : 0
   );
@@ -38,6 +47,30 @@ export function calculateKPIs(transactions: FinanceTransaction[], monthKey: stri
     expensesPending,
     netIncome,
     margin,
+  };
+}
+
+export function calculateProjections(
+  transactions: FinanceTransaction[],
+  expensePlans: FinanceExpensePlan[],
+  monthKey: string,
+  totalCash: number
+) {
+  const base = calculateKPIs(transactions, monthKey);
+  const plannedExpenses = expensePlans
+    .filter((plan) => plan.status === "pending")
+    .reduce((total, plan) => total + plan.amount, 0);
+  const incomeProjection = base.incomePaid + base.incomePending;
+  const expenseProjection = base.expensesPaid + base.expensesPending + plannedExpenses;
+  const projectedProfit = incomeProjection - expenseProjection;
+  const projectedCash = totalCash + base.incomePending - base.expensesPending - plannedExpenses;
+
+  return {
+    incomeProjection,
+    expenseProjection,
+    projectedProfit,
+    projectedCash,
+    plannedExpenses,
   };
 }
 
@@ -131,6 +164,16 @@ export function getMonthlyRunway(transactions: FinanceTransaction[], monthKey: s
   if (averageWeekly <= 0) return null;
 
   return totalCash / averageWeekly;
+}
+
+export function getMonthComparison(current: { incomePaid: number; expensesPaid: number; netIncome: number }, previous?: { incomePaid: number; expensesPaid: number; netIncome: number }) {
+  if (!previous) return null;
+  const variation = (value: number, prev: number) => (prev === 0 ? 0 : ((value - prev) / prev) * 100);
+  return {
+    income: variation(current.incomePaid, previous.incomePaid),
+    expenses: variation(current.expensesPaid, previous.expensesPaid),
+    net: variation(current.netIncome, previous.netIncome),
+  };
 }
 
 export function buildTransactionRow(transaction: FinanceTransaction) {
