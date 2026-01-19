@@ -3,11 +3,11 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-export default function DocumentsRedirectPage() {
+export default function AdminRedirectPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/app/documents");
+    router.replace("/admin/dashboard");
   }, [router]);
 
   return (

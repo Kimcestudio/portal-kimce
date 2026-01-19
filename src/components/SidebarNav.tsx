@@ -29,31 +29,20 @@ type NavItem = {
 };
 
 const collaboratorNavItems: NavItem[] = [
-  { icon: Home, label: "Inicio", href: "/app/dashboard" },
-  { icon: Clock, label: "Horario", href: "/app/overview" },
-  { icon: Calendar, label: "Calendario", href: "/app/calendar" },
-  { icon: FileText, label: "Documentos", href: "/app/documents" },
+  { icon: Home, label: "Inicio", href: "/dashboard" },
+  { icon: Clock, label: "Horario", href: "/attendance" },
+  { icon: Calendar, label: "Calendario", href: "/calendar" },
+  { icon: FileText, label: "Documentos", href: "/documents" },
   { icon: Users, label: "Equipo", href: "/team" },
-];
-
-const collaboratorProfileItems: NavItem[] = [
-  { icon: User, label: "Mi perfil", href: "/app/profile" },
-  { icon: ClipboardList, label: "Historial", href: "/app/history" },
+  { icon: User, label: "Mi perfil", href: "/profile" },
 ];
 
 const adminNavItems: NavItem[] = [
-  { icon: Home, label: "Inicio Admin", href: "/admin/dashboard" },
-  { icon: Clock, label: "Horario", href: "/admin/hours" },
-  { icon: Calendar, label: "Calendario", href: "/admin/calendar" },
-  { icon: FileText, label: "Documentos", href: "/admin/documents" },
+  { icon: Home, label: "Inicio Admin", href: "/admin" },
   { icon: Mail, label: "Solicitudes", href: "/admin/requests" },
   { icon: Users, label: "Usuarios y Roles", href: "/admin/users" },
   { icon: Wallet, label: "Finanzas", href: "/admin/finance" },
   { icon: BarChart3, label: "Reportes", href: "/admin/reports" },
-];
-
-const adminProfileItems: NavItem[] = [
-  { icon: User, label: "Mi perfil", href: "/admin/profile" },
 ];
 
 function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel: boolean) {
@@ -119,8 +108,18 @@ function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel:
 function Section({ title, items, showLabel }: { title: string; items: NavItem[]; showLabel: boolean }) {
   const pathname = usePathname();
   const isActiveItem = (item: NavItem) => {
-    if (item.href === "/team") {
-      return pathname === "/team" || pathname.startsWith("/app/team");
+    const aliases: Record<string, string[]> = {
+      "/dashboard": ["/app/dashboard"],
+      "/attendance": ["/app/overview"],
+      "/calendar": ["/app/calendar"],
+      "/documents": ["/app/documents"],
+      "/team": ["/app/team"],
+      "/profile": ["/app/profile"],
+      "/admin": ["/admin/dashboard"],
+    };
+    const extraMatches = aliases[item.href] ?? [];
+    if (extraMatches.some((alias) => pathname === alias || pathname.startsWith(`${alias}/`))) {
+      return true;
     }
     return pathname === item.href || pathname.startsWith(`${item.href}/`);
   };
@@ -162,8 +161,6 @@ export default function SidebarNav() {
     window.localStorage.setItem("sidebar_view", view);
   }, [role, view]);
 
-  const profileItems = role === "ADMIN" ? adminProfileItems : collaboratorProfileItems;
-
   const visibleNavItems = useMemo(() => {
     if (role === "ADMIN" && view === "admin") return adminNavItems;
     return collaboratorNavItems;
@@ -171,16 +168,22 @@ export default function SidebarNav() {
 
   return (
     <aside
-      className="group/sidebar flex h-screen w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-[width] duration-300 ease-out hover:w-56"
+      className="group/sidebar flex h-screen w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-all duration-300 ease-out hover:w-72"
       onMouseEnter={() => setIsExpanded(true)}
       onMouseLeave={() => setIsExpanded(false)}
     >
-      <header className="shrink-0 pb-4 pt-6">
+      <header className="flex h-24 w-full flex-col justify-between pb-4 pt-6">
         <span className="whitespace-nowrap transition-all duration-300 group-hover/sidebar:translate-x-1">
           doc.track
         </span>
-        {role === "ADMIN" && isExpanded ? (
-          <div className="mt-4 w-full rounded-full bg-white/10 p-1">
+        {role === "ADMIN" ? (
+          <div
+            className={`w-full rounded-full bg-white/10 p-1 transition duration-200 ${
+              isExpanded
+                ? "translate-y-0 opacity-100"
+                : "pointer-events-none -translate-y-1 opacity-0"
+            }`}
+          >
             <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
               <button
                 type="button"
@@ -207,16 +210,20 @@ export default function SidebarNav() {
         ) : null}
       </header>
       <nav
-        className={`flex w-full flex-1 min-h-0 flex-col gap-4 py-2 pr-1 ${
+        className={`flex w-full flex-1 min-h-0 flex-col gap-4 py-2 pr-1 transition-transform duration-200 ${
           isExpanded ? "overflow-y-auto no-scrollbar" : "overflow-y-hidden"
-        }`}
+        } ${isExpanded ? "translate-y-0" : "translate-y-1"}`}
       >
         <Section title="GENERAL" items={visibleNavItems} showLabel={isExpanded} />
       </nav>
       <footer className="shrink-0 pb-6 pt-4">
         <div className="space-y-3">
           <div className="mx-3 h-px bg-white/10" />
-          <Section title="PROFILE" items={profileItems} showLabel={isExpanded} />
+          <Section
+            title="PROFILE"
+            items={[{ icon: User, label: "Mi perfil", href: "/profile" }]}
+            showLabel={isExpanded}
+          />
           {signOutUser
             ? renderNavItem(
                 {
