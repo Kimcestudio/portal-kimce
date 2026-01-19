@@ -34,6 +34,9 @@ const collaboratorNavItems: NavItem[] = [
   { icon: Calendar, label: "Calendario", href: "/calendar" },
   { icon: FileText, label: "Documentos", href: "/documents" },
   { icon: Users, label: "Equipo", href: "/team" },
+  { icon: Mail, label: "Mensajes", href: "/app/messages" },
+  { icon: ClipboardList, label: "Historial", href: "/app/history" },
+  { icon: Shield, label: "Configuración", href: "/app/settings" },
 ];
 
 const adminNavItems: NavItem[] = [
@@ -42,6 +45,11 @@ const adminNavItems: NavItem[] = [
   { icon: Users, label: "Usuarios y Roles", href: "/admin/users" },
   { icon: Wallet, label: "Finanzas", href: "/admin/finance" },
   { icon: BarChart3, label: "Reportes", href: "/admin/reports" },
+  { icon: Clock, label: "Horarios", href: "/admin/hours" },
+  { icon: Calendar, label: "Calendario", href: "/admin/calendar" },
+  { icon: FileText, label: "Documentos", href: "/admin/documents" },
+  { icon: ClipboardList, label: "Gestión", href: "/admin/manage" },
+  { icon: Shield, label: "Configuración", href: "/admin/settings" },
 ];
 
 function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel: boolean) {
@@ -49,7 +57,9 @@ function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel:
   const layoutClass = showLabel ? "gap-3 px-3" : "justify-center px-0";
   const content = (
     <>
-      {isActive ? <span className="absolute left-0 top-2 h-8 w-1 rounded-full bg-white/80" /> : null}
+      {isActive ? (
+        <span className="absolute left-0 top-1/2 z-20 hidden h-8 w-1 -translate-y-1/2 rounded-full bg-white/25 group-hover/sidebar:block" />
+      ) : null}
       <div className="relative flex h-11 w-11 items-center justify-center">
         <span
           className={`absolute inset-0 rounded-full bg-[#5960dc] opacity-0 blur-md transition duration-200 ${
@@ -110,12 +120,15 @@ function Section({ title, items, showLabel }: { title: string; items: NavItem[];
   const isActiveItem = (item: NavItem) => {
     const aliases: Record<string, string[]> = {
       "/dashboard": ["/app/dashboard"],
-      "/attendance": ["/app/overview"],
+      "/attendance": ["/app/overview", "/app/attendance"],
       "/calendar": ["/app/calendar"],
       "/documents": ["/app/documents"],
       "/team": ["/app/team"],
       "/profile": ["/app/profile"],
-      "/admin": ["/admin/dashboard"],
+      "/app/messages": ["/messages"],
+      "/app/history": ["/history"],
+      "/app/settings": ["/settings"],
+      "/admin": ["/admin/dashboard", "/admin/overview"],
     };
     const extraMatches = aliases[item.href] ?? [];
     if (extraMatches.some((alias) => pathname === alias || pathname.startsWith(`${alias}/`))) {
@@ -179,36 +192,36 @@ export default function SidebarNav() {
         </span>
         {role === "ADMIN" ? (
           <div className="h-10">
-            <div
-              className={`w-full rounded-full bg-white/10 p-1 transition duration-200 ${
-                isExpanded
-                  ? "translate-y-0 opacity-100"
-                  : "pointer-events-none -translate-y-1 opacity-0"
-              }`}
-            >
-              <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
-                <button
-                  type="button"
-                  onClick={() => setView("collaborator")}
-                  className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
-                    view === "collaborator"
-                      ? "bg-[#4f56d3] text-white shadow-glow"
-                      : "hover:bg-white/10"
-                  }`}
-                >
-                  Colaborador
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setView("admin")}
-                  className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
-                    view === "admin" ? "bg-[#4f56d3] text-white shadow-glow" : "hover:bg-white/10"
-                  }`}
-                >
-                  Admin
-                </button>
+            {isExpanded ? (
+              <div className="w-full rounded-full bg-white/10 p-1 transition duration-200">
+                <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+                  <button
+                    type="button"
+                    onClick={() => setView("collaborator")}
+                    className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
+                      view === "collaborator"
+                        ? "bg-[#4f56d3] text-white shadow-glow"
+                        : "hover:bg-white/10"
+                    }`}
+                  >
+                    Colaborador
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView("admin")}
+                    className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
+                      view === "admin"
+                        ? "bg-[#4f56d3] text-white shadow-glow"
+                        : "hover:bg-white/10"
+                    }`}
+                  >
+                    Admin
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="h-full" aria-hidden />
+            )}
           </div>
         ) : null}
       </header>
