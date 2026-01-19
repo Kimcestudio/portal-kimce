@@ -43,7 +43,7 @@ const adminNavItems: NavItem[] = [
   { icon: Home, label: "Inicio Admin", href: "/admin" },
   { icon: Mail, label: "Solicitudes", href: "/admin/requests" },
   { icon: Users, label: "Usuarios y Roles", href: "/admin/users" },
-  { icon: Wallet, label: "Finanzas", href: "/admin/finance" },
+  { icon: Wallet, label: "Finanzas", href: "/admin/finanzas" },
   { icon: BarChart3, label: "Reportes", href: "/admin/reports" },
   { icon: Clock, label: "Horarios", href: "/admin/hours" },
   { icon: Calendar, label: "Calendario", href: "/admin/calendar" },

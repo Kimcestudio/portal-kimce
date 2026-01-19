@@ -7,6 +7,7 @@ import {
   setCollection,
   setFinanceSettings,
 } from "@/services/firebase/db";
+import { seedFinanceData } from "@/lib/finance/storage";
 
 const defaultUsers: UserProfile[] = [
   {
@@ -118,4 +119,5 @@ export function seedFirebaseData() {
     const defaults: FinanceSettings = { financeKey: "9021" };
     setFinanceSettings(defaults);
   }
+  seedFinanceData();
 }
