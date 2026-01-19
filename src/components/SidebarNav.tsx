@@ -168,7 +168,7 @@ export default function SidebarNav() {
 
   return (
     <aside
-      className="group/sidebar flex h-screen w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-all duration-300 ease-out hover:w-72"
+      className="group/sidebar flex h-screen w-20 shrink-0 flex-col overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-all duration-300 ease-out hover:w-72"
       onMouseEnter={() => setIsExpanded(true)}
       onMouseLeave={() => setIsExpanded(false)}
     >
@@ -194,7 +194,7 @@ export default function SidebarNav() {
                     : "hover:bg-white/10"
                 }`}
               >
-                Vista Colaborador
+                Colaborador
               </button>
               <button
                 type="button"
@@ -203,7 +203,7 @@ export default function SidebarNav() {
                   view === "admin" ? "bg-[#4f56d3] text-white shadow-glow" : "hover:bg-white/10"
                 }`}
               >
-                Vista Admin
+                Admin
               </button>
             </div>
           </div>
@@ -216,7 +216,7 @@ export default function SidebarNav() {
       >
         <Section title="GENERAL" items={visibleNavItems} showLabel={isExpanded} />
       </nav>
-      <footer className="shrink-0 pb-6 pt-4">
+      <footer className="mt-auto shrink-0 px-3 pb-4 pt-4">
         <div className="space-y-3">
           <div className="mx-3 h-px bg-white/10" />
           <Section
@@ -238,36 +238,54 @@ export default function SidebarNav() {
               )
             : null}
         </div>
-        <div className="flex w-full items-center gap-3 rounded-2xl bg-white/10 p-3">
-          <label className="relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-full border border-white/20">
-            <input
-              className="absolute inset-0 opacity-0"
-              type="file"
-              accept="image/*"
-              onChange={async (event) => {
-                const file = event.target.files?.[0];
-                if (!file || !updateUser) return;
-                try {
-                  const dataUrl = await readFileAsDataUrl(file);
-                  updateUser({ photoURL: dataUrl });
-                } catch {
-                  // ignore upload errors for now
+        {isExpanded ? (
+          <div className="mt-3 flex w-full min-w-0 items-center gap-3 rounded-2xl bg-white/10 p-3">
+            <label className="relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-full border border-white/20">
+              <input
+                className="absolute inset-0 opacity-0"
+                type="file"
+                accept="image/*"
+                onChange={async (event) => {
+                  const file = event.target.files?.[0];
+                  if (!file || !updateUser) return;
+                  try {
+                    const dataUrl = await readFileAsDataUrl(file);
+                    updateUser({ photoURL: dataUrl });
+                  } catch {
+                    // ignore upload errors for now
+                  }
+                }}
+              />
+              <img
+                src={
+                  user?.photoURL ??
+                  "https://images.unsplash.com/photo-1502685104226-ee32379fefbe?auto=format&fit=crop&w=120&q=80"
                 }
-              }}
-            />
-            <img
-              src={user?.photoURL ?? "https://images.unsplash.com/photo-1502685104226-ee32379fefbe?auto=format&fit=crop&w=120&q=80"}
-              alt={user?.displayName ?? "Usuario"}
-              className="h-full w-full object-cover"
-            />
-          </label>
-          <div className="flex flex-1 flex-col">
-            <p className="text-sm font-semibold text-white">
-              {user?.displayName ?? "Colaborador"}
-            </p>
-            <p className="text-xs text-white/60">{user?.position ?? "Puesto"}</p>
+                alt={user?.displayName ?? "Usuario"}
+                className="h-full w-full object-cover"
+              />
+            </label>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <p className="truncate text-sm font-semibold text-white">
+                {user?.displayName ?? "Colaborador"}
+              </p>
+              <p className="truncate text-xs text-white/60">{user?.position ?? "Puesto"}</p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="mt-3 flex w-full items-center justify-center">
+            <div className="h-12 w-12 overflow-hidden rounded-full border border-white/20">
+              <img
+                src={
+                  user?.photoURL ??
+                  "https://images.unsplash.com/photo-1502685104226-ee32379fefbe?auto=format&fit=crop&w=120&q=80"
+                }
+                alt={user?.displayName ?? "Usuario"}
+                className="h-full w-full object-cover"
+              />
+            </div>
+          </div>
+        )}
       </footer>
     </aside>
   );
