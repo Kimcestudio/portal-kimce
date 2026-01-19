@@ -28,7 +28,7 @@ type NavItem = {
   action?: () => void;
 };
 
-const collaboratorGeneralItems: NavItem[] = [
+const collaboratorNavItems: NavItem[] = [
   { icon: Home, label: "Inicio", href: "/app/dashboard" },
   { icon: Clock, label: "Horario", href: "/app/overview" },
   { icon: Calendar, label: "Calendario", href: "/app/calendar" },
@@ -41,14 +41,11 @@ const collaboratorProfileItems: NavItem[] = [
   { icon: ClipboardList, label: "Historial", href: "/app/history" },
 ];
 
-const adminGeneralItems: NavItem[] = [
+const adminNavItems: NavItem[] = [
   { icon: Home, label: "Inicio Admin", href: "/admin/dashboard" },
   { icon: Clock, label: "Horario", href: "/admin/hours" },
   { icon: Calendar, label: "Calendario", href: "/admin/calendar" },
   { icon: FileText, label: "Documentos", href: "/admin/documents" },
-];
-
-const adminItems: NavItem[] = [
   { icon: Mail, label: "Solicitudes", href: "/admin/requests" },
   { icon: Users, label: "Usuarios y Roles", href: "/admin/users" },
   { icon: Wallet, label: "Finanzas", href: "/admin/finance" },
@@ -59,7 +56,7 @@ const adminProfileItems: NavItem[] = [
   { icon: User, label: "Mi perfil", href: "/admin/profile" },
 ];
 
-function renderNavItem(item: NavItem, isActive: boolean, key: string) {
+function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel: boolean) {
   const Icon = item.icon;
   const content = (
     <>
@@ -85,9 +82,11 @@ function renderNavItem(item: NavItem, isActive: boolean, key: string) {
           <Icon size={18} className="transition duration-200 group-hover/sidebar:text-white" />
         </div>
       </div>
-      <span className="whitespace-nowrap text-sm font-semibold text-white/90 opacity-0 -translate-x-2 transition-all duration-200 ease-out group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100">
-        {item.label}
-      </span>
+      {showLabel ? (
+        <span className="whitespace-nowrap text-sm font-semibold text-white/90 opacity-0 -translate-x-2 transition-all duration-200 ease-out group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100">
+          {item.label}
+        </span>
+      ) : null}
     </>
   );
 
@@ -117,7 +116,7 @@ function renderNavItem(item: NavItem, isActive: boolean, key: string) {
   );
 }
 
-function Section({ title, items }: { title: string; items: NavItem[] }) {
+function Section({ title, items, showLabel }: { title: string; items: NavItem[]; showLabel: boolean }) {
   const pathname = usePathname();
   const isActiveItem = (item: NavItem) => {
     if (item.href === "/team") {
@@ -127,11 +126,13 @@ function Section({ title, items }: { title: string; items: NavItem[] }) {
   };
   return (
     <div className="space-y-3">
-      <p className="px-3 text-xs font-semibold uppercase tracking-wider text-white/50">{title}</p>
+      {showLabel ? (
+        <p className="px-3 text-xs font-semibold uppercase tracking-wider text-white/50">{title}</p>
+      ) : null}
       <div className="flex w-full flex-col gap-3">
         {items.map((item) => {
           const isActive = isActiveItem(item);
-          return renderNavItem(item, isActive, item.href);
+          return renderNavItem(item, isActive, item.href, showLabel);
         })}
       </div>
     </div>
@@ -145,6 +146,7 @@ export default function SidebarNav() {
   const updateUser = auth?.updateUser;
   const user = auth?.user;
   const [view, setView] = useState<"collaborator" | "admin">("collaborator");
+  const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     if (role !== "ADMIN") {
@@ -162,20 +164,22 @@ export default function SidebarNav() {
 
   const profileItems = role === "ADMIN" ? adminProfileItems : collaboratorProfileItems;
 
-  const generalItems = useMemo(() => {
-    if (role === "ADMIN" && view === "admin") return adminGeneralItems;
-    return collaboratorGeneralItems;
+  const visibleNavItems = useMemo(() => {
+    if (role === "ADMIN" && view === "admin") return adminNavItems;
+    return collaboratorNavItems;
   }, [role, view]);
 
-  const showAdminSection = role === "ADMIN" && view === "admin";
-
   return (
-    <aside className="group/sidebar flex h-screen w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-[width] duration-300 ease-out hover:w-56">
+    <aside
+      className="group/sidebar flex h-screen w-20 shrink-0 flex-col items-center overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-[width] duration-300 ease-out hover:w-56"
+      onMouseEnter={() => setIsExpanded(true)}
+      onMouseLeave={() => setIsExpanded(false)}
+    >
       <header className="shrink-0 pb-4 pt-6">
         <span className="whitespace-nowrap transition-all duration-300 group-hover/sidebar:translate-x-1">
           doc.track
         </span>
-        {role === "ADMIN" ? (
+        {role === "ADMIN" && isExpanded ? (
           <div className="mt-4 w-full rounded-full bg-white/10 p-1">
             <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
               <button
@@ -202,17 +206,17 @@ export default function SidebarNav() {
           </div>
         ) : null}
       </header>
-      <nav className="flex w-full flex-1 min-h-0 flex-col gap-4 overflow-y-auto py-2 pr-1">
-        <Section title="GENERAL" items={generalItems} />
-        {showAdminSection ? (
-          <div className="space-y-3 pt-2">
-            <div className="mx-3 h-px bg-white/10" />
-            <Section title="ADMIN" items={adminItems} />
-          </div>
-        ) : null}
-        <div className="space-y-3 pt-2">
+      <nav
+        className={`flex w-full flex-1 min-h-0 flex-col gap-4 py-2 pr-1 ${
+          isExpanded ? "overflow-y-auto no-scrollbar" : "overflow-y-hidden"
+        }`}
+      >
+        <Section title="GENERAL" items={visibleNavItems} showLabel={isExpanded} />
+      </nav>
+      <footer className="shrink-0 pb-6 pt-4">
+        <div className="space-y-3">
           <div className="mx-3 h-px bg-white/10" />
-          <Section title="PROFILE" items={profileItems} />
+          <Section title="PROFILE" items={profileItems} showLabel={isExpanded} />
           {signOutUser
             ? renderNavItem(
                 {
@@ -222,12 +226,11 @@ export default function SidebarNav() {
                   action: signOutUser,
                 },
                 false,
-                "logout"
+                "logout",
+                isExpanded
               )
             : null}
         </div>
-      </nav>
-      <footer className="shrink-0 pb-6 pt-4">
         <div className="flex w-full items-center gap-3 rounded-2xl bg-white/10 p-3">
           <label className="relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-full border border-white/20">
             <input
