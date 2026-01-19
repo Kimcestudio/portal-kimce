@@ -219,28 +219,52 @@ export default function SidebarNav() {
       >
         <Section title="GENERAL" items={visibleNavItems} showLabel={isExpanded} />
       </nav>
-      <footer className="mt-auto shrink-0 px-3 pb-4 pt-4">
-        <div className="space-y-3">
-          <div className="mx-3 h-px bg-white/10" />
-          <Section
-            title="PROFILE"
-            items={[{ icon: User, label: "Mi perfil", href: "/profile" }]}
-            showLabel={isExpanded}
-          />
-          {signOutUser
-            ? renderNavItem(
-                {
-                  icon: LogOut,
-                  label: "Cerrar sesión",
-                  href: "#",
-                  action: signOutUser,
-                },
-                false,
-                "logout",
-                isExpanded
-              )
-            : null}
-        </div>
+      <footer className="mt-auto shrink-0 overflow-visible px-3 pb-4 pt-4">
+        {isExpanded ? (
+          <div className="space-y-3">
+            <div className="mx-3 h-px bg-white/10" />
+            <Section
+              title="PROFILE"
+              items={[{ icon: User, label: "Mi perfil", href: "/profile" }]}
+              showLabel
+            />
+            {signOutUser
+              ? renderNavItem(
+                  {
+                    icon: LogOut,
+                    label: "Cerrar sesión",
+                    href: "#",
+                    action: signOutUser,
+                  },
+                  false,
+                  "logout",
+                  true
+                )
+              : null}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-3">
+            {renderNavItem(
+              { icon: User, label: "Mi perfil", href: "/profile" },
+              false,
+              "profile",
+              false
+            )}
+            {signOutUser
+              ? renderNavItem(
+                  {
+                    icon: LogOut,
+                    label: "Cerrar sesión",
+                    href: "#",
+                    action: signOutUser,
+                  },
+                  false,
+                  "logout",
+                  false
+                )
+              : null}
+          </div>
+        )}
         {isExpanded ? (
           <div className="mt-3 flex w-full min-w-0 items-center gap-3 rounded-2xl bg-white/10 p-3">
             <label className="relative h-12 w-12 shrink-0 cursor-pointer overflow-hidden rounded-full border border-white/20">
