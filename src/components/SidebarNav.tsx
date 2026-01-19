@@ -34,7 +34,6 @@ const collaboratorNavItems: NavItem[] = [
   { icon: Calendar, label: "Calendario", href: "/calendar" },
   { icon: FileText, label: "Documentos", href: "/documents" },
   { icon: Users, label: "Equipo", href: "/team" },
-  { icon: User, label: "Mi perfil", href: "/profile" },
 ];
 
 const adminNavItems: NavItem[] = [
@@ -47,6 +46,7 @@ const adminNavItems: NavItem[] = [
 
 function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel: boolean) {
   const Icon = item.icon;
+  const layoutClass = showLabel ? "gap-3 px-3" : "justify-center px-0";
   const content = (
     <>
       {isActive ? <span className="absolute left-0 top-2 h-8 w-1 rounded-full bg-white/80" /> : null}
@@ -85,7 +85,7 @@ function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel:
         key={key}
         type="button"
         onClick={item.action}
-        className="relative flex h-12 items-center gap-3 rounded-2xl px-3 text-left text-white/75 transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/10 hover:text-white hover:shadow-[0_8px_18px_rgba(15,23,42,0.25)]"
+        className={`relative flex h-12 items-center rounded-2xl text-left text-white/75 transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-white/10 hover:text-white hover:shadow-[0_8px_18px_rgba(15,23,42,0.25)] ${layoutClass}`}
       >
         {content}
       </button>
@@ -96,9 +96,9 @@ function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel:
     <Link
       key={key}
       href={item.href}
-      className={`relative flex h-12 items-center gap-3 rounded-2xl px-3 transition duration-200 ease-out ${
+      className={`relative flex h-12 items-center rounded-2xl transition duration-200 ease-out ${
         isActive ? "bg-white/12 text-white" : "text-white/75 hover:bg-white/10 hover:text-white"
-      } hover:-translate-y-0.5 hover:shadow-[0_8px_18px_rgba(15,23,42,0.25)]`}
+      } hover:-translate-y-0.5 hover:shadow-[0_8px_18px_rgba(15,23,42,0.25)] ${layoutClass}`}
     >
       {content}
     </Link>
@@ -128,7 +128,7 @@ function Section({ title, items, showLabel }: { title: string; items: NavItem[];
       {showLabel ? (
         <p className="px-3 text-xs font-semibold uppercase tracking-wider text-white/50">{title}</p>
       ) : null}
-      <div className="flex w-full flex-col gap-3">
+      <div className={`flex w-full flex-col gap-3 ${showLabel ? "" : "items-center"}`}>
         {items.map((item) => {
           const isActive = isActiveItem(item);
           return renderNavItem(item, isActive, item.href, showLabel);
@@ -144,16 +144,17 @@ export default function SidebarNav() {
   const signOutUser = auth?.signOutUser;
   const updateUser = auth?.updateUser;
   const user = auth?.user;
-  const [view, setView] = useState<"collaborator" | "admin">("collaborator");
+  const [view, setView] = useState<"collaborator" | "admin">(() => {
+    if (typeof window === "undefined") return "collaborator";
+    const stored = window.localStorage.getItem("sidebar_view");
+    return stored === "admin" ? "admin" : "collaborator";
+  });
   const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
     if (role !== "ADMIN") {
       setView("collaborator");
-      return;
     }
-    const stored = window.localStorage.getItem("sidebar_view");
-    setView(stored === "admin" ? "admin" : "collaborator");
   }, [role]);
 
   useEffect(() => {
@@ -168,7 +169,7 @@ export default function SidebarNav() {
 
   return (
     <aside
-      className="group/sidebar flex h-screen w-20 shrink-0 flex-col overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-all duration-300 ease-out hover:w-72"
+      className="group/sidebar flex h-dvh min-h-dvh w-20 shrink-0 flex-col overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] px-3 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)] transition-all duration-300 ease-out hover:w-72"
       onMouseEnter={() => setIsExpanded(true)}
       onMouseLeave={() => setIsExpanded(false)}
     >
@@ -177,34 +178,36 @@ export default function SidebarNav() {
           doc.track
         </span>
         {role === "ADMIN" ? (
-          <div
-            className={`w-full rounded-full bg-white/10 p-1 transition duration-200 ${
-              isExpanded
-                ? "translate-y-0 opacity-100"
-                : "pointer-events-none -translate-y-1 opacity-0"
-            }`}
-          >
-            <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
-              <button
-                type="button"
-                onClick={() => setView("collaborator")}
-                className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
-                  view === "collaborator"
-                    ? "bg-[#4f56d3] text-white shadow-glow"
-                    : "hover:bg-white/10"
-                }`}
-              >
-                Colaborador
-              </button>
-              <button
-                type="button"
-                onClick={() => setView("admin")}
-                className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
-                  view === "admin" ? "bg-[#4f56d3] text-white shadow-glow" : "hover:bg-white/10"
-                }`}
-              >
-                Admin
-              </button>
+          <div className="h-10">
+            <div
+              className={`w-full rounded-full bg-white/10 p-1 transition duration-200 ${
+                isExpanded
+                  ? "translate-y-0 opacity-100"
+                  : "pointer-events-none -translate-y-1 opacity-0"
+              }`}
+            >
+              <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+                <button
+                  type="button"
+                  onClick={() => setView("collaborator")}
+                  className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
+                    view === "collaborator"
+                      ? "bg-[#4f56d3] text-white shadow-glow"
+                      : "hover:bg-white/10"
+                  }`}
+                >
+                  Colaborador
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setView("admin")}
+                  className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
+                    view === "admin" ? "bg-[#4f56d3] text-white shadow-glow" : "hover:bg-white/10"
+                  }`}
+                >
+                  Admin
+                </button>
+              </div>
             </div>
           </div>
         ) : null}
