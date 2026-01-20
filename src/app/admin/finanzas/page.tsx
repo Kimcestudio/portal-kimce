@@ -25,6 +25,7 @@ import {
   addFinanceMovement,
   closeFinanceMonth,
   createFinanceMovement,
+  deleteFinanceMovement,
   listFinanceAccounts,
   listFinanceCategories,
   listFinanceClients,
@@ -57,6 +58,8 @@ const tabLabels: Record<FinanceTabKey, string> = {
   cierre: "Cierre de mes",
 };
 
+const DEFAULT_MONTH_KEY = "2026-01";
+
 export default function FinanceModulePage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<FinanceTabKey>("dashboard");
@@ -78,7 +81,7 @@ export default function FinanceModulePage() {
   const [showContractModal, setShowContractModal] = useState(false);
 
   const [filters, setFilters] = useState<FinanceFilters>({
-    monthKey: getMonthKey(new Date()),
+    monthKey: DEFAULT_MONTH_KEY,
     status: "all",
     account: "all",
     responsible: "all",
@@ -105,7 +108,7 @@ export default function FinanceModulePage() {
       .filter((contract) => contract.active)
       .filter((contract) => !existing.some((movement) => movement.monthKey === monthKey && movement.referenceCode === contract.id))
       .map((contract) => {
-        const date = new Date();
+        const date = new Date(`${monthKey}-01T08:00:00.000Z`);
         date.setDate(contract.payDay);
         const createdAt = new Date().toISOString();
         return {
@@ -140,7 +143,7 @@ export default function FinanceModulePage() {
       .filter((client) => client.active && client.isRecurring)
       .filter((client) => !existing.some((movement) => movement.monthKey === monthKey && movement.referenceCode === `CLIENT-${client.id}`))
       .map((client) => {
-        const date = new Date();
+        const date = new Date(`${monthKey}-01T08:00:00.000Z`);
         date.setDate(client.recurringDay);
         const createdAt = new Date().toISOString();
         return {
@@ -274,6 +277,13 @@ export default function FinanceModulePage() {
     setToast("Estado actualizado");
   };
 
+  const handleDeleteMovement = (id: string) => {
+    if (isLocked) return;
+    deleteFinanceMovement(id);
+    setMovements(listFinanceMovements());
+    setToast("Movimiento eliminado");
+  };
+
   const handleKpiClick = (tab: FinanceTabKey, status?: FinanceMovementStatus, type?: FinanceFilters["type"]) => {
     setActiveTab(tab);
     setFilters((prev) => ({
@@ -345,10 +355,18 @@ export default function FinanceModulePage() {
             <div className="rounded-2xl border border-slate-200/60 bg-white p-4 text-xs text-slate-600">
               <p className="font-semibold text-slate-700">Validación vs Excel</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <span>Ingresos: {formatCurrency(kpis.incomePaid)} / {formatCurrency(referenceValues.ingresosRef)}</span>
-                <span>Pagos: {formatCurrency(kpis.expensesPaid)} / {formatCurrency(referenceValues.pagosRef)}</span>
-                <span>SUNAT: {formatCurrency(kpis.sunatPaid)} / {formatCurrency(referenceValues.sunatRef)}</span>
-                <span>Gastos: {formatCurrency(kpis.expensesPaid)} / {formatCurrency(referenceValues.gastosRef)}</span>
+                <span>
+                  Ingresos: {formatCurrency(kpis.incomePaid)} / {formatCurrency(referenceValues.ingresosRef)}
+                </span>
+                <span>
+                  Pagos: {formatCurrency(kpis.expensesPaid)} / {formatCurrency(referenceValues.pagosRef)}
+                </span>
+                <span>
+                  SUNAT: {formatCurrency(kpis.sunatPaid)} / {formatCurrency(referenceValues.sunatRef)}
+                </span>
+                <span>
+                  Gastos: {formatCurrency(kpis.expensesPaid)} / {formatCurrency(referenceValues.gastosRef)}
+                </span>
               </div>
             </div>
           ) : null}
@@ -483,6 +501,7 @@ export default function FinanceModulePage() {
                   <FinanceTable
                     movements={filteredMovements}
                     onStatusChange={handleStatusChange}
+                    onDelete={handleDeleteMovement}
                     disabled={isLocked}
                   />
                 </div>
@@ -507,6 +526,7 @@ export default function FinanceModulePage() {
                   <FinanceTable
                     movements={filteredMovements.filter((movement) => movement.type === "PagoColaborador")}
                     onStatusChange={handleStatusChange}
+                    onDelete={handleDeleteMovement}
                     disabled={isLocked}
                   />
                 </div>
@@ -533,6 +553,7 @@ export default function FinanceModulePage() {
                       ["GastoFijo", "GastoVariable"].includes(movement.type)
                     )}
                     onStatusChange={handleStatusChange}
+                    onDelete={handleDeleteMovement}
                     disabled={isLocked}
                   />
                 </div>
@@ -728,7 +749,7 @@ function ValidationModal({ onClose, onSave }: { onClose: () => void; onSave: (va
 function ClientModal({ onClose, onSave }: { onClose: () => void; onSave: (client: FinanceClient) => void }) {
   const [form, setForm] = useState({
     name: "",
-    isRecurring: true,
+    isRecurring: false,
     recurringAmount: 0,
     recurringDay: 1,
     defaultAccountTo: "LUIS",
