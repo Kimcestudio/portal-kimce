@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AuthProvider, useAuth } from "@/components/auth/AuthProvider";
 
 function LoginForm() {
@@ -11,7 +11,12 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const params = useSearchParams();
+  const [redirectTo, setRedirectTo] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setRedirectTo(params.get("from"));
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -19,9 +24,8 @@ function LoginForm() {
     setError(null);
     try {
       const user = await signInUser(email, password);
-      const redirect = params.get("from");
-      if (redirect) {
-        router.replace(redirect);
+      if (redirectTo) {
+        router.replace(redirectTo);
         return;
       }
       router.replace(user.role === "admin" ? "/admin/dashboard" : "/app/dashboard");
