@@ -41,7 +41,7 @@ export default function CalendarPage() {
   const selectedEvents = selectedISO
     ? events.filter((event) => event.date === selectedISO)
     : [];
-  const selectedAbsences = selectedISO
+  const selectedAbsences = selectedDate
     ? absences.filter(
         (absence) =>
           absence.status === "APPROVED" &&
