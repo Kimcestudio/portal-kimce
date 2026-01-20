@@ -37,6 +37,7 @@ const buildDefaultProfile = (user: User): UserProfile => ({
   role: "collab",
   position: "",
   active: true,
+  status: "approved",
 });
 
 const mergeProfile = (user: User, data?: Partial<UserProfile> | null): UserProfile => ({
@@ -47,6 +48,7 @@ const mergeProfile = (user: User, data?: Partial<UserProfile> | null): UserProfi
   photoURL: data?.photoURL ?? user.photoURL ?? "",
   role: data?.role ?? "collab",
   active: data?.active ?? true,
+  status: data?.status ?? (data?.active === false ? "disabled" : "approved"),
   position: data?.position ?? "",
 });
 

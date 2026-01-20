@@ -2,19 +2,20 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getCurrentUser } from "@/services/firebase/auth";
+import { useAuth } from "@/components/auth/useAuth";
 
 export default function HomePage() {
   const router = useRouter();
+  const { user, loading } = useAuth();
 
   useEffect(() => {
-    const user = getCurrentUser();
+    if (loading) return;
     if (!user) {
       router.replace("/login");
       return;
     }
-    router.replace(user.role === "admin" ? "/admin/dashboard" : "/app/dashboard");
-  }, [router]);
+    router.replace(user.role === "admin" ? "/admin/dashboard" : "/dashboard");
+  }, [router, user, loading]);
 
   return (
     <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">

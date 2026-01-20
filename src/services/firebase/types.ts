@@ -1,4 +1,5 @@
 export type UserRole = "collab" | "admin";
+export type UserStatus = "approved" | "pending" | "disabled";
 
 export interface UserProfile {
   uid: string;
@@ -8,6 +9,7 @@ export interface UserProfile {
   role: UserRole;
   position: string;
   active: boolean;
+  status?: UserStatus;
 }
 
 export type RequestStatus = "PENDING" | "APPROVED" | "REJECTED";
