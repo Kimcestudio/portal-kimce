@@ -255,7 +255,8 @@ export default function AttendancePageContent() {
   };
 
   const handleSubmitCorrection = () => {
-    createCorrectionRequest(userId, {
+    if (!user) return;
+    createCorrectionRequest(user.uid, {
       date: correctionDraft.date,
       attendanceId: correctionDraft.attendanceId,
       proposedChanges: correctionDraft.proposedChanges,
