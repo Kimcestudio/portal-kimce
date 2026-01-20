@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AuthProvider, useAuth } from "@/components/auth/AuthProvider";
+import { useAuth } from "@/components/auth/useAuth";
 
 function LoginForm() {
-  const { signInUser } = useAuth();
+  const { signInWithEmail, signInWithGoogle } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
   const [redirectTo, setRedirectTo] = useState<string | null>(null);
 
@@ -23,16 +24,33 @@ function LoginForm() {
     setLoading(true);
     setError(null);
     try {
-      const user = await signInUser(email, password);
+      const user = await signInWithEmail(email, password);
       if (redirectTo) {
         router.replace(redirectTo);
         return;
       }
-      router.replace(user.role === "admin" ? "/admin/dashboard" : "/app/dashboard");
+      router.replace(user.role === "admin" ? "/admin/dashboard" : "/dashboard");
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    setError(null);
+    try {
+      const user = await signInWithGoogle();
+      if (redirectTo) {
+        router.replace(redirectTo);
+        return;
+      }
+      router.replace(user.role === "admin" ? "/admin/dashboard" : "/dashboard");
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -50,6 +68,24 @@ function LoginForm() {
           El administrador debe aprobar tu acceso antes de ingresar.
         </p>
         <div className="mt-6 space-y-4">
+          <button
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200/60 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-[0_12px_32px_rgba(15,23,42,0.08)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_34px_rgba(15,23,42,0.12)]"
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={googleLoading}
+          >
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white">
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                <path d="M12 10.2v3.9h5.5c-.2 1.4-1.6 4.1-5.5 4.1-3.3 0-6-2.7-6-6.2s2.7-6.2 6-6.2c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.8 3.3 14.7 2.2 12 2.2 6.9 2.2 2.7 6.5 2.7 12s4.2 9.8 9.3 9.8c5.4 0 9-3.8 9-9.2 0-.6-.1-1.1-.2-1.6H12z" />
+              </svg>
+            </span>
+            {googleLoading ? "Conectando..." : "Continuar con Google"}
+          </button>
+          <div className="flex items-center gap-3 text-xs text-slate-400">
+            <span className="h-px flex-1 bg-slate-200/80" />
+            o con correo
+            <span className="h-px flex-1 bg-slate-200/80" />
+          </div>
           <label className="text-xs font-semibold text-slate-500" htmlFor="login-email">
             Correo
           </label>
@@ -93,9 +129,5 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
-  return (
-    <AuthProvider>
-      <LoginForm />
-    </AuthProvider>
-  );
+  return <LoginForm />;
 }
