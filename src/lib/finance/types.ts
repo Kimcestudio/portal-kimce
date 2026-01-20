@@ -115,6 +115,7 @@ export type FinanceFilters = {
   status: "all" | FinanceStatus;
   account: "all" | FinanceAccountName;
   responsible: "all" | FinanceAccountName;
+  category?: "all" | string;
 };
 
 export type FinanceTabKey = "dashboard" | "movimientos" | "pagos" | "gastos" | "cuentas" | "cierre";
