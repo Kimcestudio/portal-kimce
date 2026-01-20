@@ -46,6 +46,9 @@ function LoginForm() {
         <p className="mt-1 text-sm text-slate-500">
           Ingresa con tu correo y contraseña para continuar.
         </p>
+        <p className="mt-2 rounded-xl border border-slate-200/60 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+          El administrador debe aprobar tu acceso antes de ingresar.
+        </p>
         <div className="mt-6 space-y-4">
           <label className="text-xs font-semibold text-slate-500" htmlFor="login-email">
             Correo
