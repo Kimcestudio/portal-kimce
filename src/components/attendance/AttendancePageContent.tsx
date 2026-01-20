@@ -288,7 +288,7 @@ export default function AttendancePageContent() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        userName={user?.displayName ?? "Colaborador"}
+        userName={user?.displayName ?? user?.email ?? undefined}
         rightSlot={
           <div className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-muted shadow-soft">
             Semana actual · {formatISODate(weekStart)}

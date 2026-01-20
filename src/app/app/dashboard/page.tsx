@@ -16,7 +16,7 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader userName={user?.displayName ?? "Colaborador"} />
+      <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
       <div className="grid gap-4 md:grid-cols-3">
         <div className="rounded-2xl bg-white p-5 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
           <p className="text-xs text-slate-500">Horas registradas</p>

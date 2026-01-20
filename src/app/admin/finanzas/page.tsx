@@ -195,7 +195,7 @@ export default function FinanceModulePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader userName={user?.displayName ?? "Administrador"} />
+      <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
       <FinanceGate>
         <div className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-3">

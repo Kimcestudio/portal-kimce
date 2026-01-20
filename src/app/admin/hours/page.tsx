@@ -71,7 +71,7 @@ export default function AdminHoursPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader userName={user?.displayName ?? "Administrador"} />
+      <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
       <div className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

@@ -277,7 +277,6 @@ export default function AttendancePage() {
     <AppShell sidebar={<SidebarNav />}>
       <div className="flex flex-col gap-4">
         <PageHeader
-          userName="Alondra"
           rightSlot={
             <div className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-muted shadow-soft">
               Semana actual · {formatISODate(weekStart)}

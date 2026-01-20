@@ -52,7 +52,7 @@ export default function CalendarPage() {
   return (
     <AppShell sidebar={<SidebarNav />}>
       <div className="flex flex-col gap-4">
-        <PageHeader userName="Alondra" />
+        <PageHeader />
         <CalendarHeader
           label={monthLabel}
           onPrev={handlePrev}

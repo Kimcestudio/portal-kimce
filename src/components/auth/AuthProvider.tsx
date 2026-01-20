@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { UserProfile } from "@/services/firebase/types";
 import {
   getCurrentUser,
@@ -12,7 +12,6 @@ import {
   updateUserProfile,
 } from "@/services/firebase/auth";
 import { getUserById } from "@/services/firebase/db";
-import { seedFirebaseData } from "@/services/firebase/seed";
 
 type AuthUser = {
   uid: string;
@@ -27,7 +26,7 @@ interface AuthContextValue {
   viewMode: "collaborator" | "admin";
   setViewMode: (mode: "collaborator" | "admin") => void;
   signInUser: (email: string, password: string) => Promise<UserProfile>;
-  signOutUser: () => void;
+  signOutUser: () => Promise<void>;
   updateUser: (payload: Partial<UserProfile>) => void;
 }
 
@@ -35,6 +34,7 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -45,7 +45,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    seedFirebaseData();
     const session = getStoredSession();
     const currentProfile = getCurrentUser();
     setAuthUser(session ? { uid: session.uid, email: session.email } : null);
@@ -81,10 +80,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return response;
   };
 
-  const signOutUser = () => {
+  const signOutUser = async () => {
     signOut();
     setAuthUser(null);
     setProfile(null);
+    setViewMode("collaborator");
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("sidebar_view");
+      window.localStorage.removeItem("view_mode");
+    }
+    router.replace("/login");
   };
 
   const updateUser = (payload: Partial<UserProfile>) => {
