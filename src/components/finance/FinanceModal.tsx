@@ -384,7 +384,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         type: "number",
         placeholder: "0",
         min: 0,
-        showWhen: (values) => Boolean(values.requiereDevolucion),
+        showWhen: (values) => Boolean((values as ExpenseFormValues).requiereDevolucion),
       },
       {
         name: "referencia",
