@@ -117,6 +117,8 @@ const accountOptions = [
   { value: "KIMCE", label: "Kimce" },
 ];
 
+const s = (v?: string) => (v ?? "").trim();
+
 const statusOptions = [
   { value: "PENDIENTE", label: "Pendiente" },
   { value: "CANCELADO", label: "Cancelado" },
@@ -140,7 +142,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
     },
     schema: (values) => {
       const errors: Record<string, string> = {};
-      if (!values.clientName.trim()) errors.clientName = "Cliente es requerido";
+      if (!s(values.clientName)) errors.clientName = "Cliente es requerido";
       if (!values.incomeDate) errors.incomeDate = "Fecha requerida";
       if (!values.accountDestination) errors.accountDestination = "Cuenta requerida";
       if (values.amount <= 0 || Number.isNaN(values.amount)) errors.amount = "Monto inválido";
@@ -193,8 +195,8 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
     },
     schema: (values) => {
       const errors: Record<string, string> = {};
-      if (!values.nombreCompleto.trim()) errors.nombreCompleto = "Nombre requerido";
-      if (!values.rolPuesto.trim()) errors.rolPuesto = "Rol requerido";
+      if (!s(values.nombreCompleto)) errors.nombreCompleto = "Nombre requerido";
+      if (!s(values.rolPuesto)) errors.rolPuesto = "Rol requerido";
       if (values.montoBase <= 0 || Number.isNaN(values.montoBase)) errors.montoBase = "Monto inválido";
       if (!values.inicioContrato) errors.inicioContrato = "Fecha requerida";
       const hasDay = values.diaPago !== "";
@@ -268,7 +270,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
     schema: (values) => {
       const errors: Record<string, string> = {};
       if (!values.colaboradorId) errors.colaboradorId = "Selecciona colaborador";
-      if (!values.periodo.trim()) errors.periodo = "Periodo requerido";
+      if (!s(values.periodo)) errors.periodo = "Periodo requerido";
       if (values.montoBase <= 0 || Number.isNaN(values.montoBase)) errors.montoBase = "Monto inválido";
       if (!values.fechaPago) errors.fechaPago = "Fecha requerida";
       if (!values.cuentaOrigen) errors.cuentaOrigen = "Cuenta requerida";
@@ -333,7 +335,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
     },
     schema: (values) => {
       const errors: Record<string, string> = {};
-      if (!values.descripcion.trim()) errors.descripcion = "Descripción requerida";
+      if (!s(values.descripcion)) errors.descripcion = "Descripción requerida";
       if (values.monto <= 0 || Number.isNaN(values.monto)) errors.monto = "Monto inválido";
       if (!values.fechaGasto) errors.fechaGasto = "Fecha requerida";
       if (values.requiereDevolucion && values.devolucionMonto <= 0) {
