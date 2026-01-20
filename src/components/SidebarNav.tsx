@@ -14,6 +14,7 @@ import {
   User,
   ClipboardList,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import useRole from "@/components/auth/useRole";
@@ -22,7 +23,7 @@ import { readFileAsDataUrl } from "@/services/firebase/media";
 import { useEffect, useMemo, useState } from "react";
 
 type NavItem = {
-  icon: React.ComponentType<{ size?: number }>;
+  icon: LucideIcon;
   label: string;
   href: string;
   action?: () => void;
