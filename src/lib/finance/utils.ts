@@ -1,5 +1,3 @@
-import type { FinanceTransaction } from "@/lib/finance/types";
-
 export function formatCurrency(value: number) {
   return new Intl.NumberFormat("es-PE", {
     style: "currency",
@@ -19,12 +17,6 @@ export function getMonthLabel(monthKey: string) {
   );
 }
 
-export function getPreviousMonthKey(monthKey: string) {
-  const [year, month] = monthKey.split("-").map(Number);
-  const date = new Date(year, month - 2, 1);
-  return getMonthKey(date);
-}
-
 export function buildMonthOptions(count = 6) {
   const options = [] as { value: string; label: string }[];
   const now = new Date();
@@ -34,23 +26,4 @@ export function buildMonthOptions(count = 6) {
     options.push({ value: key, label: getMonthLabel(key) });
   }
   return options;
-}
-
-export function toMonthKey(transaction: Pick<FinanceTransaction, "date" | "monthKey">) {
-  if (transaction.monthKey) return transaction.monthKey;
-  return getMonthKey(new Date(transaction.date));
-}
-
-export function calcFinalAmount(transaction: Pick<FinanceTransaction, "amount" | "bonus" | "discount" | "refund">) {
-  const bonus = transaction.bonus ?? 0;
-  const discount = transaction.discount ?? 0;
-  const refund = transaction.refund ?? 0;
-  return transaction.amount + bonus - discount - refund;
-}
-
-export function getWeekIndex(date: Date) {
-  const first = new Date(date.getFullYear(), date.getMonth(), 1);
-  const dayOffset = (first.getDay() + 6) % 7;
-  const dayOfMonth = date.getDate() + dayOffset;
-  return Math.ceil(dayOfMonth / 7);
 }

@@ -1,21 +1,12 @@
-import type { FinanceAccount, FinanceCategory, FinanceFilters } from "@/lib/finance/types";
+import type { FinanceFilters } from "@/lib/finance/types";
 import { buildMonthOptions } from "@/lib/finance/utils";
 
 interface FinanceFilterBarProps {
   filters: FinanceFilters;
   onChange: (filters: FinanceFilters) => void;
-  accounts: FinanceAccount[];
-  categories: FinanceCategory[];
-  responsibles: string[];
 }
 
-export default function FinanceFilterBar({
-  filters,
-  onChange,
-  accounts,
-  categories,
-  responsibles,
-}: FinanceFilterBarProps) {
+export default function FinanceFilterBar({ filters, onChange }: FinanceFilterBarProps) {
   const monthOptions = buildMonthOptions(8);
 
   return (
@@ -32,22 +23,8 @@ export default function FinanceFilterBar({
         onChange={(value) => onChange({ ...filters, status: value as FinanceFilters["status"] })}
         options={[
           { value: "all", label: "Todo" },
-          { value: "Pendiente", label: "Pendiente" },
-          { value: "Cancelado", label: "Cancelado" },
-        ]}
-      />
-      <Select
-        label="Tipo"
-        value={filters.type}
-        onChange={(value) => onChange({ ...filters, type: value as FinanceFilters["type"] })}
-        options={[
-          { value: "all", label: "Todos" },
-          { value: "Ingreso", label: "Ingreso" },
-          { value: "PagoColaborador", label: "Pago colaborador" },
-          { value: "GastoFijo", label: "Gasto fijo" },
-          { value: "GastoVariable", label: "Gasto variable" },
-          { value: "Transferencia", label: "Transferencia" },
-          { value: "Fondo", label: "Fondo" },
+          { value: "PENDIENTE", label: "Pendiente" },
+          { value: "CANCELADO", label: "Cancelado" },
         ]}
       />
       <Select
@@ -56,22 +33,20 @@ export default function FinanceFilterBar({
         onChange={(value) => onChange({ ...filters, account: value as FinanceFilters["account"] })}
         options={[
           { value: "all", label: "Todas" },
-          ...accounts.map((account) => ({ value: account.id, label: account.name })),
+          { value: "LUIS", label: "Luis" },
+          { value: "ALONDRA", label: "Alondra" },
+          { value: "KIMCE", label: "Kimce" },
         ]}
       />
       <Select
         label="Responsable"
         value={filters.responsible}
-        onChange={(value) => onChange({ ...filters, responsible: value })}
-        options={[{ value: "all", label: "Todos" }, ...responsibles.map((name) => ({ value: name, label: name }))]}
-      />
-      <Select
-        label="Categoría"
-        value={filters.category}
-        onChange={(value) => onChange({ ...filters, category: value })}
+        onChange={(value) => onChange({ ...filters, responsible: value as FinanceFilters["responsible"] })}
         options={[
-          { value: "all", label: "Todas" },
-          ...categories.map((category) => ({ value: category.label, label: category.label })),
+          { value: "all", label: "Todos" },
+          { value: "LUIS", label: "Luis" },
+          { value: "ALONDRA", label: "Alondra" },
+          { value: "KIMCE", label: "Kimce" },
         ]}
       />
     </div>

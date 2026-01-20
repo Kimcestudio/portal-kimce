@@ -1,11 +1,11 @@
 import { useState } from "react";
 import Badge from "@/components/ui/Badge";
-import type { FinanceMovement, FinanceMovementStatus } from "@/lib/finance/types";
+import type { FinanceMovement, FinanceStatus } from "@/lib/finance/types";
 import { formatCurrency } from "@/lib/finance/utils";
 
 interface FinanceTableProps {
   movements: FinanceMovement[];
-  onStatusChange?: (id: string, status: FinanceMovementStatus) => void;
+  onStatusChange?: (id: string, status: FinanceStatus) => void;
   onDelete?: (id: string) => void;
   disabled?: boolean;
 }
@@ -29,17 +29,13 @@ export default function FinanceTable({ movements, onStatusChange, onDelete, disa
           {movements.map((movement) => (
             <tr key={movement.id} className="border-t border-slate-100">
               <td className="px-4 py-3 text-xs text-slate-500">
-                {new Date(movement.date).toLocaleDateString("es-PE")}
+                {new Date(movement.incomeDate).toLocaleDateString("es-PE")}
               </td>
               <td className="px-4 py-3">
-                <p className="font-semibold text-slate-900">
-                  {movement.type === "Ingreso" ? movement.clientName ?? movement.concept : movement.concept}
-                </p>
-                <p className="text-xs text-slate-500">{movement.referenceCode ?? movement.category}</p>
+                <p className="font-semibold text-slate-900">{movement.clientName}</p>
+                <p className="text-xs text-slate-500">{movement.reference ?? movement.projectService ?? "-"}</p>
               </td>
-              <td className="px-4 py-3 text-xs text-slate-500">
-                {movement.accountFrom ?? movement.accountTo ?? "-"}
-              </td>
+              <td className="px-4 py-3 text-xs text-slate-500">{movement.accountDestination}</td>
               <td className="px-4 py-3 text-xs text-slate-500">{movement.responsible}</td>
               <td className="px-4 py-3">
                 <StatusChip
@@ -74,12 +70,12 @@ function StatusChip({
   onChange,
   disabled,
 }: {
-  status: FinanceMovementStatus;
-  onChange?: (status: FinanceMovementStatus) => void;
+  status: FinanceStatus;
+  onChange?: (status: FinanceStatus) => void;
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const tone = status === "Cancelado" ? "success" : "warning";
+  const tone = status === "CANCELADO" ? "success" : "warning";
 
   return (
     <div className="relative inline-flex">
@@ -89,7 +85,7 @@ function StatusChip({
         onClick={() => setOpen((prev) => !prev)}
         disabled={disabled}
       >
-        <Badge tone={tone} label={status} />
+        <Badge tone={tone} label={status === "CANCELADO" ? "Cancelado" : "Pendiente"} />
       </button>
       {open ? (
         <div className="absolute left-0 top-9 z-20 min-w-[160px] rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
@@ -97,7 +93,7 @@ function StatusChip({
             type="button"
             className="w-full rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
             onClick={() => {
-              onChange?.("Cancelado");
+              onChange?.("CANCELADO");
               setOpen(false);
             }}
           >
@@ -107,7 +103,7 @@ function StatusChip({
             type="button"
             className="w-full rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
             onClick={() => {
-              onChange?.("Pendiente");
+              onChange?.("PENDIENTE");
               setOpen(false);
             }}
           >

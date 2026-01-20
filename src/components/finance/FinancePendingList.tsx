@@ -22,10 +22,8 @@ export default function FinancePendingList({ title, items, emptyLabel }: Finance
           items.map((item) => (
             <div key={item.id} className="flex items-center justify-between text-sm">
               <div>
-                <p className="font-semibold text-slate-900">
-                  {item.type === "Ingreso" ? item.clientName ?? item.concept : item.concept}
-                </p>
-                <p className="text-xs text-slate-500">{item.referenceCode ?? item.category}</p>
+                <p className="font-semibold text-slate-900">{item.clientName}</p>
+                <p className="text-xs text-slate-500">{item.reference ?? item.projectService ?? "-"}</p>
               </div>
               <span className="font-semibold text-slate-900">{formatCurrency(item.amount)}</span>
             </div>
