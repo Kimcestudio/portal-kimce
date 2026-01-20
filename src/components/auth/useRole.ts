@@ -5,5 +5,5 @@ import { mapRole } from "@/lib/roles";
 
 export default function useRole() {
   const auth = useOptionalAuth();
-  return mapRole(auth?.user?.role);
+  return mapRole(auth?.profile?.role ?? auth?.user?.role);
 }

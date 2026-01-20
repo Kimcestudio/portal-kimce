@@ -157,29 +157,16 @@ export default function SidebarNav() {
   const auth = useOptionalAuth();
   const signOutUser = auth?.signOutUser;
   const updateUser = auth?.updateUser;
-  const user = auth?.user;
-  const [view, setView] = useState<"collaborator" | "admin">(() => {
-    if (typeof window === "undefined") return "collaborator";
-    const stored = window.localStorage.getItem("sidebar_view");
-    return stored === "admin" ? "admin" : "collaborator";
-  });
+  const profile = auth?.profile ?? auth?.user;
+  const authUser = auth?.authUser ?? null;
+  const viewMode = auth?.viewMode ?? "collaborator";
+  const setViewMode = auth?.setViewMode;
   const [isExpanded, setIsExpanded] = useState(false);
 
-  useEffect(() => {
-    if (role !== "ADMIN") {
-      setView("collaborator");
-    }
-  }, [role]);
-
-  useEffect(() => {
-    if (role !== "ADMIN") return;
-    window.localStorage.setItem("sidebar_view", view);
-  }, [role, view]);
-
   const visibleNavItems = useMemo(() => {
-    if (role === "ADMIN" && view === "admin") return adminNavItems;
+    if (role === "ADMIN" && viewMode === "admin") return adminNavItems;
     return collaboratorNavItems;
-  }, [role, view]);
+  }, [role, viewMode]);
 
   return (
     <aside
@@ -198,9 +185,9 @@ export default function SidebarNav() {
                 <div className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-white/70">
                   <button
                     type="button"
-                    onClick={() => setView("collaborator")}
+                    onClick={() => setViewMode?.("collaborator")}
                     className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
-                      view === "collaborator"
+                      viewMode === "collaborator"
                         ? "bg-[#4f56d3] text-white shadow-glow"
                         : "hover:bg-white/10"
                     }`}
@@ -209,9 +196,9 @@ export default function SidebarNav() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setView("admin")}
+                    onClick={() => setViewMode?.("admin")}
                     className={`flex-1 rounded-full px-3 py-1 transition duration-200 ${
-                      view === "admin"
+                      viewMode === "admin"
                         ? "bg-[#4f56d3] text-white shadow-glow"
                         : "hover:bg-white/10"
                     }`}
@@ -299,18 +286,18 @@ export default function SidebarNav() {
               />
               <img
                 src={
-                  user?.photoURL ??
+                  profile?.photoURL ??
                   "https://images.unsplash.com/photo-1502685104226-ee32379fefbe?auto=format&fit=crop&w=120&q=80"
                 }
-                alt={user?.displayName ?? "Usuario"}
+                alt={profile?.displayName ?? authUser?.email ?? "Usuario"}
                 className="h-full w-full object-cover"
               />
             </label>
             <div className="flex min-w-0 flex-1 flex-col">
               <p className="truncate text-sm font-semibold text-white">
-                {user?.displayName ?? "Colaborador"}
+                {profile?.displayName ?? authUser?.email ?? "Usuario"}
               </p>
-              <p className="truncate text-xs text-white/60">{user?.position ?? "Puesto"}</p>
+              <p className="truncate text-xs text-white/60">{profile?.position ?? ""}</p>
             </div>
           </div>
         ) : (
@@ -318,10 +305,10 @@ export default function SidebarNav() {
             <div className="h-12 w-12 overflow-hidden rounded-full border border-white/20">
               <img
                 src={
-                  user?.photoURL ??
+                  profile?.photoURL ??
                   "https://images.unsplash.com/photo-1502685104226-ee32379fefbe?auto=format&fit=crop&w=120&q=80"
                 }
-                alt={user?.displayName ?? "Usuario"}
+                alt={profile?.displayName ?? authUser?.email ?? "Usuario"}
                 className="h-full w-full object-cover"
               />
             </div>

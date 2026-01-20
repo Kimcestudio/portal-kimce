@@ -13,6 +13,14 @@ export function getStoredSession() {
   return readStorage<AuthSession | null>(SESSION_KEY, null);
 }
 
+export function onAuthStateChanged(callback: (session: AuthSession | null) => void) {
+  if (typeof window === "undefined") return () => undefined;
+  const handler = () => callback(getStoredSession());
+  window.addEventListener("storage", handler);
+  handler();
+  return () => window.removeEventListener("storage", handler);
+}
+
 function setStoredSession(session: AuthSession | null) {
   if (session) {
     writeStorage(SESSION_KEY, session);
