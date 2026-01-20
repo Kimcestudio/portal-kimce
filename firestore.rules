@@ -1,0 +1,109 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+
+    function isAdmin() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function userExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function isApproved(uid) {
+      return userExists(uid) && userDoc(uid).status == "approved";
+    }
+
+    // --- users ---
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+
+      // El usuario puede crear su propio doc (onboarding)
+      allow create: if isSignedIn()
+        && request.auth.uid == uid;
+
+      // Usuario solo puede actualizar su perfil SIN tocar role/status
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (request.auth.uid == uid
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.status == resource.data.status)
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    // --- admins ---
+    match /admins/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // --- timeEntries ---
+    match /timeEntries/{id} {
+      allow create: if isSignedIn()
+        && isApproved(request.auth.uid)
+        && request.resource.data.uid == request.auth.uid;
+
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        (resource.data.uid == request.auth.uid && isApproved(request.auth.uid))
+      );
+
+      allow update, delete: if isAdmin();
+    }
+
+    // --- adjustments ---
+    match /adjustments/{id} {
+      allow create: if isSignedIn()
+        && isApproved(request.auth.uid)
+        && request.resource.data.userId == request.auth.uid;
+
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        (resource.data.userId == request.auth.uid && isApproved(request.auth.uid))
+      );
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin()
+        || (isSignedIn()
+            && resource.data.userId == request.auth.uid
+            && resource.data.status == "pendiente"
+            && isApproved(request.auth.uid));
+    }
+
+    // --- extraActivities ---
+    match /extraActivities/{id} {
+      allow create: if isSignedIn()
+        && isApproved(request.auth.uid)
+        && request.resource.data.userId == request.auth.uid;
+
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        (resource.data.userId == request.auth.uid && isApproved(request.auth.uid))
+      );
+
+      allow update: if isAdmin();
+
+      allow delete: if isAdmin()
+        || (isSignedIn()
+            && resource.data.userId == request.auth.uid
+            && resource.data.status == "pendiente"
+            && isApproved(request.auth.uid));
+    }
+
+    // --- days_off ---
+    match /days_off/{id} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
