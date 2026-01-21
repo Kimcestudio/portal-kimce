@@ -8,6 +8,10 @@ export interface UserProfile {
   role: UserRole;
   position: string;
   active: boolean;
+  approved?: boolean;
+  isActive?: boolean;
+  status?: "pending" | "active";
+  createdAt?: string;
 }
 
 export type RequestStatus = "PENDING" | "APPROVED" | "REJECTED";

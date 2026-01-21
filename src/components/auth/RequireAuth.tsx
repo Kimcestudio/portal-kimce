@@ -41,7 +41,33 @@ export default function RequireAuth({ children, role }: RequireAuthProps) {
     );
   }
 
-  if (!user.active) {
+  if (process.env.NODE_ENV !== "production") {
+    console.log("[auth] access guard", { uid: user.uid, user });
+  }
+
+  const approved = user.approved ?? true;
+  const isActive = user.isActive ?? true;
+
+  if (approved === false) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+        <p className="text-sm font-semibold text-slate-700">Acceso pendiente</p>
+        <p className="text-xs text-slate-500">Tu acceso está pendiente de aprobación.</p>
+        <button
+          className="rounded-full border border-slate-200/60 px-4 py-2 text-xs font-semibold text-slate-600"
+          onClick={() => {
+            signOutUser();
+            router.replace("/login");
+          }}
+          type="button"
+        >
+          Cerrar sesión
+        </button>
+      </div>
+    );
+  }
+
+  if (isActive === false) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
         <p className="text-sm font-semibold text-slate-700">Acceso deshabilitado</p>
