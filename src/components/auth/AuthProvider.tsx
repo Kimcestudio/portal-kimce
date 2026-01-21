@@ -9,10 +9,11 @@ import {
   onAuthStateChanged,
   signInWithEmailPassword,
   signInWithGoogle,
+  setStoredSession,
   signOut,
   updateUserProfile,
 } from "@/services/firebase/auth";
-import { getUserById } from "@/services/firebase/db";
+import { getUserByEmail, getUserById } from "@/services/firebase/db";
 
 type AuthUser = {
   uid: string;
@@ -83,10 +84,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithGoogleUser = async () => {
-    const response = await signInWithGoogle();
-    setAuthUser({ uid: response.uid, email: response.email });
-    setProfile(response);
-    return response;
+    const credential = await signInWithGoogle();
+    const firebaseUser = credential.user;
+    const firebaseUid = firebaseUser.uid;
+    const email = firebaseUser.email ?? "";
+    const profile = email ? getUserByEmail(email) : null;
+    if (!firebaseUid) {
+      throw new Error("No se pudo validar el usuario.");
+    }
+    if (!profile) {
+      throw new Error("Usuario no autorizado.");
+    }
+    if (!profile.active) {
+      throw new Error("Acceso deshabilitado.");
+    }
+    setStoredSession({ uid: profile.uid, email: profile.email });
+    setAuthUser({ uid: profile.uid, email: profile.email });
+    setProfile(profile);
+    return profile;
   };
 
   const signOutUser = async () => {

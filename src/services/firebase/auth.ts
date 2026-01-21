@@ -1,5 +1,7 @@
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import type { UserProfile } from "@/services/firebase/types";
-import { getUserByEmail, getUserById, listUsers, updateUser } from "@/services/firebase/db";
+import { getUserByEmail, getUserById, updateUser } from "@/services/firebase/db";
+import { auth } from "@/services/firebase/client";
 import { readStorage, writeStorage } from "@/services/firebase/storage";
 
 const SESSION_KEY = "portal_auth_session";
@@ -21,7 +23,7 @@ export function onAuthStateChanged(callback: (session: AuthSession | null) => vo
   return () => window.removeEventListener("storage", handler);
 }
 
-function setStoredSession(session: AuthSession | null) {
+export function setStoredSession(session: AuthSession | null) {
   if (session) {
     writeStorage(SESSION_KEY, session);
   } else {
@@ -52,12 +54,8 @@ export async function signInWithEmailPassword(email: string, password: string) {
 }
 
 export async function signInWithGoogle() {
-  const user = listUsers().find((candidate) => candidate.active);
-  if (!user) {
-    throw new Error("No hay usuarios activos para iniciar sesión.");
-  }
-  setStoredSession({ uid: user.uid, email: user.email });
-  return user;
+  const provider = new GoogleAuthProvider();
+  return await signInWithPopup(auth, provider);
 }
 
 export function signOut() {
