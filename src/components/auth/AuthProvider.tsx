@@ -2,16 +2,20 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import type { UserProfile } from "@/services/firebase/types";
 import {
   getCurrentUser,
   getStoredSession,
   onAuthStateChanged,
   signInWithEmailPassword,
+  signInWithGoogle,
+  setStoredSession,
   signOut,
   updateUserProfile,
 } from "@/services/firebase/auth";
-import { getUserById } from "@/services/firebase/db";
+import { db } from "@/services/firebase/client";
+import { getUserByEmail, getUserById, upsertUser } from "@/services/firebase/db";
 
 type AuthUser = {
   uid: string;
@@ -25,7 +29,8 @@ interface AuthContextValue {
   loading: boolean;
   viewMode: "collaborator" | "admin";
   setViewMode: (mode: "collaborator" | "admin") => void;
-  signInUser: (email: string, password: string) => Promise<UserProfile>;
+  signInWithEmail: (email: string, password: string) => Promise<UserProfile>;
+  signInWithGoogle: () => Promise<UserProfile>;
   signOutUser: () => Promise<void>;
   updateUser: (payload: Partial<UserProfile>) => void;
 }
@@ -73,11 +78,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signInUser = async (email: string, password: string) => {
+  const signInWithEmail = async (email: string, password: string) => {
     const response = await signInWithEmailPassword(email, password);
     setAuthUser({ uid: response.uid, email: response.email });
     setProfile(response);
     return response;
+  };
+
+  const signInWithGoogleUser = async () => {
+    const credential = await signInWithGoogle();
+    const firebaseUser = credential.user;
+    const firebaseUid = firebaseUser.uid;
+    const email = firebaseUser.email ?? "";
+    if (!firebaseUid) {
+      throw new Error("No se pudo validar el usuario.");
+    }
+    const userRef = doc(db, "users", firebaseUid);
+    const snapshot = await getDoc(userRef);
+    if (!snapshot.exists()) {
+      const newProfile: UserProfile = {
+        uid: firebaseUid,
+        email,
+        displayName: firebaseUser.displayName ?? "Usuario",
+        photoURL: firebaseUser.photoURL ?? "",
+        role: "collab",
+        position: "Pendiente",
+        active: false,
+        approved: false,
+        isActive: false,
+        status: "pending",
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(userRef, {
+        uid: newProfile.uid,
+        email: newProfile.email,
+        displayName: newProfile.displayName,
+        photoURL: newProfile.photoURL,
+        approved: false,
+        isActive: false,
+        status: "pending",
+        createdAt: serverTimestamp(),
+      });
+      upsertUser(newProfile);
+      throw new Error("Tu acceso está pendiente de aprobación.");
+    }
+    const data = snapshot.data() as Partial<UserProfile>;
+    const approved =
+      Boolean(data.approved) || Boolean(data.isActive) || data.status === "active" || data.active === true;
+    if (!approved) {
+      throw new Error("Tu acceso está pendiente de aprobación.");
+    }
+    const existingProfile = email ? getUserByEmail(email) : null;
+    const mergedProfile: UserProfile = {
+      uid: data.uid ?? firebaseUid,
+      email: data.email ?? email,
+      displayName: data.displayName ?? firebaseUser.displayName ?? "Usuario",
+      photoURL: data.photoURL ?? firebaseUser.photoURL ?? "",
+      role: data.role ?? existingProfile?.role ?? "collab",
+      position: data.position ?? existingProfile?.position ?? "Sin asignar",
+      active: data.active ?? existingProfile?.active ?? true,
+      approved: data.approved ?? existingProfile?.approved,
+      isActive: data.isActive ?? existingProfile?.isActive,
+      status: (data.status as UserProfile["status"]) ?? existingProfile?.status,
+      createdAt:
+        typeof data.createdAt === "string"
+          ? data.createdAt
+          : existingProfile?.createdAt ?? new Date().toISOString(),
+    };
+    upsertUser(mergedProfile);
+    setStoredSession({ uid: mergedProfile.uid, email: mergedProfile.email });
+    setAuthUser({ uid: mergedProfile.uid, email: mergedProfile.email });
+    setProfile(mergedProfile);
+    return mergedProfile;
   };
 
   const signOutUser = async () => {
@@ -106,7 +178,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       viewMode,
       setViewMode,
-      signInUser,
+      signInWithEmail,
+      signInWithGoogle: signInWithGoogleUser,
       signOutUser,
       updateUser,
     }),
