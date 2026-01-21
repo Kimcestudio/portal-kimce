@@ -8,6 +8,7 @@ import {
   getStoredSession,
   onAuthStateChanged,
   signInWithEmailPassword,
+  signInWithGoogle,
   signOut,
   updateUserProfile,
 } from "@/services/firebase/auth";
@@ -25,7 +26,8 @@ interface AuthContextValue {
   loading: boolean;
   viewMode: "collaborator" | "admin";
   setViewMode: (mode: "collaborator" | "admin") => void;
-  signInUser: (email: string, password: string) => Promise<UserProfile>;
+  signInWithEmail: (email: string, password: string) => Promise<UserProfile>;
+  signInWithGoogle: () => Promise<UserProfile>;
   signOutUser: () => Promise<void>;
   updateUser: (payload: Partial<UserProfile>) => void;
 }
@@ -73,8 +75,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signInUser = async (email: string, password: string) => {
+  const signInWithEmail = async (email: string, password: string) => {
     const response = await signInWithEmailPassword(email, password);
+    setAuthUser({ uid: response.uid, email: response.email });
+    setProfile(response);
+    return response;
+  };
+
+  const signInWithGoogleUser = async () => {
+    const response = await signInWithGoogle();
     setAuthUser({ uid: response.uid, email: response.email });
     setProfile(response);
     return response;
@@ -106,7 +115,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       viewMode,
       setViewMode,
-      signInUser,
+      signInWithEmail,
+      signInWithGoogle: signInWithGoogleUser,
       signOutUser,
       updateUser,
     }),
