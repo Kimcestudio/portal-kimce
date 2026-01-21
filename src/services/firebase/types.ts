@@ -10,7 +10,7 @@ export interface UserProfile {
   active: boolean;
   approved?: boolean;
   isActive?: boolean;
-  status?: "pending" | "active";
+  status?: "pending" | "active" | "disabled";
   createdAt?: string;
 }
 

@@ -48,6 +48,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const stored = window.localStorage.getItem("view_mode");
     return stored === "admin" ? "admin" : "collaborator";
   });
+  const adminAllowlist = ["kimcestudio@gmail.com"]; // Actualiza esta lista para el bootstrap admin.
 
   useEffect(() => {
     const session = getStoredSession();
@@ -69,11 +70,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [profile?.role, viewMode]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged((session) => {
-      setAuthUser(session ? { uid: session.uid, email: session.email } : null);
-      setProfile(session ? getUserById(session.uid) : null);
+    let isMounted = true;
+    const unsubscribe = onAuthStateChanged(async (session) => {
+      if (!isMounted) return;
+      if (!session) {
+        setAuthUser(null);
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setAuthUser({ uid: session.uid, email: session.email });
+      const localProfile = getUserById(session.uid);
+      let nextProfile = localProfile;
+      try {
+        const userRef = doc(db, "users", session.uid);
+        const snapshot = await getDoc(userRef);
+        if (snapshot.exists()) {
+          const data = snapshot.data() as Partial<UserProfile>;
+          if (!data.role) {
+            await setDoc(
+              userRef,
+              {
+                role: "collab",
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+            data.role = "collab";
+          }
+          nextProfile = {
+            uid: data.uid ?? session.uid,
+            email: data.email ?? session.email,
+            displayName: data.displayName ?? localProfile?.displayName ?? "Usuario",
+            photoURL: data.photoURL ?? localProfile?.photoURL ?? "",
+            role: data.role ?? localProfile?.role ?? "collab",
+            position: data.position ?? localProfile?.position ?? "Sin asignar",
+            active: data.isActive ?? data.active ?? localProfile?.active ?? true,
+            approved: data.approved ?? localProfile?.approved,
+            isActive: data.isActive ?? localProfile?.isActive,
+            status: data.status ?? localProfile?.status,
+            createdAt:
+              typeof data.createdAt === "string"
+                ? data.createdAt
+                : localProfile?.createdAt ?? new Date().toISOString(),
+          };
+          upsertUser(nextProfile);
+        }
+      } catch (error) {
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[auth] Firestore sync failed", error);
+        }
+      }
+      if (!isMounted) return;
+      setProfile(nextProfile);
+      setLoading(false);
     });
     return () => {
+      isMounted = false;
       if (unsubscribe) unsubscribe();
     };
   }, []);
@@ -102,16 +156,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (process.env.NODE_ENV !== "production") {
         console.log("[auth] Firestore user missing");
       }
+      const isAdmin = adminAllowlist.includes(email.toLowerCase());
       const newProfile: UserProfile = {
         uid: firebaseUid,
         email,
         displayName: firebaseUser.displayName ?? "Usuario",
         photoURL: firebaseUser.photoURL ?? "",
-        role: "collab",
+        role: isAdmin ? "admin" : "collab",
         position: "Pendiente",
-        active: false,
+        active: true,
         approved: false,
-        isActive: false,
+        isActive: true,
         status: "pending",
         createdAt: new Date().toISOString(),
       };
@@ -121,9 +176,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         displayName: newProfile.displayName,
         photoURL: newProfile.photoURL,
         approved: false,
-        isActive: false,
+        isActive: true,
         status: "pending",
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        role: newProfile.role,
       });
       upsertUser(newProfile);
       throw new Error("Tu acceso está pendiente de aprobación.");
@@ -132,10 +189,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (process.env.NODE_ENV !== "production") {
       console.log("[auth] Firestore user data", data);
     }
-    const approved = data.approved ?? true;
+    if (!data.role) {
+      await setDoc(
+        userRef,
+        {
+          role: "collab",
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      data.role = "collab";
+    }
+    const approved = data.approved;
+    const status = data.status ?? "pending";
     const isActive = data.isActive ?? true;
-    if (approved === false) {
+    if (approved !== true) {
       throw new Error("Tu acceso está pendiente de aprobación.");
+    }
+    if (status !== "active") {
+      throw new Error(status === "disabled" ? "Tu cuenta está inactiva." : "Tu acceso está pendiente de aprobación.");
     }
     if (isActive === false) {
       throw new Error("Tu cuenta está inactiva.");
