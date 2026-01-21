@@ -1,5 +1,5 @@
 import type { UserProfile } from "@/services/firebase/types";
-import { getUserByEmail, getUserById, updateUser } from "@/services/firebase/db";
+import { getUserByEmail, getUserById, listUsers, updateUser } from "@/services/firebase/db";
 import { readStorage, writeStorage } from "@/services/firebase/storage";
 
 const SESSION_KEY = "portal_auth_session";
@@ -46,6 +46,15 @@ export async function signInWithEmailPassword(email: string, password: string) {
   }
   if (!user.active) {
     throw new Error("Acceso deshabilitado.");
+  }
+  setStoredSession({ uid: user.uid, email: user.email });
+  return user;
+}
+
+export async function signInWithGoogle() {
+  const user = listUsers().find((candidate) => candidate.active);
+  if (!user) {
+    throw new Error("No hay usuarios activos para iniciar sesión.");
   }
   setStoredSession({ uid: user.uid, email: user.email });
   return user;
