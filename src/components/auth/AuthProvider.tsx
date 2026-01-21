@@ -95,7 +95,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const userRef = doc(db, "users", firebaseUid);
     const snapshot = await getDoc(userRef);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[auth] Google uid", firebaseUid);
+    }
     if (!snapshot.exists()) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[auth] Firestore user missing");
+      }
       const newProfile: UserProfile = {
         uid: firebaseUid,
         email,
@@ -123,10 +129,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Tu acceso está pendiente de aprobación.");
     }
     const data = snapshot.data() as Partial<UserProfile>;
-    const approved =
-      Boolean(data.approved) || Boolean(data.isActive) || data.status === "active" || data.active === true;
-    if (!approved) {
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[auth] Firestore user data", data);
+    }
+    const approved = data.approved ?? true;
+    const isActive = data.isActive ?? true;
+    if (approved === false) {
       throw new Error("Tu acceso está pendiente de aprobación.");
+    }
+    if (isActive === false) {
+      throw new Error("Tu cuenta está inactiva.");
     }
     const existingProfile = email ? getUserByEmail(email) : null;
     const mergedProfile: UserProfile = {
@@ -136,7 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       photoURL: data.photoURL ?? firebaseUser.photoURL ?? "",
       role: data.role ?? existingProfile?.role ?? "collab",
       position: data.position ?? existingProfile?.position ?? "Sin asignar",
-      active: data.active ?? existingProfile?.active ?? true,
+      active: data.isActive ?? data.active ?? existingProfile?.active ?? true,
       approved: data.approved ?? existingProfile?.approved,
       isActive: data.isActive ?? existingProfile?.isActive,
       status: (data.status as UserProfile["status"]) ?? existingProfile?.status,
