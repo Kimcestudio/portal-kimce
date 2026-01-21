@@ -8,10 +8,12 @@ import {
   getStoredSession,
   onAuthStateChanged,
   signInWithEmailPassword,
+  signInWithGoogle,
+  setStoredSession,
   signOut,
   updateUserProfile,
 } from "@/services/firebase/auth";
-import { getUserById } from "@/services/firebase/db";
+import { getUserByEmail, getUserById } from "@/services/firebase/db";
 
 type AuthUser = {
   uid: string;
@@ -25,7 +27,8 @@ interface AuthContextValue {
   loading: boolean;
   viewMode: "collaborator" | "admin";
   setViewMode: (mode: "collaborator" | "admin") => void;
-  signInUser: (email: string, password: string) => Promise<UserProfile>;
+  signInWithEmail: (email: string, password: string) => Promise<UserProfile>;
+  signInWithGoogle: () => Promise<UserProfile>;
   signOutUser: () => Promise<void>;
   updateUser: (payload: Partial<UserProfile>) => void;
 }
@@ -73,11 +76,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signInUser = async (email: string, password: string) => {
+  const signInWithEmail = async (email: string, password: string) => {
     const response = await signInWithEmailPassword(email, password);
     setAuthUser({ uid: response.uid, email: response.email });
     setProfile(response);
     return response;
+  };
+
+  const signInWithGoogleUser = async () => {
+    const credential = await signInWithGoogle();
+    const firebaseUser = credential.user;
+    const firebaseUid = firebaseUser.uid;
+    const email = firebaseUser.email ?? "";
+    const profile = email ? getUserByEmail(email) : null;
+    if (!firebaseUid) {
+      throw new Error("No se pudo validar el usuario.");
+    }
+    if (!profile) {
+      throw new Error("Usuario no autorizado.");
+    }
+    if (!profile.active) {
+      throw new Error("Acceso deshabilitado.");
+    }
+    setStoredSession({ uid: profile.uid, email: profile.email });
+    setAuthUser({ uid: profile.uid, email: profile.email });
+    setProfile(profile);
+    return profile;
   };
 
   const signOutUser = async () => {
@@ -106,7 +130,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       viewMode,
       setViewMode,
-      signInUser,
+      signInWithEmail,
+      signInWithGoogle: signInWithGoogleUser,
       signOutUser,
       updateUser,
     }),
