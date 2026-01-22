@@ -185,24 +185,7 @@ export default function AdminUsersPage() {
     );
   }
 
-  const sections = [
-    { title: "Pendientes", items: pendingUsers },
-    { title: "Activos", items: activeUsers },
-    { title: "Otros", items: otherUsers },
-  ];
-
-  if (user?.role !== "admin") {
-    return (
-      <div className="flex flex-col gap-4">
-        <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
-        <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-          No tienes permisos para ver esta sección.
-        </div>
-      </div>
-    );
-  }
-
-  const sections = [
+  const userSections = [
     { title: "Pendientes", items: pendingUsers },
     { title: "Activos", items: activeUsers },
     { title: "Otros", items: otherUsers },
@@ -224,7 +207,7 @@ export default function AdminUsersPage() {
           <p className="mt-4 text-sm text-slate-500">Cargando usuarios...</p>
         ) : (
           <div className="mt-4 space-y-8">
-            {sections.map(({ title, items }) => (
+            {userSections.map(({ title, items }) => (
               <div key={title} className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
