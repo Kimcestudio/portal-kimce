@@ -191,6 +191,23 @@ export default function AdminUsersPage() {
     { title: "Otros", items: otherUsers },
   ];
 
+  if (user?.role !== "admin") {
+    return (
+      <div className="flex flex-col gap-4">
+        <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
+        <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
+          No tienes permisos para ver esta sección.
+        </div>
+      </div>
+    );
+  }
+
+  const sections = [
+    { title: "Pendientes", items: pendingUsers },
+    { title: "Activos", items: activeUsers },
+    { title: "Otros", items: otherUsers },
+  ];
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
