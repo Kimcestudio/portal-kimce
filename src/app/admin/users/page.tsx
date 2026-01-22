@@ -15,8 +15,9 @@ import { db } from "@/services/firebase/client";
 import type { UserProfile } from "@/services/firebase/types";
 
 type FirestoreUser = UserProfile & {
+  approved?: boolean;
   isActive?: boolean;
-  status?: "pending" | "active" | "inactive" | "disabled";
+  status?: "pending" | "active" | "disabled";
   createdAt?: string;
   updatedAt?: string;
 };
@@ -30,8 +31,6 @@ const formatStatusLabel = (status?: FirestoreUser["status"]) => {
   switch (status) {
     case "active":
       return "Activo";
-    case "inactive":
-      return "Inactivo";
     case "disabled":
       return "Deshabilitado";
     case "pending":
@@ -57,7 +56,6 @@ const badgeStyles = {
   status: {
     pending: "bg-amber-50 text-amber-700 border border-amber-200",
     active: "bg-emerald-50 text-emerald-700 border border-emerald-200",
-    inactive: "bg-rose-50 text-rose-700 border border-rose-200",
     disabled: "bg-rose-50 text-rose-700 border border-rose-200",
   },
 };
@@ -88,6 +86,7 @@ export default function AdminUsersPage() {
             role: (data.role as UserProfile["role"]) ?? "collab",
             position: data.position ?? "",
             active: data.active ?? data.isActive ?? true,
+            approved: data.approved,
             isActive: data.isActive,
             status: (data.status as FirestoreUser["status"]) ?? "pending",
             createdAt,
@@ -137,12 +136,12 @@ export default function AdminUsersPage() {
   }, [users]);
 
   const pendingUsers = useMemo(
-    () => sortedUsers.filter((item) => item.status === "pending"),
+    () => sortedUsers.filter((item) => item.status === "pending" || item.approved !== true),
     [sortedUsers]
   );
   const activeUsers = useMemo(
     () =>
-      sortedUsers.filter((item) => item.status === "active"),
+      sortedUsers.filter((item) => item.status === "active" && item.approved === true),
     [sortedUsers]
   );
   const otherUsers = useMemo(
@@ -169,10 +168,14 @@ export default function AdminUsersPage() {
 
   const toggleActive = (uid: string, nextValue: boolean) =>
     updateUserDoc(uid, {
-      status: nextValue ? "active" : "inactive",
+      status: nextValue ? "active" : "disabled",
+      approved: nextValue ? true : false,
     });
 
   const updateRole = (uid: string, role: UserProfile["role"]) => updateUserDoc(uid, { role });
+
+  const approveUser = (uid: string) =>
+    updateUserDoc(uid, { approved: true, status: "active", isActive: true });
 
   if (user?.role !== "admin") {
     return (
@@ -278,21 +281,15 @@ export default function AdminUsersPage() {
                             <td className="px-4 py-3">
                               <div className="flex flex-col items-end gap-2">
                                 <div className="flex flex-wrap justify-end gap-2">
-                                  <button
-                                    className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-                                      item.status === "pending"
-                                        ? "border border-emerald-200 text-emerald-700"
-                                        : "border border-amber-200 text-amber-700"
-                                    }`}
-                                    type="button"
-                                    onClick={() =>
-                                      updateUserDoc(item.uid, {
-                                        status: item.status === "pending" ? "active" : "pending",
-                                      })
-                                    }
-                                  >
-                                    {item.status === "pending" ? "Aprobar" : "Marcar pendiente"}
-                                  </button>
+                                  {item.status === "pending" || item.approved !== true ? (
+                                    <button
+                                      className="rounded-full border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-700"
+                                      type="button"
+                                      onClick={() => approveUser(item.uid)}
+                                    >
+                                      Aprobar
+                                    </button>
+                                  ) : null}
                                 </div>
                               </div>
                             </td>
@@ -355,6 +352,15 @@ export default function AdminUsersPage() {
                                 <span className="h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
                               </span>
                             </label>
+                            {item.status === "pending" || item.approved !== true ? (
+                              <button
+                                className="rounded-full border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-700"
+                                type="button"
+                                onClick={() => approveUser(item.uid)}
+                              >
+                                Aprobar
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       </div>
