@@ -42,6 +42,18 @@ export function updateUser(uid: string, updates: Partial<UserProfile>) {
   return next;
 }
 
+export function upsertUser(profile: UserProfile) {
+  const users = listUsers();
+  const index = users.findIndex((user) => user.uid === profile.uid);
+  if (index === -1) {
+    users.push(profile);
+  } else {
+    users[index] = { ...users[index], ...profile };
+  }
+  setCollection("users", users);
+  return profile;
+}
+
 export function listRequests() {
   return getCollection<RequestRecord>("requests");
 }
