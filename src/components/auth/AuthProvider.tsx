@@ -109,7 +109,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             active: data.isActive ?? data.active ?? localProfile?.active ?? true,
             approved: data.approved ?? localProfile?.approved,
             isActive: data.isActive ?? localProfile?.isActive,
-            status: data.status ?? localProfile?.status,
             createdAt:
               typeof data.createdAt === "string"
                 ? data.createdAt
@@ -166,8 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         position: "Pendiente",
         active: true,
         approved: false,
-        isActive: true,
-        status: "pending",
+        isActive: false,
         createdAt: new Date().toISOString(),
       };
       await setDoc(userRef, {
@@ -176,8 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         displayName: newProfile.displayName,
         photoURL: newProfile.photoURL,
         approved: false,
-        isActive: true,
-        status: "pending",
+        isActive: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         role: newProfile.role,
@@ -201,16 +198,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       data.role = "collab";
     }
     const approved = data.approved;
-    const status = data.status ?? "pending";
     const isActive = data.isActive ?? true;
     if (approved !== true) {
-      throw new Error("Tu acceso está pendiente de aprobación.");
-    }
-    if (status !== "active") {
-      throw new Error(status === "disabled" ? "Tu cuenta está inactiva." : "Tu acceso está pendiente de aprobación.");
+      throw new Error("Tu acceso aún no está habilitado.");
     }
     if (isActive === false) {
-      throw new Error("Tu cuenta está inactiva.");
+      throw new Error("Tu cuenta está desactivada.");
     }
     const existingProfile = email ? getUserByEmail(email) : null;
     const mergedProfile: UserProfile = {
@@ -223,7 +216,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       active: data.isActive ?? data.active ?? existingProfile?.active ?? true,
       approved: data.approved ?? existingProfile?.approved,
       isActive: data.isActive ?? existingProfile?.isActive,
-      status: (data.status as UserProfile["status"]) ?? existingProfile?.status,
       createdAt:
         typeof data.createdAt === "string"
           ? data.createdAt

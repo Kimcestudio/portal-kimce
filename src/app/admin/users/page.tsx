@@ -17,7 +17,6 @@ import type { UserProfile } from "@/services/firebase/types";
 type FirestoreUser = UserProfile & {
   approved?: boolean;
   isActive?: boolean;
-  status?: "pending" | "active" | "disabled";
   createdAt?: string;
   updatedAt?: string;
 };
@@ -27,17 +26,7 @@ type FirestoreTimestamp = {
   toMillis?: () => number;
 };
 
-const formatStatusLabel = (status?: FirestoreUser["status"]) => {
-  switch (status) {
-    case "active":
-      return "Activo";
-    case "disabled":
-      return "Deshabilitado";
-    case "pending":
-    default:
-      return "Pendiente";
-  }
-};
+const formatStatusLabel = (isActive?: boolean) => (isActive === false ? "Inactivo" : "Activo");
 
 const formatDateLabel = (value?: string) => {
   if (!value) return "—";
@@ -45,19 +34,17 @@ const formatDateLabel = (value?: string) => {
   if (Number.isNaN(parsed.getTime())) return "—";
   return new Intl.DateTimeFormat("es-CL", {
     day: "2-digit",
-    month: "2-digit",
+    month: "short",
     year: "numeric",
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
+    hour12: true,
   }).format(parsed);
 };
 
 const badgeStyles = {
-  status: {
-    pending: "bg-amber-50 text-amber-700 border border-amber-200",
-    active: "bg-emerald-50 text-emerald-700 border border-emerald-200",
-    disabled: "bg-rose-50 text-rose-700 border border-rose-200",
-  },
+  active: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  inactive: "bg-rose-50 text-rose-700 border border-rose-200",
 };
 
 export default function AdminUsersPage() {
@@ -88,7 +75,6 @@ export default function AdminUsersPage() {
             active: data.active ?? data.isActive ?? true,
             approved: data.approved,
             isActive: data.isActive,
-            status: (data.status as FirestoreUser["status"]) ?? "pending",
             createdAt,
             updatedAt,
           };
@@ -136,12 +122,12 @@ export default function AdminUsersPage() {
   }, [users]);
 
   const pendingUsers = useMemo(
-    () => sortedUsers.filter((item) => item.status === "pending" || item.approved !== true),
+    () => sortedUsers.filter((item) => item.approved !== true),
     [sortedUsers]
   );
   const activeUsers = useMemo(
     () =>
-      sortedUsers.filter((item) => item.status === "active" && item.approved === true),
+      sortedUsers.filter((item) => item.approved === true && item.isActive === true),
     [sortedUsers]
   );
   const otherUsers = useMemo(
@@ -168,14 +154,13 @@ export default function AdminUsersPage() {
 
   const toggleActive = (uid: string, nextValue: boolean) =>
     updateUserDoc(uid, {
-      status: nextValue ? "active" : "disabled",
-      approved: nextValue ? true : false,
+      isActive: nextValue,
     });
 
   const updateRole = (uid: string, role: UserProfile["role"]) => updateUserDoc(uid, { role });
 
   const approveUser = (uid: string) =>
-    updateUserDoc(uid, { approved: true, status: "active", isActive: true });
+    updateUserDoc(uid, { approved: true, isActive: true });
 
   if (user?.role !== "admin") {
     return (
@@ -256,10 +241,10 @@ export default function AdminUsersPage() {
                             <td className="px-4 py-3 text-center">
                               <span
                                 className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${
-                                  badgeStyles.status[item.status ?? "pending"]
+                                  item.isActive === false ? badgeStyles.inactive : badgeStyles.active
                                 }`}
                               >
-                                {formatStatusLabel(item.status)}
+                                {formatStatusLabel(item.isActive)}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-center">
@@ -267,7 +252,7 @@ export default function AdminUsersPage() {
                                 <input
                                   className="peer sr-only"
                                   type="checkbox"
-                                  checked={item.status === "active"}
+                                  checked={item.isActive !== false}
                                   onChange={(event) => toggleActive(item.uid, event.target.checked)}
                                 />
                                 <span className="flex h-5 w-9 items-center rounded-full bg-slate-200 p-0.5 transition peer-checked:bg-emerald-500">
@@ -281,7 +266,7 @@ export default function AdminUsersPage() {
                             <td className="px-4 py-3">
                               <div className="flex flex-col items-end gap-2">
                                 <div className="flex flex-wrap justify-end gap-2">
-                                  {item.status === "pending" || item.approved !== true ? (
+                                  {item.approved !== true ? (
                                     <button
                                       className="rounded-full border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-700"
                                       type="button"
@@ -329,10 +314,10 @@ export default function AdminUsersPage() {
                         <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
                           <span
                             className={`rounded-full px-2 py-1 font-semibold ${
-                              badgeStyles.status[item.status ?? "pending"]
+                              item.isActive === false ? badgeStyles.inactive : badgeStyles.active
                             }`}
                           >
-                            {formatStatusLabel(item.status)}
+                            {formatStatusLabel(item.isActive)}
                           </span>
                           <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-600">
                             {formatDateLabel(item.createdAt)}
@@ -345,14 +330,14 @@ export default function AdminUsersPage() {
                               <input
                                 className="peer sr-only"
                                 type="checkbox"
-                                checked={item.status === "active"}
+                                checked={item.isActive !== false}
                                 onChange={(event) => toggleActive(item.uid, event.target.checked)}
                               />
                               <span className="flex h-5 w-9 items-center rounded-full bg-slate-200 p-0.5 transition peer-checked:bg-emerald-500">
                                 <span className="h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
                               </span>
                             </label>
-                            {item.status === "pending" || item.approved !== true ? (
+                            {item.approved !== true ? (
                               <button
                                 className="rounded-full border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-700"
                                 type="button"
