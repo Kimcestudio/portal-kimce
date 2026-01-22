@@ -88,19 +88,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const snapshot = await getDoc(userRef);
         if (snapshot.exists()) {
           const data = snapshot.data() as Partial<UserProfile>;
-          if (data.status === "admin") {
-            await setDoc(
-              userRef,
-              {
-                role: "admin",
-                status: "active",
-                updatedAt: serverTimestamp(),
-              },
-              { merge: true }
-            );
-            data.role = "admin";
-            data.status = "active";
-          }
           if (!data.role) {
             await setDoc(
               userRef,
@@ -201,19 +188,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const data = snapshot.data() as Partial<UserProfile>;
     if (process.env.NODE_ENV !== "production") {
       console.log("[auth] Firestore user data", data);
-    }
-    if (data.status === "admin") {
-      await setDoc(
-        userRef,
-        {
-          role: "admin",
-          status: "active",
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-      data.role = "admin";
-      data.status = "active";
     }
     if (!data.role) {
       await setDoc(

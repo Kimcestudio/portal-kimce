@@ -1,6 +1,6 @@
 "use client";
 
-import { collection, doc, onSnapshot, serverTimestamp, setDoc, type DocumentData } from "firebase/firestore";
+import { collection, onSnapshot, type DocumentData } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -33,20 +33,6 @@ export default function AdminUsersPage() {
       (snapshot) => {
         const nextUsers = snapshot.docs.map((docSnap) => {
           const data = docSnap.data() as DocumentData;
-          if (data.status === "admin") {
-            const userRef = doc(db, "users", docSnap.id);
-            setDoc(
-              userRef,
-              {
-                role: "admin",
-                status: "active",
-                updatedAt: serverTimestamp(),
-              },
-              { merge: true }
-            ).catch((error) => {
-              console.error("[admin/users] Failed to migrate legacy status", error);
-            });
-          }
           const toTimestamp = (value: unknown) => value as FirestoreTimestamp | undefined;
           const createdAt = toTimestamp(data.createdAt)?.toDate?.()?.toISOString() ?? data.createdAt;
           const updatedAt = toTimestamp(data.updatedAt)?.toDate?.()?.toISOString() ?? data.updatedAt;

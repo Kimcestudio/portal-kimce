@@ -13,14 +13,11 @@ service cloud.firestore {
       return isSignedIn() && userDoc(request.auth.uid).data.role == "admin";
     }
 
-    function isBootstrapAdmin() {
-      return isSignedIn() && request.auth.token.email in ["kimcestudio@gmail.com"];
-    }
-
     match /users/{uid} {
-      allow read, write: if isSignedIn() && request.auth.uid == uid;
-      allow read: if isAdmin() || isBootstrapAdmin();
-      allow list: if isAdmin() || isBootstrapAdmin();
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if isSignedIn() && request.auth.uid == uid;
+      allow read, list: if isAdmin();
+      allow write: if isAdmin();
     }
   }
 }
