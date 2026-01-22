@@ -1,6 +1,6 @@
 "use client";
 
-import { collection, onSnapshot, type DocumentData } from "firebase/firestore";
+import { collection, doc, onSnapshot, serverTimestamp, setDoc, type DocumentData } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -33,6 +33,20 @@ export default function AdminUsersPage() {
       (snapshot) => {
         const nextUsers = snapshot.docs.map((docSnap) => {
           const data = docSnap.data() as DocumentData;
+          if (data.status === "admin") {
+            const userRef = doc(db, "users", docSnap.id);
+            setDoc(
+              userRef,
+              {
+                role: "admin",
+                status: "active",
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            ).catch((error) => {
+              console.error("[admin/users] Failed to migrate legacy status", error);
+            });
+          }
           const toTimestamp = (value: unknown) => value as FirestoreTimestamp | undefined;
           const createdAt = toTimestamp(data.createdAt)?.toDate?.()?.toISOString() ?? data.createdAt;
           const updatedAt = toTimestamp(data.updatedAt)?.toDate?.()?.toISOString() ?? data.updatedAt;
@@ -57,7 +71,9 @@ export default function AdminUsersPage() {
       },
       (err) => {
         console.error("[admin/users] Error loading users", err);
-        setError("No se pudieron cargar los usuarios. Revisa permisos o conexión.");
+        const message = err?.message ?? "No se pudieron cargar los usuarios.";
+        const code = err?.code ? ` (${err.code})` : "";
+        setError(`${message}${code}`);
         setLoading(false);
       }
     );
