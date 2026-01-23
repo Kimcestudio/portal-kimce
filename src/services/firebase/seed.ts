@@ -19,7 +19,7 @@ const defaultUsers: UserProfile[] = [
       "https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=120&q=80",
     role: "collab",
     position: "Diseñadora UX",
-    workScheduleId: "full_time_48",
+    workScheduleId: "full_time_44",
     active: true,
   },
   {
@@ -30,7 +30,7 @@ const defaultUsers: UserProfile[] = [
       "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=120&q=80",
     role: "admin",
     position: "Head of Operations",
-    workScheduleId: "full_time_48",
+    workScheduleId: "full_time_44",
     active: true,
   },
   {

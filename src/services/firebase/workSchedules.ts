@@ -1,12 +1,12 @@
 import type { WorkSchedule } from "@/services/firebase/types";
 
-export const DEFAULT_WORK_SCHEDULE_ID = "full_time_48";
+export const DEFAULT_WORK_SCHEDULE_ID = "full_time_44";
 
 export const DEFAULT_WORK_SCHEDULES: WorkSchedule[] = [
   {
-    id: "full_time_48",
+    id: "full_time_44",
     name: "Full time",
-    weeklyMinutes: 2880,
+    weeklyMinutes: 2640,
     days: {
       mon: 480,
       tue: 480,
