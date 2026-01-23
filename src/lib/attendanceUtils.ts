@@ -1,3 +1,5 @@
+import type { WorkSchedule, WorkScheduleDays } from "@/services/firebase/types";
+
 export const WEEKDAY_EXPECTED_MINUTES = {
   0: 0,
   1: 480,
@@ -7,6 +9,26 @@ export const WEEKDAY_EXPECTED_MINUTES = {
   5: 480,
   6: 240,
 } as const;
+
+const DEFAULT_SCHEDULE_DAYS: WorkScheduleDays = {
+  mon: 480,
+  tue: 480,
+  wed: 480,
+  thu: 480,
+  fri: 480,
+  sat: 240,
+  sun: 0,
+};
+
+const DAY_KEY: Record<number, keyof WorkScheduleDays> = {
+  0: "sun",
+  1: "mon",
+  2: "tue",
+  3: "wed",
+  4: "thu",
+  5: "fri",
+  6: "sat",
+};
 
 export function minutesToHHMM(minutes: number) {
   const safeMinutes = Math.max(0, Math.round(minutes));
@@ -34,8 +56,13 @@ export function getWeekDates(weekStart: Date) {
   return dates;
 }
 
-export function expectedMinutesForDate(date: Date) {
-  return WEEKDAY_EXPECTED_MINUTES[date.getDay() as keyof typeof WEEKDAY_EXPECTED_MINUTES];
+export function expectedMinutesForDate(date: Date, schedule?: WorkSchedule | null) {
+  if (schedule?.days) {
+    const key = DAY_KEY[date.getDay()];
+    const minutes = schedule.days[key];
+    if (typeof minutes === "number") return minutes;
+  }
+  return DEFAULT_SCHEDULE_DAYS[DAY_KEY[date.getDay()]];
 }
 
 export function formatISODate(date: Date) {

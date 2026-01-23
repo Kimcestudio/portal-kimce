@@ -7,10 +7,28 @@ export interface UserProfile {
   photoURL: string;
   role: UserRole;
   position: string;
+  workScheduleId?: string;
   active: boolean;
   approved?: boolean;
   isActive?: boolean;
   createdAt?: string;
+}
+
+export type WorkScheduleDays = {
+  mon: number;
+  tue: number;
+  wed: number;
+  thu: number;
+  fri: number;
+  sat: number;
+  sun: number;
+};
+
+export interface WorkSchedule {
+  id: string;
+  name: string;
+  weeklyMinutes: number;
+  days: WorkScheduleDays;
 }
 
 export type RequestStatus = "PENDING" | "APPROVED" | "REJECTED";

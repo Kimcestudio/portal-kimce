@@ -16,6 +16,7 @@ import {
 } from "@/services/firebase/auth";
 import { db } from "@/services/firebase/client";
 import { getUserByEmail, getUserById, upsertUser } from "@/services/firebase/db";
+import { DEFAULT_WORK_SCHEDULE_ID } from "@/services/firebase/workSchedules";
 
 type AuthUser = {
   uid: string;
@@ -88,16 +89,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const snapshot = await getDoc(userRef);
         if (snapshot.exists()) {
           const data = snapshot.data() as Partial<UserProfile>;
-          if (!data.role) {
+          if (!data.role || !data.workScheduleId) {
             await setDoc(
               userRef,
               {
-                role: "collab",
+                role: data.role ?? "collab",
+                workScheduleId: data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
                 updatedAt: serverTimestamp(),
               },
               { merge: true }
             );
-            data.role = "collab";
+            data.role = data.role ?? "collab";
+            data.workScheduleId = data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID;
           }
           nextProfile = {
             uid: data.uid ?? session.uid,
@@ -106,6 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             photoURL: data.photoURL ?? localProfile?.photoURL ?? "",
             role: data.role ?? localProfile?.role ?? "collab",
             position: data.position ?? localProfile?.position ?? "Sin asignar",
+            workScheduleId:
+              data.workScheduleId ?? localProfile?.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
             active: data.isActive ?? data.active ?? localProfile?.active ?? true,
             approved: data.approved ?? localProfile?.approved,
             isActive: data.isActive ?? localProfile?.isActive,
@@ -163,6 +168,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         photoURL: firebaseUser.photoURL ?? "",
         role: isAdmin ? "admin" : "collab",
         position: "Pendiente",
+        workScheduleId: DEFAULT_WORK_SCHEDULE_ID,
         active: true,
         approved: false,
         isActive: false,
@@ -178,6 +184,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         role: newProfile.role,
+        position: newProfile.position,
+        workScheduleId: newProfile.workScheduleId,
       });
       upsertUser(newProfile);
       throw new Error("Tu acceso está pendiente de aprobación.");
@@ -186,16 +194,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (process.env.NODE_ENV !== "production") {
       console.log("[auth] Firestore user data", data);
     }
-    if (!data.role) {
+    if (!data.role || !data.workScheduleId) {
       await setDoc(
         userRef,
         {
-          role: "collab",
+          role: data.role ?? "collab",
+          workScheduleId: data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
           updatedAt: serverTimestamp(),
         },
         { merge: true }
       );
-      data.role = "collab";
+      data.role = data.role ?? "collab";
+      data.workScheduleId = data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID;
     }
     const approved = data.approved;
     const isActive = data.isActive ?? true;
@@ -213,6 +223,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       photoURL: data.photoURL ?? firebaseUser.photoURL ?? "",
       role: data.role ?? existingProfile?.role ?? "collab",
       position: data.position ?? existingProfile?.position ?? "Sin asignar",
+      workScheduleId:
+        data.workScheduleId ?? existingProfile?.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
       active: data.isActive ?? data.active ?? existingProfile?.active ?? true,
       approved: data.approved ?? existingProfile?.approved,
       isActive: data.isActive ?? existingProfile?.isActive,

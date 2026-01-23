@@ -3,6 +3,7 @@ import type {
   FinanceSettings,
   RequestRecord,
   UserProfile,
+  WorkSchedule,
 } from "@/services/firebase/types";
 import { readStorage, writeStorage } from "@/services/firebase/storage";
 
@@ -22,6 +23,14 @@ export function setCollection<T>(name: string, value: T[]) {
 
 export function listUsers() {
   return getCollection<UserProfile>("users");
+}
+
+export function listWorkSchedules() {
+  return getCollection<WorkSchedule>("workSchedules");
+}
+
+export function getWorkScheduleById(id: string) {
+  return listWorkSchedules().find((schedule) => schedule.id === id) ?? null;
 }
 
 export function getUserById(uid: string) {

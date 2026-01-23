@@ -4,6 +4,7 @@ import {
   collection,
   doc,
   onSnapshot,
+  setDoc,
   serverTimestamp,
   updateDoc,
   type DocumentData,
@@ -12,13 +13,18 @@ import { useEffect, useMemo, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { db } from "@/services/firebase/client";
-import type { UserProfile } from "@/services/firebase/types";
+import type { UserProfile, WorkSchedule } from "@/services/firebase/types";
+import {
+  DEFAULT_WORK_SCHEDULES,
+  DEFAULT_WORK_SCHEDULE_ID,
+} from "@/services/firebase/workSchedules";
 
 type FirestoreUser = UserProfile & {
   approved?: boolean;
   isActive?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  workScheduleId?: string;
 };
 
 type FirestoreTimestamp = {
@@ -50,9 +56,18 @@ const badgeStyles = {
 export default function AdminUsersPage() {
   const { user } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState<FirestoreUser[]>([]);
+  const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
+  const [workSchedulesLoading, setWorkSchedulesLoading] = useState(true);
+  const [positionEdits, setPositionEdits] = useState<Record<string, string>>({});
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(timeout);
+  }, [toast]);
 
   useEffect(() => {
     if (user?.role !== "admin") return;
@@ -72,6 +87,7 @@ export default function AdminUsersPage() {
             photoURL: data.photoURL ?? "",
             role: (data.role as UserProfile["role"]) ?? "collab",
             position: data.position ?? "",
+            workScheduleId: data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
             active: data.active ?? data.isActive ?? true,
             approved: data.approved,
             isActive: data.isActive,
@@ -88,7 +104,61 @@ export default function AdminUsersPage() {
         const message = err?.message ?? "No se pudieron cargar los usuarios.";
         const code = err?.code ? ` (${err.code})` : "";
         setError(`${message}${code}`);
+        setToast({ message: `${message}${code}`, tone: "error" });
         setLoading(false);
+      }
+    );
+    return () => unsubscribe();
+  }, [user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== "admin") return;
+    const schedulesRef = collection(db, "workSchedules");
+    const unsubscribe = onSnapshot(
+      schedulesRef,
+      async (snapshot) => {
+        if (snapshot.empty) {
+          try {
+            await Promise.all(
+              DEFAULT_WORK_SCHEDULES.map((schedule) =>
+                setDoc(
+                  doc(db, "workSchedules", schedule.id),
+                  {
+                    name: schedule.name,
+                    weeklyMinutes: schedule.weeklyMinutes,
+                    days: schedule.days,
+                  },
+                  { merge: true }
+                )
+              )
+            );
+          } catch (seedError) {
+            console.error("[admin/users] Error seeding work schedules", seedError);
+            const message =
+              seedError instanceof Error
+                ? seedError.message
+                : "No se pudieron crear las jornadas.";
+            setToast({ message, tone: "error" });
+          }
+        }
+        const nextSchedules = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data() as DocumentData;
+          return {
+            id: docSnap.id,
+            name: data.name ?? "Sin nombre",
+            weeklyMinutes: typeof data.weeklyMinutes === "number" ? data.weeklyMinutes : 0,
+            days: (data.days as WorkSchedule["days"]) ?? DEFAULT_WORK_SCHEDULES[0].days,
+          };
+        });
+        setWorkSchedules(nextSchedules);
+        setWorkSchedulesLoading(false);
+      },
+      (err) => {
+        console.error("[admin/users] Error loading work schedules", err);
+        const message = err?.message ?? "No se pudieron cargar las jornadas.";
+        const code = err?.code ? ` (${err.code})` : "";
+        setToast({ message: `${message}${code}`, tone: "error" });
+        setWorkSchedulesLoading(false);
       }
     );
     return () => unsubscribe();
@@ -121,6 +191,11 @@ export default function AdminUsersPage() {
     });
   }, [users]);
 
+  const scheduleOptions = useMemo(
+    () => (workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES),
+    [workSchedules]
+  );
+
   const pendingUsers = useMemo(
     () => sortedUsers.filter((item) => item.approved !== true),
     [sortedUsers]
@@ -137,18 +212,18 @@ export default function AdminUsersPage() {
 
   const updateUserDoc = async (uid: string, payload: Record<string, unknown>) => {
     try {
-      setSuccess(null);
       const userRef = doc(db, "users", uid);
       await updateDoc(userRef, {
         ...payload,
         updatedAt: serverTimestamp(),
       });
-      setSuccess("Cambios guardados.");
+      setToast({ message: "Cambios guardados.", tone: "success" });
       setError(null);
     } catch (err) {
       console.error("[admin/users] Error updating user", err);
       const message = err instanceof Error ? err.message : "No se pudieron guardar los cambios.";
       setError(message);
+      setToast({ message, tone: "error" });
     }
   };
 
@@ -158,6 +233,12 @@ export default function AdminUsersPage() {
     });
 
   const updateRole = (uid: string, role: UserProfile["role"]) => updateUserDoc(uid, { role });
+
+  const updatePosition = (uid: string, position: string) =>
+    updateUserDoc(uid, { position });
+
+  const updateWorkSchedule = (uid: string, workScheduleId: string) =>
+    updateUserDoc(uid, { workScheduleId });
 
   const approveUser = (uid: string) =>
     updateUserDoc(uid, { approved: true, isActive: true });
@@ -182,7 +263,7 @@ export default function AdminUsersPage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
-      <div className="mx-auto w-full max-w-6xl rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
+      <div className="mx-auto w-full max-w-5xl rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Usuarios y Roles</h2>
@@ -190,7 +271,17 @@ export default function AdminUsersPage() {
           </div>
         </div>
         {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
-        {success ? <p className="mt-3 text-sm text-emerald-600">{success}</p> : null}
+        {toast ? (
+          <div
+            className={`mt-3 rounded-xl border px-4 py-2 text-xs font-semibold ${
+              toast.tone === "error"
+                ? "border-rose-200 bg-rose-50 text-rose-700"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            {toast.message}
+          </div>
+        ) : null}
         {loading ? (
           <p className="mt-4 text-sm text-slate-500">Cargando usuarios...</p>
         ) : (
@@ -208,6 +299,8 @@ export default function AdminUsersPage() {
                       <tr>
                         <th className="px-4 py-3 font-semibold">Correo</th>
                         <th className="px-4 py-3 font-semibold">Nombre</th>
+                        <th className="px-4 py-3 font-semibold">Puesto</th>
+                        <th className="px-4 py-3 text-center font-semibold">Jornada</th>
                         <th className="px-4 py-3 text-center font-semibold">Rol</th>
                         <th className="px-4 py-3 text-center font-semibold">Estado</th>
                         <th className="px-4 py-3 text-center font-semibold">Activo</th>
@@ -217,14 +310,44 @@ export default function AdminUsersPage() {
                     </thead>
                     <tbody className="divide-y divide-slate-200/60 text-slate-700">
                       {items.map((item) => {
+                        const positionValue =
+                          positionEdits[item.uid] ?? item.position ?? "";
                         return (
                           <tr key={item.uid} className="align-middle">
                             <td className="px-4 py-3">{item.email}</td>
+                            <td className="px-4 py-3 font-semibold text-slate-900">
+                              {item.displayName}
+                            </td>
                             <td className="px-4 py-3">
-                              <div className="space-y-1">
-                                <p className="font-semibold text-slate-900">{item.displayName}</p>
-                                <p className="text-[11px] text-slate-500">{item.position || "—"}</p>
-                              </div>
+                              <input
+                                className="w-40 rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
+                                value={positionValue}
+                                onChange={(event) =>
+                                  setPositionEdits((prev) => ({
+                                    ...prev,
+                                    [item.uid]: event.target.value,
+                                  }))
+                                }
+                                onBlur={(event) => {
+                                  const nextValue = event.target.value.trim();
+                                  if ((item.position ?? "") === nextValue) return;
+                                  updatePosition(item.uid, nextValue);
+                                }}
+                              />
+                            </td>
+                            <td className="px-4 py-3 text-center">
+                              <select
+                                className="w-40 rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
+                                value={item.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID}
+                                onChange={(event) => updateWorkSchedule(item.uid, event.target.value)}
+                                disabled={workSchedulesLoading}
+                              >
+                                {scheduleOptions.map((schedule) => (
+                                  <option key={schedule.id} value={schedule.id}>
+                                    {schedule.name}
+                                  </option>
+                                ))}
+                              </select>
                             </td>
                             <td className="px-4 py-3 text-center">
                               <select
@@ -294,62 +417,97 @@ export default function AdminUsersPage() {
                     </div>
                   ) : null}
                   {items.map((item) => (
-                      <div key={item.uid} className="rounded-xl border border-slate-200/60 p-4 text-xs">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">{item.displayName}</p>
-                            <p className="text-xs text-slate-500">{item.email}</p>
-                          </div>
-                          <select
-                            className="rounded-lg border border-slate-200 px-2 py-1 text-[10px]"
-                            value={item.role ?? "collab"}
+                    <div key={item.uid} className="rounded-xl border border-slate-200/60 p-4 text-xs">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{item.displayName}</p>
+                          <p className="text-xs text-slate-500">{item.email}</p>
+                        </div>
+                        <select
+                          className="rounded-lg border border-slate-200 px-2 py-1 text-[10px]"
+                          value={item.role ?? "collab"}
+                          onChange={(event) =>
+                            updateRole(item.uid, event.target.value as UserProfile["role"])
+                          }
+                        >
+                          <option value="admin">Administrador</option>
+                          <option value="collab">Colaborador</option>
+                        </select>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <label className="text-[11px] font-semibold text-slate-500">
+                          Puesto
+                          <input
+                            className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
+                            value={positionEdits[item.uid] ?? item.position ?? ""}
                             onChange={(event) =>
-                              updateRole(item.uid, event.target.value as UserProfile["role"])
+                              setPositionEdits((prev) => ({
+                                ...prev,
+                                [item.uid]: event.target.value,
+                              }))
                             }
+                            onBlur={(event) => {
+                              const nextValue = event.target.value.trim();
+                              if ((item.position ?? "") === nextValue) return;
+                              updatePosition(item.uid, nextValue);
+                            }}
+                          />
+                        </label>
+                        <label className="text-[11px] font-semibold text-slate-500">
+                          Jornada
+                          <select
+                            className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
+                            value={item.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID}
+                            onChange={(event) => updateWorkSchedule(item.uid, event.target.value)}
+                            disabled={workSchedulesLoading}
                           >
-                            <option value="admin">Administrador</option>
-                            <option value="collab">Colaborador</option>
+                            {scheduleOptions.map((schedule) => (
+                              <option key={schedule.id} value={schedule.id}>
+                                {schedule.name}
+                              </option>
+                            ))}
                           </select>
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                          <span
-                            className={`rounded-full px-2 py-1 font-semibold ${
-                              item.isActive === false ? badgeStyles.inactive : badgeStyles.active
-                            }`}
-                          >
-                            {formatStatusLabel(item.isActive)}
-                          </span>
-                          <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-600">
-                            {formatDateLabel(item.createdAt)}
-                          </span>
-                        </div>
-                        <div className="mt-3 space-y-2">
-                          <div className="flex flex-wrap gap-2">
-                            <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-500">
-                              Activo
-                              <input
-                                className="peer sr-only"
-                                type="checkbox"
-                                checked={item.isActive !== false}
-                                onChange={(event) => toggleActive(item.uid, event.target.checked)}
-                              />
-                              <span className="flex h-5 w-9 items-center rounded-full bg-slate-200 p-0.5 transition peer-checked:bg-emerald-500">
-                                <span className="h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
-                              </span>
-                            </label>
-                            {item.approved !== true ? (
-                              <button
-                                className="rounded-full border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-700"
-                                type="button"
-                                onClick={() => approveUser(item.uid)}
-                              >
-                                Aprobar
-                              </button>
-                            ) : null}
-                          </div>
+                        </label>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
+                        <span
+                          className={`rounded-full px-2 py-1 font-semibold ${
+                            item.isActive === false ? badgeStyles.inactive : badgeStyles.active
+                          }`}
+                        >
+                          {formatStatusLabel(item.isActive)}
+                        </span>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-600">
+                          {formatDateLabel(item.createdAt)}
+                        </span>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        <div className="flex flex-wrap gap-2">
+                          <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-500">
+                            Activo
+                            <input
+                              className="peer sr-only"
+                              type="checkbox"
+                              checked={item.isActive !== false}
+                              onChange={(event) => toggleActive(item.uid, event.target.checked)}
+                            />
+                            <span className="flex h-5 w-9 items-center rounded-full bg-slate-200 p-0.5 transition peer-checked:bg-emerald-500">
+                              <span className="h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
+                            </span>
+                          </label>
+                          {item.approved !== true ? (
+                            <button
+                              className="rounded-full border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-700"
+                              type="button"
+                              onClick={() => approveUser(item.uid)}
+                            >
+                              Aprobar
+                            </button>
+                          ) : null}
                         </div>
                       </div>
-                    ))}
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}

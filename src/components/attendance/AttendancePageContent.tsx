@@ -37,6 +37,8 @@ import {
   startBreak,
 } from "@/lib/storage/attendanceStorage";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { listWorkSchedules } from "@/services/firebase/db";
+import { DEFAULT_WORK_SCHEDULES } from "@/services/firebase/workSchedules";
 
 type AttendanceStatus = "OFF" | "IN_SHIFT" | "ON_BREAK" | "CLOSED";
 
@@ -108,6 +110,12 @@ export default function AttendancePageContent() {
   }, [weekOffset]);
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
+  const workSchedules = listWorkSchedules();
+  const scheduleOptions = workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES;
+  const schedule = useMemo(() => {
+    if (!user) return scheduleOptions[0];
+    return scheduleOptions.find((item) => item.id === user.workScheduleId) ?? scheduleOptions[0];
+  }, [scheduleOptions, user]);
 
   const reloadToday = () => {
     if (!user) return;
@@ -153,7 +161,7 @@ export default function AttendancePageContent() {
   const totalMinutes = todayRecord?.totalMinutes ?? 0;
 
   const expectedMinutesWeek = weekDates.reduce(
-    (total, date) => total + expectedMinutesForDate(date),
+    (total, date) => total + expectedMinutesForDate(date, schedule),
     0
   );
   const workedMinutesWeek = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
@@ -161,7 +169,7 @@ export default function AttendancePageContent() {
   const totalBalanceMinutes = user
     ? listAllRecords(user.uid).reduce((sum, record) => {
         const recordDate = new Date(`${record.date}T00:00:00`);
-        return sum + (record.totalMinutes - expectedMinutesForDate(recordDate));
+        return sum + (record.totalMinutes - expectedMinutesForDate(recordDate, schedule));
       }, 0)
     : 0;
   const completedDays = weekRecords.filter(
@@ -277,7 +285,7 @@ export default function AttendancePageContent() {
     .map((date) => {
       const dateISO = formatISODate(date);
       const record = weekRecords.find((item) => item.date === dateISO);
-      const targetHours = date.getDay() === 6 ? 4 : 8;
+      const targetHours = expectedMinutesForDate(date, schedule) / 60;
       return {
         label: date.toLocaleDateString("es-ES", { weekday: "short" }),
         hours: record ? Math.round((record.totalMinutes / 60) * 10) / 10 : 0,
