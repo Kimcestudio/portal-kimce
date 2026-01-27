@@ -29,28 +29,28 @@ type NavItem = {
   action?: () => void;
 };
 
-const collaboratorNavItems: NavItem[] = [
-  { icon: Home, label: "Inicio", href: "/dashboard" },
-  { icon: Clock, label: "Horario", href: "/attendance" },
-  { icon: Calendar, label: "Calendario", href: "/calendar" },
-  { icon: FileText, label: "Documentos", href: "/documents" },
-  { icon: Users, label: "Equipo", href: "/team" },
-  { icon: Mail, label: "Mensajes", href: "/app/messages" },
-  { icon: ClipboardList, label: "Historial", href: "/app/history" },
-  { icon: Shield, label: "Configuración", href: "/app/settings" },
+const buildCollaboratorNavItems = (base: string): NavItem[] => [
+  { icon: Home, label: "Inicio", href: `${base}/dashboard` },
+  { icon: Clock, label: "Horario", href: `${base}/hours` },
+  { icon: Calendar, label: "Calendario", href: `${base}/calendar` },
+  { icon: FileText, label: "Documentos", href: `${base}/documents` },
+  { icon: Users, label: "Equipo", href: `${base}/team` },
+  { icon: Mail, label: "Mensajes", href: `${base}/messages` },
+  { icon: ClipboardList, label: "Historial", href: `${base}/history` },
+  { icon: Shield, label: "Configuración", href: `${base}/settings` },
 ];
 
-const adminNavItems: NavItem[] = [
-  { icon: Home, label: "Inicio Admin", href: "/admin" },
-  { icon: Mail, label: "Solicitudes", href: "/admin/requests" },
-  { icon: Users, label: "Usuarios y Roles", href: "/admin/users" },
-  { icon: Wallet, label: "Finanzas", href: "/admin/finanzas" },
-  { icon: BarChart3, label: "Reportes", href: "/admin/reports" },
-  { icon: Clock, label: "Horarios", href: "/admin/hours" },
-  { icon: Calendar, label: "Calendario", href: "/admin/calendar" },
-  { icon: FileText, label: "Documentos", href: "/admin/documents" },
-  { icon: ClipboardList, label: "Gestión", href: "/admin/manage" },
-  { icon: Shield, label: "Configuración", href: "/admin/settings" },
+const buildAdminNavItems = (base: string): NavItem[] => [
+  { icon: Home, label: "Inicio Admin", href: base },
+  { icon: Mail, label: "Solicitudes", href: `${base}/requests` },
+  { icon: Users, label: "Usuarios y Roles", href: `${base}/users` },
+  { icon: Wallet, label: "Finanzas", href: `${base}/finanzas` },
+  { icon: BarChart3, label: "Reportes", href: `${base}/reports` },
+  { icon: Clock, label: "Horarios", href: `${base}/hours` },
+  { icon: Calendar, label: "Calendario", href: `${base}/calendar` },
+  { icon: FileText, label: "Documentos", href: `${base}/documents` },
+  { icon: ClipboardList, label: "Gestión", href: `${base}/manage` },
+  { icon: Shield, label: "Configuración", href: `${base}/settings` },
 ];
 
 function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel: boolean) {
@@ -120,15 +120,15 @@ function Section({ title, items, showLabel }: { title: string; items: NavItem[];
   const pathname = usePathname();
   const isActiveItem = (item: NavItem) => {
     const aliases: Record<string, string[]> = {
-      "/dashboard": ["/app/dashboard"],
-      "/attendance": ["/app/overview", "/app/attendance"],
-      "/calendar": ["/app/calendar"],
-      "/documents": ["/app/documents"],
-      "/team": ["/app/team"],
-      "/profile": ["/app/profile"],
-      "/app/messages": ["/messages"],
-      "/app/history": ["/history"],
-      "/app/settings": ["/settings"],
+      "/app/dashboard": ["/dashboard", "/app/overview", "/app/dashboard"],
+      "/app/hours": ["/attendance", "/app/attendance", "/app/hours"],
+      "/app/calendar": ["/calendar", "/app/calendar"],
+      "/app/documents": ["/documents", "/app/documents"],
+      "/app/team": ["/team", "/app/team"],
+      "/app/profile": ["/profile", "/app/profile"],
+      "/app/messages": ["/messages", "/app/messages"],
+      "/app/history": ["/history", "/app/history"],
+      "/app/settings": ["/settings", "/app/settings"],
       "/admin": ["/admin/dashboard", "/admin/overview"],
     };
     const extraMatches = aliases[item.href] ?? [];
@@ -163,10 +163,11 @@ export default function SidebarNav() {
   const setViewMode = auth?.setViewMode;
   const [isExpanded, setIsExpanded] = useState(false);
 
+  const base = profile?.role === "admin" && viewMode === "admin" ? "/admin" : "/app";
   const visibleNavItems = useMemo(() => {
-    if (role === "ADMIN" && viewMode === "admin") return adminNavItems;
-    return collaboratorNavItems;
-  }, [role, viewMode]);
+    if (role === "ADMIN" && viewMode === "admin") return buildAdminNavItems(base);
+    return buildCollaboratorNavItems(base);
+  }, [base, role, viewMode]);
 
   return (
     <aside
@@ -226,7 +227,7 @@ export default function SidebarNav() {
             <div className="mx-3 h-px bg-white/10" />
             <Section
               title="PROFILE"
-              items={[{ icon: User, label: "Mi perfil", href: "/profile" }]}
+              items={[{ icon: User, label: "Mi perfil", href: `${base}/profile` }]}
               showLabel
             />
             {signOutUser
@@ -246,7 +247,7 @@ export default function SidebarNav() {
         ) : (
           <div className="flex flex-col items-center gap-3">
             {renderNavItem(
-              { icon: User, label: "Mi perfil", href: "/profile" },
+              { icon: User, label: "Mi perfil", href: `${base}/profile` },
               false,
               "profile",
               false

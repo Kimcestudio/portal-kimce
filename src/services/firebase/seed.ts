@@ -8,6 +8,7 @@ import {
   setFinanceSettings,
 } from "@/services/firebase/db";
 import { seedFinanceData } from "@/lib/finance/storage";
+import { DEFAULT_WORK_SCHEDULES } from "@/services/firebase/workSchedules";
 
 const defaultUsers: UserProfile[] = [
   {
@@ -18,6 +19,7 @@ const defaultUsers: UserProfile[] = [
       "https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=120&q=80",
     role: "collab",
     position: "Diseñadora UX",
+    workScheduleId: "full_time_44",
     active: true,
   },
   {
@@ -28,6 +30,7 @@ const defaultUsers: UserProfile[] = [
       "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=120&q=80",
     role: "admin",
     position: "Head of Operations",
+    workScheduleId: "full_time_44",
     active: true,
   },
   {
@@ -38,6 +41,7 @@ const defaultUsers: UserProfile[] = [
       "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80",
     role: "collab",
     position: "Project Manager",
+    workScheduleId: "part_time_24",
     active: true,
   },
 ];
@@ -113,6 +117,9 @@ export function seedFirebaseData() {
   }
   if (getCollection<AdminAttendanceRecord>("attendance").length === 0) {
     setAttendanceRecords(buildAttendanceSeed());
+  }
+  if (getCollection("workSchedules").length === 0) {
+    setCollection("workSchedules", DEFAULT_WORK_SCHEDULES);
   }
   const financeSettings = getFinanceSettings();
   if (!financeSettings.financeKey && !financeSettings.financeKeyHash) {
