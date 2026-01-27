@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Pencil, Trash2 } from "lucide-react";
 import Badge from "@/components/ui/Badge";
 import type { FinanceMovement, FinanceStatus } from "@/lib/finance/types";
 import { formatCurrency } from "@/lib/finance/utils";
@@ -7,10 +8,26 @@ interface FinanceTableProps {
   movements: FinanceMovement[];
   onStatusChange?: (id: string, status: FinanceStatus) => void;
   onDelete?: (id: string) => void;
+  onEdit?: (movement: FinanceMovement) => void;
   disabled?: boolean;
 }
 
-export default function FinanceTable({ movements, onStatusChange, onDelete, disabled }: FinanceTableProps) {
+export default function FinanceTable({
+  movements,
+  onStatusChange,
+  onDelete,
+  onEdit,
+  disabled,
+}: FinanceTableProps) {
+  const dateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat("es-PE", {
+        day: "2-digit",
+        month: "short",
+      }),
+    []
+  );
+
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
       <table className="w-full text-left text-sm">
@@ -29,7 +46,7 @@ export default function FinanceTable({ movements, onStatusChange, onDelete, disa
           {movements.map((movement) => (
             <tr key={movement.id} className="border-t border-slate-100">
               <td className="px-4 py-3 text-xs text-slate-500">
-                {new Date(movement.incomeDate).toLocaleDateString("es-PE")}
+                {dateFormatter.format(new Date(movement.incomeDate))}
               </td>
               <td className="px-4 py-3">
                 <p className="font-semibold text-slate-900">{movement.clientName}</p>
@@ -48,14 +65,26 @@ export default function FinanceTable({ movements, onStatusChange, onDelete, disa
                 {formatCurrency(movement.amount)}
               </td>
               <td className="px-4 py-3 text-right">
-                <button
-                  type="button"
-                  className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:border-slate-300"
-                  onClick={() => onDelete?.(movement.id)}
-                  disabled={disabled || !onDelete}
-                >
-                  Borrar
-                </button>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                    onClick={() => onEdit?.(movement)}
+                    disabled={disabled || !onEdit}
+                    aria-label="Editar"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                    onClick={() => onDelete?.(movement.id)}
+                    disabled={disabled || !onDelete}
+                    aria-label="Eliminar"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </td>
             </tr>
           ))}

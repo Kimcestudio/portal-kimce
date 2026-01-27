@@ -40,13 +40,14 @@ export function createIncomeMovement(
   input: Omit<FinanceMovement, "id" | "monthKey" | "createdAt" | "updatedAt" | "type" | "concept">,
 ) {
   const now = new Date();
+  const totalAmount = input.tax?.total ?? input.amount;
   const movement: FinanceMovement = {
     id: `mov_${Date.now()}`,
     type: "income",
     concept: input.clientName,
     clientName: input.clientName,
     projectService: input.projectService ?? null,
-    amount: input.amount,
+    amount: totalAmount,
     incomeDate: input.incomeDate,
     expectedPayDate: input.expectedPayDate ?? null,
     accountDestination: input.accountDestination,
@@ -54,6 +55,8 @@ export function createIncomeMovement(
     status: input.status,
     reference: input.reference ?? null,
     notes: input.notes ?? null,
+    tax: input.tax,
+    recurring: input.recurring,
     monthKey: getMonthKey(new Date(input.incomeDate)),
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
