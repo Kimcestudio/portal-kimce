@@ -609,142 +609,150 @@ export default function FinanceModal({
           ))}
         </div>
         {incomeForm && taxSummary ? (
-          <div className="mt-5 space-y-4 rounded-2xl border border-slate-200/60 bg-slate-50/60 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-900">IGV y recurrencia</p>
-                <p className="text-xs text-slate-500">
-                  Configura IGV y programaciones recurrentes del ingreso.
-                </p>
+          <div className="mt-5 space-y-3">
+            <details className="rounded-2xl border border-slate-200/60 bg-slate-50/60 p-4">
+              <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">
+                IGV y cálculos
+              </summary>
+              <p className="mt-1 text-xs text-slate-500">
+                Define si el monto incluye IGV y revisa el detalle calculado.
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border border-slate-300"
+                    checked={incomeForm.taxEnabled}
+                    onChange={(event) =>
+                      updateIncomeForm({ taxEnabled: event.target.checked })
+                    }
+                    disabled={disabled}
+                  />
+                  Aplicar IGV
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="w-20 rounded-xl border border-slate-200/60 px-2 py-1 text-sm"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={incomeForm.taxRate}
+                    onChange={(event) =>
+                      updateIncomeForm({
+                        taxRate: event.target.value === "" ? 0 : Number(event.target.value),
+                      })
+                    }
+                    disabled={disabled || !incomeForm.taxEnabled}
+                  />
+                  <span className="text-xs text-slate-500">% IGV</span>
+                </div>
+                <label className="text-xs font-semibold text-slate-500">
+                  Monto ingresado
+                  <select
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    value={incomeForm.taxMode}
+                    onChange={(event) =>
+                      updateIncomeForm({
+                        taxMode: event.target.value as IncomeFormValues["taxMode"],
+                      })
+                    }
+                    disabled={disabled || !incomeForm.taxEnabled}
+                  >
+                    <option value="exclusive">Sin IGV</option>
+                    <option value="inclusive">Incluye IGV</option>
+                  </select>
+                </label>
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                  <p>Base: {taxSummary.base.toFixed(2)}</p>
+                  <p>IGV: {taxSummary.igv.toFixed(2)}</p>
+                  <p>Total: {taxSummary.total.toFixed(2)}</p>
+                </div>
               </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border border-slate-300"
-                  checked={incomeForm.taxEnabled}
-                  onChange={(event) =>
-                    updateIncomeForm({ taxEnabled: event.target.checked })
-                  }
-                  disabled={disabled}
-                />
-                Aplicar IGV
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  className="w-20 rounded-xl border border-slate-200/60 px-2 py-1 text-sm"
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.1}
-                  value={incomeForm.taxRate}
-                  onChange={(event) =>
-                    updateIncomeForm({
-                      taxRate: event.target.value === "" ? 0 : Number(event.target.value),
-                    })
-                  }
-                  disabled={disabled || !incomeForm.taxEnabled}
-                />
-                <span className="text-xs text-slate-500">% IGV</span>
-              </div>
-              <label className="text-xs font-semibold text-slate-500">
-                Monto ingresado
-                <select
-                  className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
-                  value={incomeForm.taxMode}
-                  onChange={(event) =>
-                    updateIncomeForm({
-                      taxMode: event.target.value as IncomeFormValues["taxMode"],
-                    })
-                  }
-                  disabled={disabled || !incomeForm.taxEnabled}
-                >
-                  <option value="exclusive">Sin IGV</option>
-                  <option value="inclusive">Incluye IGV</option>
-                </select>
-              </label>
-              <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-                <p>Base: {taxSummary.base.toFixed(2)}</p>
-                <p>IGV: {taxSummary.igv.toFixed(2)}</p>
-                <p>Total: {taxSummary.total.toFixed(2)}</p>
-              </div>
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border border-slate-300"
-                  checked={incomeForm.recurringEnabled}
-                  onChange={(event) =>
-                    updateIncomeForm({ recurringEnabled: event.target.checked })
-                  }
-                  disabled={disabled}
-                />
+            </details>
+            <details className="rounded-2xl border border-slate-200/60 bg-slate-50/60 p-4">
+              <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">
                 Ingreso recurrente
-              </label>
-              <label className="text-xs font-semibold text-slate-500">
-                Frecuencia
-                <select
-                  className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
-                  value={incomeForm.recurringFreq}
-                  onChange={(event) =>
-                    updateIncomeForm({
-                      recurringFreq: event.target.value as IncomeFormValues["recurringFreq"],
-                    })
-                  }
-                  disabled={disabled || !incomeForm.recurringEnabled}
-                >
-                  <option value="monthly">Mensual</option>
-                  <option value="weekly">Semanal</option>
-                  <option value="yearly">Anual</option>
-                </select>
-              </label>
-              <label className="text-xs font-semibold text-slate-500">
-                Día de cobro
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
-                  type="number"
-                  min={1}
-                  max={31}
-                  value={incomeForm.recurringDayOfMonth}
-                  onChange={(event) =>
-                    updateIncomeForm({
-                      recurringDayOfMonth: event.target.value === "" ? 1 : Number(event.target.value),
-                    })
-                  }
-                  disabled={
-                    disabled || !incomeForm.recurringEnabled || incomeForm.recurringFreq !== "monthly"
-                  }
-                />
-                {errors.recurringDayOfMonth ? <ErrorText message={errors.recurringDayOfMonth} /> : null}
-              </label>
-              <label className="text-xs font-semibold text-slate-500">
-                Inicio
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
-                  type="date"
-                  value={incomeForm.recurringStartAt}
-                  onChange={(event) =>
-                    updateIncomeForm({ recurringStartAt: event.target.value })
-                  }
-                  disabled={disabled || !incomeForm.recurringEnabled}
-                />
-                {errors.recurringStartAt ? <ErrorText message={errors.recurringStartAt} /> : null}
-              </label>
-              <label className="text-xs font-semibold text-slate-500">
-                Fin (opcional)
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
-                  type="date"
-                  value={incomeForm.recurringEndAt}
-                  onChange={(event) =>
-                    updateIncomeForm({ recurringEndAt: event.target.value })
-                  }
-                  disabled={disabled || !incomeForm.recurringEnabled}
-                />
-              </label>
-            </div>
+              </summary>
+              <p className="mt-1 text-xs text-slate-500">
+                Configura frecuencia y fechas para ingresos programados.
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border border-slate-300"
+                    checked={incomeForm.recurringEnabled}
+                    onChange={(event) =>
+                      updateIncomeForm({ recurringEnabled: event.target.checked })
+                    }
+                    disabled={disabled}
+                  />
+                  Activar recurrencia
+                </label>
+                <label className="text-xs font-semibold text-slate-500">
+                  Frecuencia
+                  <select
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    value={incomeForm.recurringFreq}
+                    onChange={(event) =>
+                      updateIncomeForm({
+                        recurringFreq: event.target.value as IncomeFormValues["recurringFreq"],
+                      })
+                    }
+                    disabled={disabled || !incomeForm.recurringEnabled}
+                  >
+                    <option value="monthly">Mensual</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="yearly">Anual</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-500">
+                  Día de cobro
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={incomeForm.recurringDayOfMonth}
+                    onChange={(event) =>
+                      updateIncomeForm({
+                        recurringDayOfMonth: event.target.value === "" ? 1 : Number(event.target.value),
+                      })
+                    }
+                    disabled={
+                      disabled || !incomeForm.recurringEnabled || incomeForm.recurringFreq !== "monthly"
+                    }
+                  />
+                  {errors.recurringDayOfMonth ? <ErrorText message={errors.recurringDayOfMonth} /> : null}
+                </label>
+                <label className="text-xs font-semibold text-slate-500">
+                  Inicio
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    type="date"
+                    value={incomeForm.recurringStartAt}
+                    onChange={(event) =>
+                      updateIncomeForm({ recurringStartAt: event.target.value })
+                    }
+                    disabled={disabled || !incomeForm.recurringEnabled}
+                  />
+                  {errors.recurringStartAt ? <ErrorText message={errors.recurringStartAt} /> : null}
+                </label>
+                <label className="text-xs font-semibold text-slate-500">
+                  Fin (opcional)
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    type="date"
+                    value={incomeForm.recurringEndAt}
+                    onChange={(event) =>
+                      updateIncomeForm({ recurringEndAt: event.target.value })
+                    }
+                    disabled={disabled || !incomeForm.recurringEnabled}
+                  />
+                </label>
+              </div>
+            </details>
           </div>
         ) : null}
         <div className="mt-5 flex justify-end gap-2">
