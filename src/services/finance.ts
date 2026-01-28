@@ -40,13 +40,14 @@ export function createIncomeMovement(
   input: Omit<FinanceMovement, "id" | "monthKey" | "createdAt" | "updatedAt" | "type" | "concept">,
 ) {
   const now = new Date();
+  const totalAmount = input.tax?.total ?? input.amount;
   const movement: FinanceMovement = {
     id: `mov_${Date.now()}`,
     type: "income",
     concept: input.clientName,
     clientName: input.clientName,
     projectService: input.projectService ?? null,
-    amount: input.amount,
+    amount: totalAmount,
     incomeDate: input.incomeDate,
     expectedPayDate: input.expectedPayDate ?? null,
     accountDestination: input.accountDestination,
@@ -54,6 +55,8 @@ export function createIncomeMovement(
     status: input.status,
     reference: input.reference ?? null,
     notes: input.notes ?? null,
+    tax: input.tax,
+    recurring: input.recurring,
     monthKey: getMonthKey(new Date(input.incomeDate)),
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
@@ -127,6 +130,30 @@ export function updateFinanceMovementStatus(id: string, status: FinanceStatus) {
   if (index === -1) return movements;
   movements[index] = { ...movements[index], status, updatedAt: new Date().toISOString() };
   setCollection(MOVEMENTS_COLLECTION, movements);
+  return movements;
+}
+
+export function updateIncomeMovement(
+  id: string,
+  updates: Partial<Omit<FinanceMovement, "id" | "type" | "createdAt" | "monthKey">>,
+) {
+  const movements = listFinanceMovements();
+  const index = movements.findIndex((movement) => movement.id === id);
+  if (index === -1) return movements;
+  const current = movements[index];
+  const next = {
+    ...current,
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+  movements[index] = next;
+  setCollection(MOVEMENTS_COLLECTION, movements);
+  const incomes = getCollection<FinanceMovement>(INCOMES_COLLECTION, []);
+  const incomeIndex = incomes.findIndex((movement) => movement.id === id);
+  if (incomeIndex !== -1) {
+    incomes[incomeIndex] = next;
+    setCollection(INCOMES_COLLECTION, incomes);
+  }
   return movements;
 }
 
