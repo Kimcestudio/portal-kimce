@@ -128,7 +128,7 @@ function StatusChip({
               }}
             >
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Cambiar a Cancelado
+              Cancelado
             </button>
           ) : (
             <button
@@ -140,7 +140,7 @@ function StatusChip({
               }}
             >
               <span className="h-2 w-2 rounded-full bg-amber-500" />
-              Cambiar a Pendiente
+              Pendiente
             </button>
           )}
         </div>
