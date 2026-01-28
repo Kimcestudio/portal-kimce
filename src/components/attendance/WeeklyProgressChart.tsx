@@ -39,16 +39,17 @@ export default function WeeklyProgressChart({
   const hasData = data.some((item) => item.hours > 0);
   const diffLabel = diffMinutes < 0 ? "Debes" : "A favor";
   const diffValue = minutesToHHMM(Math.abs(diffMinutes));
+  const targetLabel = minutesToHHMM(expectedMinutes);
 
   return (
     <div className="rounded-2xl border border-primary/10 bg-gradient-to-br from-[#eef0ff] via-[#f7f7ff] to-white p-6 shadow-soft">
       <div className="flex flex-wrap items-start justify-between gap-6">
         <div>
           <h2 className="text-lg font-semibold text-ink">Progreso semanal</h2>
-          <p className="text-xs text-muted">Horas registradas vs objetivo (44h).</p>
+          <p className="text-xs text-muted">Horas registradas vs objetivo ({targetLabel}).</p>
         </div>
         <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-primary shadow-soft">
-          Objetivo 44h
+          Objetivo {targetLabel}
         </span>
         <div className="flex flex-col gap-2 rounded-2xl bg-white/80 px-4 py-3 text-sm text-ink shadow-soft">
           <div className="text-xs text-muted">Total semana</div>

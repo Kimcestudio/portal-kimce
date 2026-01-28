@@ -41,7 +41,9 @@ function LoginForm() {
     setGoogleLoading(true);
     setError(null);
     try {
+      console.log("CLICK Google: start");
       const user = await signInWithGoogle();
+      console.log("CLICK Google: success");
       if (redirectTo) {
         router.replace(redirectTo);
         return;
