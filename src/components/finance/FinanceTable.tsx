@@ -29,7 +29,7 @@ export default function FinanceTable({
   );
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+    <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
       <table className="w-full text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
           <tr>
@@ -117,7 +117,7 @@ function StatusChip({
         <Badge tone={tone} label={status === "CANCELADO" ? "Cancelado" : "Pendiente"} />
       </button>
       {open ? (
-        <div className="absolute left-0 top-9 z-20 min-w-[160px] rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
+        <div className="absolute left-0 top-9 z-30 min-w-[160px] rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
           <button
             type="button"
             className="w-full rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
