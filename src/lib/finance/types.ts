@@ -23,6 +23,21 @@ export interface FinanceMovement {
   status: FinanceStatus;
   reference?: string | null;
   notes?: string | null;
+  tax?: {
+    enabled: boolean;
+    rate: number;
+    mode: "inclusive" | "exclusive";
+    base: number;
+    igv: number;
+    total: number;
+  };
+  recurring?: {
+    enabled: boolean;
+    freq: "monthly" | "weekly" | "yearly";
+    dayOfMonth?: number | null;
+    startAt?: string | null;
+    endAt?: string | null;
+  };
   monthKey: string;
   createdAt: string;
   updatedAt: string;
