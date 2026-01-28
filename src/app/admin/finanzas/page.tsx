@@ -36,6 +36,7 @@ import {
   deleteFinanceMovement,
   listFinanceMovements,
   updateFinanceMovementStatus,
+  updateIncomeMovement,
 } from "@/services/finance";
 
 const tabLabels: Record<FinanceTabKey, string> = {
@@ -54,7 +55,9 @@ export default function FinanceModulePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<FinanceModalType>("income");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [editingMovement, setEditingMovement] = useState<FinanceMovement | null>(null);
 
   const [filters, setFilters] = useState<FinanceFilters>({
     monthKey: getMonthKey(new Date()),
@@ -79,107 +82,205 @@ export default function FinanceModulePage() {
 
   const kpis = useMemo(() => calcKpis(movements, filters.monthKey), [movements, filters.monthKey]);
 
+  const monthSummary = useMemo(() => {
+    const monthMovements = movements.filter((movement) => movement.monthKey === filters.monthKey);
+    const total = monthMovements.reduce(
+      (sum, movement) => sum + (movement.tax?.total ?? movement.amount),
+      0
+    );
+    const igv = monthMovements.reduce((sum, movement) => sum + (movement.tax?.igv ?? 0), 0);
+    const net = total - igv;
+    const paid = monthMovements.reduce(
+      (sum, movement) =>
+        sum + (movement.status === "CANCELADO" ? movement.tax?.total ?? movement.amount : 0),
+      0
+    );
+    const pending = monthMovements.reduce(
+      (sum, movement) =>
+        sum + (movement.status === "PENDIENTE" ? movement.tax?.total ?? movement.amount : 0),
+      0
+    );
+    return { total, paid, pending, igv, net };
+  }, [filters.monthKey, movements]);
+
   const openModal = (type: FinanceModalType) => {
     setModalType(type);
     setIsModalOpen(true);
+    setIsSubmitting(false);
+    setEditingMovement(null);
   };
 
-  const handleCreateMovement = (type: FinanceModalType, values: unknown) => {
-    if (type === "income") {
-      const payload = values as IncomeFormValues;
-      const movement = createIncomeMovement({
-        clientName: payload.clientName,
-        projectService: payload.projectService,
-        amount: payload.amount,
-        incomeDate: new Date(payload.incomeDate).toISOString(),
-        expectedPayDate: payload.expectedPayDate ? new Date(payload.expectedPayDate).toISOString() : null,
-        accountDestination: payload.accountDestination,
-        responsible: payload.responsible,
-        status: payload.status,
-        reference: payload.reference,
-        notes: payload.notes,
-      });
-      setMovements([movement, ...listFinanceMovements()]);
-      setToast("Ingreso creado");
-    }
+  const handleCreateMovement = async (type: FinanceModalType, values: unknown) => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      if (type === "income") {
+        const payload = values as IncomeFormValues;
+        const rate = Math.max(0, payload.taxRate) / 100;
+        const amount = Math.max(0, payload.amount);
+        const taxEnabled = payload.taxEnabled;
+        let base = amount;
+        let igv = 0;
+        let total = amount;
+        if (taxEnabled && rate > 0) {
+          if (payload.taxMode === "inclusive") {
+            base = amount / (1 + rate);
+            igv = amount - base;
+            total = amount;
+          } else {
+            base = amount;
+            igv = amount * rate;
+            total = amount + igv;
+          }
+        }
+        const incomePayload = {
+          clientName: payload.clientName,
+          projectService: payload.projectService,
+          amount,
+          incomeDate: new Date(payload.incomeDate).toISOString(),
+          expectedPayDate: payload.expectedPayDate ? new Date(payload.expectedPayDate).toISOString() : null,
+          accountDestination: payload.accountDestination,
+          responsible: payload.responsible,
+          status: payload.status,
+          reference: payload.reference,
+          notes: payload.notes,
+          tax: {
+            enabled: payload.taxEnabled,
+            rate: payload.taxRate,
+            mode: payload.taxMode,
+            base,
+            igv,
+            total,
+          },
+          recurring: {
+            enabled: payload.recurringEnabled,
+            freq: payload.recurringFreq,
+            dayOfMonth: payload.recurringFreq === "monthly" ? payload.recurringDayOfMonth : null,
+            startAt: payload.recurringStartAt ? new Date(payload.recurringStartAt).toISOString() : null,
+            endAt: payload.recurringEndAt ? new Date(payload.recurringEndAt).toISOString() : null,
+          },
+        };
+        if (editingMovement) {
+          updateIncomeMovement(editingMovement.id, incomePayload);
+          setToast("Ingreso actualizado");
+        } else {
+          createIncomeMovement(incomePayload);
+          setToast("Ingreso creado");
+        }
+        setMovements(listFinanceMovements());
+      }
 
-    if (type === "collaborator") {
-      const payload = values as CollaboratorFormValues;
-      createCollaborator({
-        nombreCompleto: payload.nombreCompleto,
-        rolPuesto: payload.rolPuesto,
-        tipoPago: payload.tipoPago,
-        montoBase: payload.montoBase,
-        moneda: payload.moneda,
-        cuentaPagoPreferida: payload.cuentaPagoPreferida,
-        diaPago: payload.diaPago === "" ? null : payload.diaPago,
-        fechaPago: payload.fechaPago ? new Date(payload.fechaPago).toISOString() : null,
-        inicioContrato: new Date(payload.inicioContrato).toISOString(),
-        finContrato: payload.finContrato ? new Date(payload.finContrato).toISOString() : null,
-        activo: payload.activo,
-        notas: payload.notas,
-      });
-      setToast("Colaborador creado");
-    }
+      if (type === "collaborator") {
+        const payload = values as CollaboratorFormValues;
+        createCollaborator({
+          nombreCompleto: payload.nombreCompleto,
+          rolPuesto: payload.rolPuesto,
+          tipoPago: payload.tipoPago,
+          montoBase: payload.montoBase,
+          moneda: payload.moneda,
+          cuentaPagoPreferida: payload.cuentaPagoPreferida,
+          diaPago: payload.diaPago === "" ? null : payload.diaPago,
+          fechaPago: payload.fechaPago ? new Date(payload.fechaPago).toISOString() : null,
+          inicioContrato: new Date(payload.inicioContrato).toISOString(),
+          finContrato: payload.finContrato ? new Date(payload.finContrato).toISOString() : null,
+          activo: payload.activo,
+          notas: payload.notas,
+        });
+        setToast("Colaborador creado");
+      }
 
-    if (type === "collaborator_payment") {
-      const payload = values as CollaboratorPaymentFormValues;
-      createCollaboratorPayment({
-        colaboradorId: payload.colaboradorId,
-        periodo: payload.periodo,
-        montoBase: payload.montoBase,
-        bono: payload.bono,
-        descuento: payload.descuento,
-        devolucion: payload.devolucion,
-        montoFinal: payload.montoFinal,
-        fechaPago: new Date(payload.fechaPago).toISOString(),
-        cuentaOrigen: payload.cuentaOrigen,
-        estado: payload.estado,
-        referencia: payload.referencia,
-        notas: payload.notas,
-      });
-      setToast("Pago registrado");
-    }
+      if (type === "collaborator_payment") {
+        const payload = values as CollaboratorPaymentFormValues;
+        createCollaboratorPayment({
+          colaboradorId: payload.colaboradorId,
+          periodo: payload.periodo,
+          montoBase: payload.montoBase,
+          bono: payload.bono,
+          descuento: payload.descuento,
+          devolucion: payload.devolucion,
+          montoFinal: payload.montoFinal,
+          fechaPago: new Date(payload.fechaPago).toISOString(),
+          cuentaOrigen: payload.cuentaOrigen,
+          estado: payload.estado,
+          referencia: payload.referencia,
+          notas: payload.notas,
+        });
+        setToast("Pago registrado");
+      }
 
-    if (type === "expense") {
-      const payload = values as ExpenseFormValues;
-      createExpense({
-        tipoGasto: payload.tipoGasto,
-        categoria: payload.categoria,
-        descripcion: payload.descripcion,
-        monto: payload.monto,
-        fechaGasto: new Date(payload.fechaGasto).toISOString(),
-        cuentaOrigen: payload.cuentaOrigen,
-        responsable: payload.responsable,
-        estado: payload.estado,
-        requiereDevolucion: payload.requiereDevolucion,
-        devolucionMonto: payload.requiereDevolucion ? payload.devolucionMonto : null,
-        referencia: payload.referencia,
-        notas: payload.notas,
-      });
-      setToast("Gasto creado");
-    }
+      if (type === "expense") {
+        const payload = values as ExpenseFormValues;
+        createExpense({
+          tipoGasto: payload.tipoGasto,
+          categoria: payload.categoria,
+          descripcion: payload.descripcion,
+          monto: payload.monto,
+          fechaGasto: new Date(payload.fechaGasto).toISOString(),
+          cuentaOrigen: payload.cuentaOrigen,
+          responsable: payload.responsable,
+          estado: payload.estado,
+          requiereDevolucion: payload.requiereDevolucion,
+          devolucionMonto: payload.requiereDevolucion ? payload.devolucionMonto : null,
+          referencia: payload.referencia,
+          notas: payload.notas,
+        });
+        setToast("Gasto creado");
+      }
 
-    if (type === "transfer") {
-      const payload = values as TransferFormValues;
-      const isTransfer = payload.tipoMovimiento === "TRANSFERENCIA";
-      createTransfer({
-        tipoMovimiento: payload.tipoMovimiento,
-        cuentaOrigen:
-          isTransfer || payload.tipoMovimiento === "SALIDA_CAJA" ? payload.cuentaOrigen || null : null,
-        cuentaDestino:
-          isTransfer || payload.tipoMovimiento === "INGRESO_CAJA" ? payload.cuentaDestino || null : null,
-        monto: payload.monto,
-        fecha: new Date(payload.fecha).toISOString(),
-        responsable: payload.responsable,
-        referencia: payload.referencia,
-        notas: payload.notas,
-      });
-      setToast("Movimiento creado");
+      if (type === "transfer") {
+        const payload = values as TransferFormValues;
+        const isTransfer = payload.tipoMovimiento === "TRANSFERENCIA";
+        createTransfer({
+          tipoMovimiento: payload.tipoMovimiento,
+          cuentaOrigen:
+            isTransfer || payload.tipoMovimiento === "SALIDA_CAJA" ? payload.cuentaOrigen || null : null,
+          cuentaDestino:
+            isTransfer || payload.tipoMovimiento === "INGRESO_CAJA" ? payload.cuentaDestino || null : null,
+          monto: payload.monto,
+          fecha: new Date(payload.fecha).toISOString(),
+          responsable: payload.responsable,
+          referencia: payload.referencia,
+          notas: payload.notas,
+        });
+        setToast("Movimiento creado");
+      }
+      setIsModalOpen(false);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsModalOpen(false);
   };
+
+  const handleEditMovement = (movement: FinanceMovement) => {
+    setEditingMovement(movement);
+    setModalType("income");
+    setIsModalOpen(true);
+  };
+
+  const incomeInitialValues: Partial<IncomeFormValues> | null = editingMovement
+    ? {
+        clientName: editingMovement.clientName,
+        projectService: editingMovement.projectService ?? "",
+        amount:
+          editingMovement.tax?.enabled && editingMovement.tax.mode === "exclusive"
+            ? editingMovement.tax.base
+            : editingMovement.tax?.total ?? editingMovement.amount,
+        incomeDate: editingMovement.incomeDate.slice(0, 10),
+        expectedPayDate: editingMovement.expectedPayDate?.slice(0, 10) ?? "",
+        accountDestination: editingMovement.accountDestination,
+        responsible: editingMovement.responsible,
+        status: editingMovement.status,
+        reference: editingMovement.reference ?? "",
+        notes: editingMovement.notes ?? "",
+        taxEnabled: editingMovement.tax?.enabled ?? false,
+        taxRate: editingMovement.tax?.rate ?? 18,
+        taxMode: editingMovement.tax?.mode ?? "exclusive",
+        recurringEnabled: editingMovement.recurring?.enabled ?? false,
+        recurringFreq: editingMovement.recurring?.freq ?? "monthly",
+        recurringDayOfMonth: editingMovement.recurring?.dayOfMonth ?? 1,
+        recurringStartAt: editingMovement.recurring?.startAt?.slice(0, 10) ?? "",
+        recurringEndAt: editingMovement.recurring?.endAt?.slice(0, 10) ?? "",
+      }
+    : null;
 
   const handleStatusChange = (id: string, status: FinanceStatus) => {
     const next = updateFinanceMovementStatus(id, status);
@@ -286,11 +387,22 @@ export default function FinanceModulePage() {
               ) : null}
 
               {activeTab === "movimientos" ? (
-                <FinanceTable
-                  movements={filteredMovements}
-                  onStatusChange={handleStatusChange}
-                  onDelete={handleDeleteMovement}
-                />
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                    <FinanceKpiCard title="Total" value={monthSummary.total} tone="slate" />
+                    <FinanceKpiCard title="Cobrado" value={monthSummary.paid} tone="green" />
+                    <FinanceKpiCard title="Pendiente" value={monthSummary.pending} tone="amber" />
+                    <FinanceKpiCard title="IGV" value={monthSummary.igv} tone="blue" />
+                    <FinanceKpiCard title="Neto" value={monthSummary.net} tone="rose" />
+                  </div>
+                  <FinanceTable
+                    movements={filteredMovements}
+                    onStatusChange={handleStatusChange}
+                    onDelete={handleDeleteMovement}
+                    onEdit={handleEditMovement}
+                    disabled={isSubmitting}
+                  />
+                </>
               ) : null}
             </div>
           )}
@@ -300,8 +412,13 @@ export default function FinanceModulePage() {
       <FinanceModal
         isOpen={isModalOpen}
         modalType={modalType}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingMovement(null);
+        }}
         onSubmit={handleCreateMovement}
+        disabled={isSubmitting}
+        initialValues={incomeInitialValues}
       />
     </div>
   );
