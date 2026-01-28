@@ -498,6 +498,7 @@ interface FinanceModalProps {
   onClose: () => void;
   onSubmit: (modalType: FinanceModalType, values: FinanceFormValuesMap[FinanceModalType]) => void;
   disabled?: boolean;
+  initialValues?: Partial<FinanceFormValuesMap[FinanceModalType]> | null;
 }
 
 export default function FinanceModal({
@@ -506,6 +507,7 @@ export default function FinanceModal({
   onClose,
   onSubmit,
   disabled,
+  initialValues,
 }: FinanceModalProps) {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const config = financeFormRegistry[modalType];
@@ -517,10 +519,10 @@ export default function FinanceModal({
   useEffect(() => {
     if (isOpen) {
       setCollaborators(listCollaborators());
-      setForm(config.defaultValues);
+      setForm({ ...config.defaultValues, ...(initialValues ?? {}) });
       setLastCollaboratorId("");
     }
-  }, [config.defaultValues, isOpen]);
+  }, [config.defaultValues, initialValues, isOpen]);
 
   useEffect(() => {
     if (modalType !== "collaborator_payment") return;

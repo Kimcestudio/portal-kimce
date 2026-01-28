@@ -133,6 +133,30 @@ export function updateFinanceMovementStatus(id: string, status: FinanceStatus) {
   return movements;
 }
 
+export function updateIncomeMovement(
+  id: string,
+  updates: Partial<Omit<FinanceMovement, "id" | "type" | "createdAt" | "monthKey">>,
+) {
+  const movements = listFinanceMovements();
+  const index = movements.findIndex((movement) => movement.id === id);
+  if (index === -1) return movements;
+  const current = movements[index];
+  const next = {
+    ...current,
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  };
+  movements[index] = next;
+  setCollection(MOVEMENTS_COLLECTION, movements);
+  const incomes = getCollection<FinanceMovement>(INCOMES_COLLECTION, []);
+  const incomeIndex = incomes.findIndex((movement) => movement.id === id);
+  if (incomeIndex !== -1) {
+    incomes[incomeIndex] = next;
+    setCollection(INCOMES_COLLECTION, incomes);
+  }
+  return movements;
+}
+
 export function deleteFinanceMovement(id: string) {
   const movements = listFinanceMovements();
   const next = movements.filter((movement) => movement.id !== id);

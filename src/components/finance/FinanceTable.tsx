@@ -117,27 +117,32 @@ function StatusChip({
         <Badge tone={tone} label={status === "CANCELADO" ? "Cancelado" : "Pendiente"} />
       </button>
       {open ? (
-        <div className="absolute left-0 top-9 z-30 min-w-[160px] rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
-          <button
-            type="button"
-            className="w-full rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
-            onClick={() => {
-              onChange?.("CANCELADO");
-              setOpen(false);
-            }}
-          >
-            Cambiar a Cancelado
-          </button>
-          <button
-            type="button"
-            className="w-full rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
-            onClick={() => {
-              onChange?.("PENDIENTE");
-              setOpen(false);
-            }}
-          >
-            Cambiar a Pendiente
-          </button>
+        <div className="absolute left-0 top-9 z-30 min-w-[180px] rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
+          {status === "PENDIENTE" ? (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
+              onClick={() => {
+                onChange?.("CANCELADO");
+                setOpen(false);
+              }}
+            >
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Cambiar a Cancelado
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
+              onClick={() => {
+                onChange?.("PENDIENTE");
+                setOpen(false);
+              }}
+            >
+              <span className="h-2 w-2 rounded-full bg-amber-500" />
+              Cambiar a Pendiente
+            </button>
+          )}
         </div>
       ) : null}
     </div>

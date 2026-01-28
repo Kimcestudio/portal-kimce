@@ -36,6 +36,7 @@ import {
   deleteFinanceMovement,
   listFinanceMovements,
   updateFinanceMovementStatus,
+  updateIncomeMovement,
 } from "@/services/finance";
 
 const tabLabels: Record<FinanceTabKey, string> = {
@@ -56,6 +57,7 @@ export default function FinanceModulePage() {
   const [modalType, setModalType] = useState<FinanceModalType>("income");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [editingMovement, setEditingMovement] = useState<FinanceMovement | null>(null);
 
   const [filters, setFilters] = useState<FinanceFilters>({
     monthKey: getMonthKey(new Date()),
@@ -105,6 +107,7 @@ export default function FinanceModulePage() {
     setModalType(type);
     setIsModalOpen(true);
     setIsSubmitting(false);
+    setEditingMovement(null);
   };
 
   const handleCreateMovement = async (type: FinanceModalType, values: unknown) => {
@@ -130,7 +133,7 @@ export default function FinanceModulePage() {
             total = amount + igv;
           }
         }
-        createIncomeMovement({
+        const incomePayload = {
           clientName: payload.clientName,
           projectService: payload.projectService,
           amount,
@@ -156,9 +159,15 @@ export default function FinanceModulePage() {
             startAt: payload.recurringStartAt ? new Date(payload.recurringStartAt).toISOString() : null,
             endAt: payload.recurringEndAt ? new Date(payload.recurringEndAt).toISOString() : null,
           },
-        });
+        };
+        if (editingMovement) {
+          updateIncomeMovement(editingMovement.id, incomePayload);
+          setToast("Ingreso actualizado");
+        } else {
+          createIncomeMovement(incomePayload);
+          setToast("Ingreso creado");
+        }
         setMovements(listFinanceMovements());
-        setToast("Ingreso creado");
       }
 
       if (type === "collaborator") {
@@ -240,6 +249,38 @@ export default function FinanceModulePage() {
       setIsSubmitting(false);
     }
   };
+
+  const handleEditMovement = (movement: FinanceMovement) => {
+    setEditingMovement(movement);
+    setModalType("income");
+    setIsModalOpen(true);
+  };
+
+  const incomeInitialValues: Partial<IncomeFormValues> | null = editingMovement
+    ? {
+        clientName: editingMovement.clientName,
+        projectService: editingMovement.projectService ?? "",
+        amount:
+          editingMovement.tax?.enabled && editingMovement.tax.mode === "exclusive"
+            ? editingMovement.tax.base
+            : editingMovement.tax?.total ?? editingMovement.amount,
+        incomeDate: editingMovement.incomeDate.slice(0, 10),
+        expectedPayDate: editingMovement.expectedPayDate?.slice(0, 10) ?? "",
+        accountDestination: editingMovement.accountDestination,
+        responsible: editingMovement.responsible,
+        status: editingMovement.status,
+        reference: editingMovement.reference ?? "",
+        notes: editingMovement.notes ?? "",
+        taxEnabled: editingMovement.tax?.enabled ?? false,
+        taxRate: editingMovement.tax?.rate ?? 18,
+        taxMode: editingMovement.tax?.mode ?? "exclusive",
+        recurringEnabled: editingMovement.recurring?.enabled ?? false,
+        recurringFreq: editingMovement.recurring?.freq ?? "monthly",
+        recurringDayOfMonth: editingMovement.recurring?.dayOfMonth ?? 1,
+        recurringStartAt: editingMovement.recurring?.startAt?.slice(0, 10) ?? "",
+        recurringEndAt: editingMovement.recurring?.endAt?.slice(0, 10) ?? "",
+      }
+    : null;
 
   const handleStatusChange = (id: string, status: FinanceStatus) => {
     const next = updateFinanceMovementStatus(id, status);
@@ -358,6 +399,7 @@ export default function FinanceModulePage() {
                     movements={filteredMovements}
                     onStatusChange={handleStatusChange}
                     onDelete={handleDeleteMovement}
+                    onEdit={handleEditMovement}
                     disabled={isSubmitting}
                   />
                 </>
@@ -370,9 +412,13 @@ export default function FinanceModulePage() {
       <FinanceModal
         isOpen={isModalOpen}
         modalType={modalType}
-        onClose={() => setIsModalOpen(false)}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingMovement(null);
+        }}
         onSubmit={handleCreateMovement}
         disabled={isSubmitting}
+        initialValues={incomeInitialValues}
       />
     </div>
   );
