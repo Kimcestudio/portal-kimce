@@ -19,10 +19,24 @@ export interface FinanceMovement {
   incomeDate: string;
   expectedPayDate?: string | null;
   accountDestination: FinanceAccountName;
-  responsible: FinanceAccountName;
   status: FinanceStatus;
   reference?: string | null;
   notes?: string | null;
+  tax?: {
+    enabled: boolean;
+    rate: number;
+    mode: "inclusive" | "exclusive";
+    base: number;
+    igv: number;
+    total: number;
+  };
+  recurring?: {
+    enabled: boolean;
+    freq: "monthly" | "weekly" | "yearly";
+    dayOfMonth?: number | null;
+    startAt?: string | null;
+    endAt?: string | null;
+  };
   monthKey: string;
   createdAt: string;
   updatedAt: string;
@@ -84,7 +98,6 @@ export interface Expense {
   monto: number;
   fechaGasto: string;
   cuentaOrigen: FinanceAccountName;
-  responsable: FinanceAccountName;
   estado: FinanceStatus;
   requiereDevolucion: boolean;
   devolucionMonto?: number | null;
@@ -103,7 +116,6 @@ export interface TransferMovement {
   cuentaDestino?: FinanceAccountName | null;
   monto: number;
   fecha: string;
-  responsable: FinanceAccountName;
   referencia?: string | null;
   notas?: string | null;
   createdAt: string;
@@ -114,7 +126,6 @@ export type FinanceFilters = {
   monthKey: string;
   status: "all" | FinanceStatus;
   account: "all" | FinanceAccountName;
-  responsible: "all" | FinanceAccountName;
   category?: "all" | string;
 };
 
