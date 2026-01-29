@@ -19,8 +19,16 @@ import FinanceModal, {
 } from "@/components/finance/FinanceModal";
 import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
 import { calcKpis, filterMovements } from "@/lib/finance/analytics";
-import { getMonthKey, getMonthLabel } from "@/lib/finance/utils";
+import {
+  formatDateOnly,
+  formatMonthLabel,
+  formatShortDate,
+  formatCurrency,
+  getMonthKey,
+  getMonthKeyFromDate,
+} from "@/lib/finance/utils";
 import type {
+  Expense,
   FinanceFilters,
   FinanceModalType,
   FinanceMovement,
@@ -35,6 +43,7 @@ import {
   createTransfer,
   deleteFinanceMovement,
   listFinanceMovements,
+  listExpenses,
   updateFinanceMovementStatus,
   updateIncomeMovement,
 } from "@/services/finance";
@@ -52,6 +61,7 @@ export default function FinanceModulePage() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<FinanceTabKey>("dashboard");
   const [movements, setMovements] = useState<FinanceMovement[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<FinanceModalType>("income");
@@ -63,12 +73,12 @@ export default function FinanceModulePage() {
     monthKey: getMonthKey(new Date()),
     status: "all",
     account: "all",
-    responsible: "all",
     category: "all",
   });
 
   useEffect(() => {
     setMovements(listFinanceMovements());
+    setExpenses(listExpenses());
     setIsLoading(false);
   }, []);
 
@@ -79,6 +89,15 @@ export default function FinanceModulePage() {
   }, [toast]);
 
   const filteredMovements = useMemo(() => filterMovements(movements, filters), [movements, filters]);
+  const filteredExpenses = useMemo(() => {
+    return expenses.filter((expense) => {
+      const monthKey = getMonthKeyFromDate(expense.fechaGasto);
+      if (monthKey && monthKey !== filters.monthKey) return false;
+      if (filters.status !== "all" && expense.estado !== filters.status) return false;
+      if (filters.account !== "all" && expense.cuentaOrigen !== filters.account) return false;
+      return true;
+    });
+  }, [expenses, filters]);
 
   const kpis = useMemo(() => calcKpis(movements, filters.monthKey), [movements, filters.monthKey]);
 
@@ -137,10 +156,9 @@ export default function FinanceModulePage() {
           clientName: payload.clientName,
           projectService: payload.projectService,
           amount,
-          incomeDate: new Date(payload.incomeDate).toISOString(),
-          expectedPayDate: payload.expectedPayDate ? new Date(payload.expectedPayDate).toISOString() : null,
+          incomeDate: payload.incomeDate,
+          expectedPayDate: payload.expectedPayDate || null,
           accountDestination: payload.accountDestination,
-          responsible: payload.responsible,
           status: payload.status,
           reference: payload.reference,
           notes: payload.notes,
@@ -156,8 +174,8 @@ export default function FinanceModulePage() {
             enabled: payload.recurringEnabled,
             freq: payload.recurringFreq,
             dayOfMonth: payload.recurringFreq === "monthly" ? payload.recurringDayOfMonth : null,
-            startAt: payload.recurringStartAt ? new Date(payload.recurringStartAt).toISOString() : null,
-            endAt: payload.recurringEndAt ? new Date(payload.recurringEndAt).toISOString() : null,
+            startAt: payload.recurringStartAt || null,
+            endAt: payload.recurringEndAt || null,
           },
         };
         if (editingMovement) {
@@ -215,15 +233,15 @@ export default function FinanceModulePage() {
           categoria: payload.categoria,
           descripcion: payload.descripcion,
           monto: payload.monto,
-          fechaGasto: new Date(payload.fechaGasto).toISOString(),
+          fechaGasto: payload.fechaGasto,
           cuentaOrigen: payload.cuentaOrigen,
-          responsable: payload.responsable,
           estado: payload.estado,
           requiereDevolucion: payload.requiereDevolucion,
           devolucionMonto: payload.requiereDevolucion ? payload.devolucionMonto : null,
           referencia: payload.referencia,
           notas: payload.notas,
         });
+        setExpenses(listExpenses());
         setToast("Gasto creado");
       }
 
@@ -237,8 +255,7 @@ export default function FinanceModulePage() {
           cuentaDestino:
             isTransfer || payload.tipoMovimiento === "INGRESO_CAJA" ? payload.cuentaDestino || null : null,
           monto: payload.monto,
-          fecha: new Date(payload.fecha).toISOString(),
-          responsable: payload.responsable,
+          fecha: payload.fecha,
           referencia: payload.referencia,
           notas: payload.notas,
         });
@@ -264,10 +281,9 @@ export default function FinanceModulePage() {
           editingMovement.tax?.enabled && editingMovement.tax.mode === "exclusive"
             ? editingMovement.tax.base
             : editingMovement.tax?.total ?? editingMovement.amount,
-        incomeDate: editingMovement.incomeDate.slice(0, 10),
-        expectedPayDate: editingMovement.expectedPayDate?.slice(0, 10) ?? "",
+        incomeDate: formatDateOnly(editingMovement.incomeDate) ?? editingMovement.incomeDate,
+        expectedPayDate: formatDateOnly(editingMovement.expectedPayDate) ?? "",
         accountDestination: editingMovement.accountDestination,
-        responsible: editingMovement.responsible,
         status: editingMovement.status,
         reference: editingMovement.reference ?? "",
         notes: editingMovement.notes ?? "",
@@ -277,8 +293,8 @@ export default function FinanceModulePage() {
         recurringEnabled: editingMovement.recurring?.enabled ?? false,
         recurringFreq: editingMovement.recurring?.freq ?? "monthly",
         recurringDayOfMonth: editingMovement.recurring?.dayOfMonth ?? 1,
-        recurringStartAt: editingMovement.recurring?.startAt?.slice(0, 10) ?? "",
-        recurringEndAt: editingMovement.recurring?.endAt?.slice(0, 10) ?? "",
+        recurringStartAt: formatDateOnly(editingMovement.recurring?.startAt) ?? "",
+        recurringEndAt: formatDateOnly(editingMovement.recurring?.endAt) ?? "",
       }
     : null;
 
@@ -306,7 +322,7 @@ export default function FinanceModulePage() {
               </p>
               <h1 className="text-2xl font-semibold text-slate-900">Finanzas</h1>
               <p className="text-sm text-slate-500">
-                {getMonthLabel(filters.monthKey)} · Control mensual de ingresos.
+                {formatMonthLabel(filters.monthKey)} · Control mensual de ingresos.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -403,6 +419,47 @@ export default function FinanceModulePage() {
                     disabled={isSubmitting}
                   />
                 </>
+              ) : null}
+
+              {activeTab === "gastos" ? (
+                <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3">Fecha</th>
+                        <th className="px-4 py-3">Descripción</th>
+                        <th className="px-4 py-3">Categoría</th>
+                        <th className="px-4 py-3">Estado</th>
+                        <th className="px-4 py-3 text-right">Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredExpenses.map((expense) => (
+                        <tr key={expense.id} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {formatShortDate(expense.fechaGasto)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="font-semibold text-slate-900">{expense.descripcion}</p>
+                            <p className="text-xs text-slate-500">{expense.referencia ?? "-"}</p>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{expense.categoria}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{expense.estado}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                            {formatCurrency(expense.monto)}
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredExpenses.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-6 text-center text-xs text-slate-400">
+                            Sin gastos registrados en este mes.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
               ) : null}
             </div>
           )}

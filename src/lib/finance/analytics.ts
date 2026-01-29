@@ -5,7 +5,6 @@ export function filterMovements(movements: FinanceMovement[], filters: FinanceFi
     if (movement.monthKey !== filters.monthKey) return false;
     if (filters.status !== "all" && movement.status !== filters.status) return false;
     if (filters.account !== "all" && movement.accountDestination !== filters.account) return false;
-    if (filters.responsible !== "all" && movement.responsible !== filters.responsible) return false;
     return true;
   });
 }

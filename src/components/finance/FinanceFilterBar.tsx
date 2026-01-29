@@ -7,7 +7,7 @@ interface FinanceFilterBarProps {
 }
 
 export default function FinanceFilterBar({ filters, onChange }: FinanceFilterBarProps) {
-  const monthOptions = buildMonthOptions(8);
+  const monthOptions = buildMonthOptions();
 
   return (
     <div className="flex flex-wrap gap-3 rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
@@ -33,17 +33,6 @@ export default function FinanceFilterBar({ filters, onChange }: FinanceFilterBar
         onChange={(value) => onChange({ ...filters, account: value as FinanceFilters["account"] })}
         options={[
           { value: "all", label: "Todas" },
-          { value: "LUIS", label: "Luis" },
-          { value: "ALONDRA", label: "Alondra" },
-          { value: "KIMCE", label: "Kimce" },
-        ]}
-      />
-      <Select
-        label="Responsable"
-        value={filters.responsible}
-        onChange={(value) => onChange({ ...filters, responsible: value as FinanceFilters["responsible"] })}
-        options={[
-          { value: "all", label: "Todos" },
           { value: "LUIS", label: "Luis" },
           { value: "ALONDRA", label: "Alondra" },
           { value: "KIMCE", label: "Kimce" },

@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import Badge from "@/components/ui/Badge";
 import type { FinanceMovement, FinanceStatus } from "@/lib/finance/types";
-import { formatCurrency } from "@/lib/finance/utils";
+import { formatCurrency, formatShortDate } from "@/lib/finance/utils";
 
 interface FinanceTableProps {
   movements: FinanceMovement[];
@@ -19,24 +19,14 @@ export default function FinanceTable({
   onEdit,
   disabled,
 }: FinanceTableProps) {
-  const dateFormatter = useMemo(
-    () =>
-      new Intl.DateTimeFormat("es-PE", {
-        day: "2-digit",
-        month: "short",
-      }),
-    []
-  );
-
   return (
     <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
       <table className="w-full text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
           <tr>
             <th className="px-4 py-3">Fecha</th>
-            <th className="px-4 py-3">Concepto</th>
+            <th className="px-4 py-3">Cliente</th>
             <th className="px-4 py-3">Cuenta</th>
-            <th className="px-4 py-3">Responsable</th>
             <th className="px-4 py-3">Estado</th>
             <th className="px-4 py-3 text-right">Monto</th>
             <th className="px-4 py-3 text-right">Acciones</th>
@@ -46,14 +36,13 @@ export default function FinanceTable({
           {movements.map((movement) => (
             <tr key={movement.id} className="border-t border-slate-100">
               <td className="px-4 py-3 text-xs text-slate-500">
-                {dateFormatter.format(new Date(movement.incomeDate))}
+                {formatShortDate(movement.incomeDate)}
               </td>
               <td className="px-4 py-3">
                 <p className="font-semibold text-slate-900">{movement.clientName}</p>
-                <p className="text-xs text-slate-500">{movement.reference ?? movement.projectService ?? "-"}</p>
+                <p className="text-xs text-slate-500">{movement.projectService || "—"}</p>
               </td>
               <td className="px-4 py-3 text-xs text-slate-500">{movement.accountDestination}</td>
-              <td className="px-4 py-3 text-xs text-slate-500">{movement.responsible}</td>
               <td className="px-4 py-3">
                 <StatusChip
                   status={movement.status}

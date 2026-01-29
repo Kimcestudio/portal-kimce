@@ -7,7 +7,7 @@ import type {
   FinanceStatus,
   TransferMovement,
 } from "@/lib/finance/types";
-import { getMonthKey } from "@/lib/finance/utils";
+import { formatDateOnly, getMonthKeyFromDate, getMonthKey } from "@/lib/finance/utils";
 
 const MOVEMENTS_COLLECTION = "finance_movements";
 const INCOMES_COLLECTION = "incomes";
@@ -17,7 +17,8 @@ const EXPENSES_COLLECTION = "expenses";
 const TRANSFERS_COLLECTION = "transfers";
 
 export function listFinanceMovements() {
-  return getCollection<FinanceMovement>(MOVEMENTS_COLLECTION, []);
+  const movements = getCollection<FinanceMovement>(MOVEMENTS_COLLECTION, []);
+  return movements.map((movement) => normalizeMovementDates(movement));
 }
 
 export function listCollaborators() {
@@ -29,7 +30,8 @@ export function listCollaboratorPayments() {
 }
 
 export function listExpenses() {
-  return getCollection<Expense>(EXPENSES_COLLECTION, []);
+  const expenses = getCollection<Expense>(EXPENSES_COLLECTION, []);
+  return expenses.map((expense) => normalizeExpenseDates(expense));
 }
 
 export function listTransfers() {
@@ -40,6 +42,10 @@ export function createIncomeMovement(
   input: Omit<FinanceMovement, "id" | "monthKey" | "createdAt" | "updatedAt" | "type" | "concept">,
 ) {
   const now = new Date();
+  const incomeDate = formatDateOnly(input.incomeDate) ?? formatDateOnly(now) ?? "";
+  const expectedPayDate = input.expectedPayDate
+    ? formatDateOnly(input.expectedPayDate) ?? input.expectedPayDate
+    : null;
   const totalAmount = input.tax?.total ?? input.amount;
   const movement: FinanceMovement = {
     id: `mov_${Date.now()}`,
@@ -48,16 +54,15 @@ export function createIncomeMovement(
     clientName: input.clientName,
     projectService: input.projectService ?? null,
     amount: totalAmount,
-    incomeDate: input.incomeDate,
-    expectedPayDate: input.expectedPayDate ?? null,
+    incomeDate,
+    expectedPayDate,
     accountDestination: input.accountDestination,
-    responsible: input.responsible,
     status: input.status,
     reference: input.reference ?? null,
     notes: input.notes ?? null,
     tax: input.tax,
     recurring: input.recurring,
-    monthKey: getMonthKey(new Date(input.incomeDate)),
+    monthKey: getMonthKeyFromDate(incomeDate) ?? getMonthKey(new Date()),
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
   };
@@ -100,9 +105,11 @@ export function createCollaboratorPayment(
 
 export function createExpense(input: Omit<Expense, "id" | "createdAt" | "updatedAt">) {
   const now = new Date().toISOString();
+  const dateOnly = formatDateOnly(input.fechaGasto) ?? formatDateOnly(new Date()) ?? "";
   const expense: Expense = {
     id: `expense_${Date.now()}`,
     ...input,
+    fechaGasto: dateOnly,
     createdAt: now,
     updatedAt: now,
   };
@@ -113,9 +120,11 @@ export function createExpense(input: Omit<Expense, "id" | "createdAt" | "updated
 
 export function createTransfer(input: Omit<TransferMovement, "id" | "createdAt" | "updatedAt">) {
   const now = new Date().toISOString();
+  const dateOnly = formatDateOnly(input.fecha) ?? formatDateOnly(new Date()) ?? "";
   const transfer: TransferMovement = {
     id: `transfer_${Date.now()}`,
     ...input,
+    fecha: dateOnly,
     createdAt: now,
     updatedAt: now,
   };
@@ -141,11 +150,11 @@ export function updateIncomeMovement(
   const index = movements.findIndex((movement) => movement.id === id);
   if (index === -1) return movements;
   const current = movements[index];
-  const next = {
+  const next = normalizeMovementDates({
     ...current,
     ...updates,
     updatedAt: new Date().toISOString(),
-  };
+  });
   movements[index] = next;
   setCollection(MOVEMENTS_COLLECTION, movements);
   const incomes = getCollection<FinanceMovement>(INCOMES_COLLECTION, []);
@@ -155,6 +164,27 @@ export function updateIncomeMovement(
     setCollection(INCOMES_COLLECTION, incomes);
   }
   return movements;
+}
+
+function normalizeMovementDates(movement: FinanceMovement) {
+  const incomeDate = formatDateOnly(movement.incomeDate) ?? movement.incomeDate;
+  const expectedPayDate = movement.expectedPayDate
+    ? formatDateOnly(movement.expectedPayDate) ?? movement.expectedPayDate
+    : null;
+  return {
+    ...movement,
+    incomeDate,
+    expectedPayDate,
+    monthKey: getMonthKeyFromDate(incomeDate) ?? movement.monthKey,
+  };
+}
+
+function normalizeExpenseDates(expense: Expense) {
+  const fechaGasto = formatDateOnly(expense.fechaGasto) ?? expense.fechaGasto;
+  return {
+    ...expense,
+    fechaGasto,
+  };
 }
 
 export function deleteFinanceMovement(id: string) {

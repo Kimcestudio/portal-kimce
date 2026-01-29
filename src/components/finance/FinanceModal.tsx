@@ -12,6 +12,7 @@ import type {
   TransferMovementType,
 } from "@/lib/finance/types";
 import { listCollaborators } from "@/services/finance";
+import { getTodayDateString } from "@/lib/finance/utils";
 
 export type IncomeFormValues = {
   clientName: string;
@@ -20,7 +21,6 @@ export type IncomeFormValues = {
   incomeDate: string;
   expectedPayDate: string;
   accountDestination: FinanceAccountName;
-  responsible: FinanceAccountName;
   status: FinanceStatus;
   reference: string;
   notes: string;
@@ -71,7 +71,6 @@ export type ExpenseFormValues = {
   monto: number;
   fechaGasto: string;
   cuentaOrigen: FinanceAccountName;
-  responsable: FinanceAccountName;
   estado: FinanceStatus;
   requiereDevolucion: boolean;
   devolucionMonto: number;
@@ -85,7 +84,6 @@ export type TransferFormValues = {
   cuentaDestino: FinanceAccountName | "";
   monto: number;
   fecha: string;
-  responsable: FinanceAccountName;
   referencia: string;
   notas: string;
 };
@@ -140,10 +138,9 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       clientName: "",
       projectService: "",
       amount: 0,
-      incomeDate: new Date().toISOString().slice(0, 10),
+      incomeDate: getTodayDateString(),
       expectedPayDate: "",
       accountDestination: "LUIS",
-      responsible: "LUIS",
       status: "PENDIENTE",
       reference: "",
       notes: "",
@@ -153,7 +150,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       recurringEnabled: false,
       recurringFreq: "monthly",
       recurringDayOfMonth: 1,
-      recurringStartAt: new Date().toISOString().slice(0, 10),
+      recurringStartAt: getTodayDateString(),
       recurringEndAt: "",
     },
     schema: (values) => {
@@ -191,7 +188,6 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         type: "select",
         options: accountOptions,
       },
-      { name: "responsible", label: "Responsable", type: "select", options: accountOptions },
       { name: "status", label: "Estado", type: "select", options: statusOptions },
       {
         name: "reference",
@@ -350,9 +346,8 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       categoria: "SUNAT",
       descripcion: "",
       monto: 0,
-      fechaGasto: new Date().toISOString().slice(0, 10),
+      fechaGasto: getTodayDateString(),
       cuentaOrigen: "LUIS",
-      responsable: "LUIS",
       estado: "PENDIENTE",
       requiereDevolucion: false,
       devolucionMonto: 0,
@@ -401,7 +396,6 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         type: "select",
         options: accountOptions,
       },
-      { name: "responsable", label: "Responsable", type: "select", options: accountOptions },
       { name: "estado", label: "Estado", type: "select", options: statusOptions },
       { name: "requiereDevolucion", label: "Requiere devolución", type: "checkbox" },
       {
@@ -429,8 +423,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       cuentaOrigen: "",
       cuentaDestino: "",
       monto: 0,
-      fecha: new Date().toISOString().slice(0, 10),
-      responsable: "LUIS",
+      fecha: getTodayDateString(),
       referencia: "",
       notas: "",
     },
@@ -480,7 +473,6 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       },
       { name: "monto", label: "Monto", type: "number", placeholder: "0", min: 0 },
       { name: "fecha", label: "Fecha", type: "date" },
-      { name: "responsable", label: "Responsable", type: "select", options: accountOptions },
       {
         name: "referencia",
         label: "Referencia",
