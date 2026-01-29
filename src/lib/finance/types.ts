@@ -1,4 +1,4 @@
-export type FinanceStatus = "PENDIENTE" | "CANCELADO";
+export type FinanceStatus = "pending" | "cancelled";
 
 export type FinanceAccountName = "LUIS" | "ALONDRA" | "KIMCE";
 
@@ -19,10 +19,24 @@ export interface FinanceMovement {
   incomeDate: string;
   expectedPayDate?: string | null;
   accountDestination: FinanceAccountName;
-  responsible: FinanceAccountName;
   status: FinanceStatus;
   reference?: string | null;
   notes?: string | null;
+  tax?: {
+    enabled: boolean;
+    rate: number;
+    mode: "inclusive" | "exclusive";
+    base: number;
+    igv: number;
+    total: number;
+  };
+  recurring?: {
+    enabled: boolean;
+    freq: "monthly" | "weekly" | "yearly";
+    dayOfMonth?: number | null;
+    startAt?: string | null;
+    endAt?: string | null;
+  };
   monthKey: string;
   createdAt: string;
   updatedAt: string;
@@ -59,7 +73,7 @@ export interface CollaboratorPayment {
   montoFinal: number;
   fechaPago: string;
   cuentaOrigen: FinanceAccountName;
-  estado: FinanceStatus;
+  status: FinanceStatus;
   referencia?: string | null;
   notas?: string | null;
   createdAt: string;
@@ -84,8 +98,7 @@ export interface Expense {
   monto: number;
   fechaGasto: string;
   cuentaOrigen: FinanceAccountName;
-  responsable: FinanceAccountName;
-  estado: FinanceStatus;
+  status: FinanceStatus;
   requiereDevolucion: boolean;
   devolucionMonto?: number | null;
   referencia?: string | null;
@@ -103,7 +116,7 @@ export interface TransferMovement {
   cuentaDestino?: FinanceAccountName | null;
   monto: number;
   fecha: string;
-  responsable: FinanceAccountName;
+  status: FinanceStatus;
   referencia?: string | null;
   notas?: string | null;
   createdAt: string;
@@ -114,8 +127,8 @@ export type FinanceFilters = {
   monthKey: string;
   status: "all" | FinanceStatus;
   account: "all" | FinanceAccountName;
-  responsible: "all" | FinanceAccountName;
   category?: "all" | string;
+  includeCancelled: boolean;
 };
 
 export type FinanceTabKey = "dashboard" | "movimientos" | "pagos" | "gastos" | "cuentas" | "cierre";

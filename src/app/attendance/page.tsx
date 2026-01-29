@@ -18,6 +18,8 @@ import {
   minutesToHHMM,
   expectedMinutesForDate,
 } from "@/lib/attendanceUtils";
+import { listWorkSchedules } from "@/services/firebase/db";
+import { DEFAULT_WORK_SCHEDULES } from "@/services/firebase/workSchedules";
 import {
   AttendanceRecord,
   CorrectionRequest,
@@ -109,6 +111,9 @@ export default function AttendancePage() {
   }, [weekOffset]);
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
+  const workSchedules = listWorkSchedules();
+  const scheduleOptions = workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES;
+  const schedule = scheduleOptions[0];
 
   const reloadToday = () => {
     const todayISO = formatISODate(new Date());
@@ -151,14 +156,14 @@ export default function AttendancePage() {
   const totalMinutes = todayRecord?.totalMinutes ?? 0;
 
   const expectedMinutesWeek = weekDates.reduce(
-    (total, date) => total + expectedMinutesForDate(date),
+    (total, date) => total + expectedMinutesForDate(date, schedule),
     0
   );
   const workedMinutesWeek = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
   const diffMinutes = workedMinutesWeek - expectedMinutesWeek;
   const totalBalanceMinutes = listAllRecords(userId).reduce((sum, record) => {
     const recordDate = new Date(`${record.date}T00:00:00`);
-    return sum + (record.totalMinutes - expectedMinutesForDate(recordDate));
+    return sum + (record.totalMinutes - expectedMinutesForDate(recordDate, schedule));
   }, 0);
   const completedDays = weekRecords.filter(
     (record) => record.status === "CLOSED" && new Date(`${record.date}T00:00:00`).getDay() !== 0
@@ -265,7 +270,7 @@ export default function AttendancePage() {
     .map((date) => {
       const dateISO = formatISODate(date);
       const record = weekRecords.find((item) => item.date === dateISO);
-      const targetHours = date.getDay() === 6 ? 4 : 8;
+      const targetHours = expectedMinutesForDate(date, schedule) / 60;
       return {
         label: date.toLocaleDateString("es-ES", { weekday: "short" }),
         hours: record ? Math.round((record.totalMinutes / 60) * 10) / 10 : 0,

@@ -1,6 +1,6 @@
 import Badge from "@/components/ui/Badge";
 import type { FinanceMovement } from "@/lib/finance/types";
-import { formatCurrency } from "@/lib/finance/utils";
+import { formatCurrency, getStatusLabel, getStatusTone } from "@/lib/finance/utils";
 
 interface FinancePendingListProps {
   title: string;
@@ -13,7 +13,7 @@ export default function FinancePendingList({ title, items, emptyLabel }: Finance
     <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-        <Badge tone="warning" label="Pendiente" />
+        <Badge tone={getStatusTone("pending")} label={getStatusLabel("pending")} />
       </div>
       <div className="mt-4 space-y-3">
         {items.length === 0 ? (
