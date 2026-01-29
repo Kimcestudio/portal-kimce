@@ -84,6 +84,13 @@ export default function FinanceModulePage() {
   const [toast, setToast] = useState<string | null>(null);
   const [editingMovement, setEditingMovement] = useState<FinanceMovement | null>(null);
 
+  const logDev = (...args: unknown[]) => {
+    if (process.env.NODE_ENV === "development") {
+      // eslint-disable-next-line no-console
+      console.log(...args);
+    }
+  };
+
   const [filters, setFilters] = useState<FinanceFilters>({
     monthKey: getMonthKey(new Date()),
     status: "all",
@@ -107,44 +114,59 @@ export default function FinanceModulePage() {
         transfersLoaded &&
         collaboratorsLoaded
       ) {
-        setIsLoading(false);
+        setIsLoading((prev) => {
+          if (prev) logDev("[FINANCE] loading complete");
+          return false;
+        });
       }
     };
 
     const unsubscribeMovements = subscribeFinanceMovements((items) => {
-      setMovements(items);
+      const normalized = items.map((movement) => ({
+        ...movement,
+        monthKey:
+          movement.monthKey ??
+          getMonthKeyFromDate(movement.incomeDate) ??
+          getMonthKey(new Date()),
+      }));
+      setMovements(normalized);
+      logDev("[FINANCE] movements snapshot", normalized.length);
       if (!movementsLoaded) {
         movementsLoaded = true;
-        markLoaded();
       }
+      markLoaded();
     });
     const unsubscribeExpenses = subscribeExpenses((items) => {
       setExpenses(items);
+      logDev("[FINANCE] expenses snapshot", items.length);
       if (!expensesLoaded) {
         expensesLoaded = true;
-        markLoaded();
       }
+      markLoaded();
     });
     const unsubscribePayments = subscribeCollaboratorPayments((items) => {
       setPayments(items);
+      logDev("[FINANCE] payments snapshot", items.length);
       if (!paymentsLoaded) {
         paymentsLoaded = true;
-        markLoaded();
       }
+      markLoaded();
     });
     const unsubscribeTransfers = subscribeTransfers((items) => {
       setTransfers(items);
+      logDev("[FINANCE] transfers snapshot", items.length);
       if (!transfersLoaded) {
         transfersLoaded = true;
-        markLoaded();
       }
+      markLoaded();
     });
     const unsubscribeCollaborators = subscribeCollaborators((items) => {
       setCollaborators(items);
+      logDev("[FINANCE] collaborators snapshot", items.length);
       if (!collaboratorsLoaded) {
         collaboratorsLoaded = true;
-        markLoaded();
       }
+      markLoaded();
     });
 
     return () => {
