@@ -11,23 +11,25 @@ export function filterMovements(movements: FinanceMovement[], filters: FinanceFi
 }
 
 export function calcKpis(movements: FinanceMovement[], monthKey: string, includeCancelled = false) {
-  const monthMovements = movements.filter((movement) => {
-    if (movement.monthKey !== monthKey) return false;
-    if (!includeCancelled && movement.status === "cancelled") return false;
-    return true;
-  });
+  const monthMovementsAll = movements.filter((movement) => movement.monthKey === monthKey);
+  const monthMovements = includeCancelled
+    ? monthMovementsAll
+    : monthMovementsAll.filter((movement) => movement.status !== "cancelled");
   const incomePaid = 0;
   const incomePending = sumBy(
     monthMovements,
     (item) => (item.status === "pending" ? item.tax?.total ?? item.amount : 0),
   );
-  const netIncome = incomePaid;
-  const margin = incomePaid > 0 ? 100 : 0;
+  const incomeCancelled = sumBy(
+    monthMovementsAll,
+    (item) => (item.status === "cancelled" ? item.tax?.total ?? item.amount : 0),
+  );
+  const netIncome = incomePending;
+  const margin = netIncome > 0 ? 100 : 0;
 
   return {
     incomePending,
     incomeCancelled,
-    // mantenemos estos campos en 0 para no romper UI hasta que actualicemos el page.tsx
     expensesPaid: 0,
     expensesPending: 0,
     netIncome,
