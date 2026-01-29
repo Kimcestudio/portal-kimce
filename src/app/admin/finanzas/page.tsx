@@ -218,30 +218,40 @@ export default function FinanceModulePage() {
     [filters.includeCancelled, filters.monthKey, movements],
   );
 
-  const monthSummary = useMemo(() => {
-    const monthMovements = movements.filter((movement) => {
-      if (movement.monthKey !== filters.monthKey) return false;
-      if (!filters.includeCancelled && movement.status === "cancelled") return false;
-      return true;
-    });
-    const total = monthMovements.reduce(
-      (sum, movement) => sum + (movement.tax?.total ?? movement.amount),
-      0
-    );
-    const igv = monthMovements.reduce((sum, movement) => sum + (movement.tax?.igv ?? 0), 0);
-    const net = total - igv;
-    const paid = monthMovements.reduce(
-      (sum, movement) =>
-        sum + (movement.status === "paid" ? movement.tax?.total ?? movement.amount : 0),
-      0
-    );
-    const pending = monthMovements.reduce(
-      (sum, movement) =>
-        sum + (movement.status === "pending" ? movement.tax?.total ?? movement.amount : 0),
-      0
-    );
-    return { total, paid, pending, igv, net };
-  }, [filters.includeCancelled, filters.monthKey, movements]);
+  cconst monthSummary = useMemo(() => {
+  const monthMovements = movements.filter((movement) => {
+    if (movement.monthKey !== filters.monthKey) return false;
+    if (!filters.includeCancelled && movement.status === "cancelled") return false;
+    return true;
+  });
+
+  const total = monthMovements.reduce(
+    (sum, movement) => sum + (movement.tax?.total ?? movement.amount),
+    0
+  );
+
+  const igv = monthMovements.reduce(
+    (sum, movement) => sum + (movement.tax?.igv ?? 0),
+    0
+  );
+
+  const net = total - igv;
+
+  const cancelled = monthMovements.reduce(
+    (sum, movement) =>
+      sum + (movement.status === "cancelled" ? movement.tax?.total ?? movement.amount : 0),
+    0
+  );
+
+  const pending = monthMovements.reduce(
+    (sum, movement) =>
+      sum + (movement.status === "pending" ? movement.tax?.total ?? movement.amount : 0),
+    0
+  );
+
+  return { total, cancelled, pending, igv, net };
+}, [filters.includeCancelled, filters.monthKey, movements]);
+
 
   const openModal = (type: FinanceModalType) => {
     setModalType(type);
@@ -513,51 +523,57 @@ export default function FinanceModulePage() {
             }}
           />
 
-          {isLoading ? (
-            <FinanceSkeleton />
-          ) : (
-            <div className="space-y-6">
-              {activeTab === "dashboard" ? (
-                <>
-                  <FinanceHeroCard
-                    monthKey={filters.monthKey}
-                    incomePaid={kpis.incomePaid}
-                    expensesPaid={kpis.expensesPaid}
-                    netIncome={kpis.netIncome}
-                    margin={kpis.margin}
-                  />
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <FinanceKpiCard title="Ingresos cobrados" value={kpis.incomePaid} tone="blue" />
-                    <FinanceKpiCard title="Pendiente por cobrar" value={kpis.incomePending} tone="amber" />
-                    <FinanceKpiCard title="Gastos pagados" value={kpis.expensesPaid} tone="rose" />
-                    <FinanceKpiCard title="Utilidad neta" value={kpis.netIncome} tone="green" />
-                  </div>
-                  <FinancePendingList
-                    title="Pendientes por cobrar"
-                    items={filteredMovements.filter((movement) => movement.status === "pending")}
-                    emptyLabel="Sin pendientes."
-                  />
-                </>
-              ) : null}
+       {isLoading ? (
+  <FinanceSkeleton />
+) : (
+  <div className="space-y-6">
+    {activeTab === "dashboard" ? (
+      <>
+        <FinanceHeroCard
+          monthKey={filters.monthKey}
+          incomePaid={kpis.incomePending} // 👈 antes: kpis.incomePaid
+          expensesPaid={kpis.expensesPaid}
+          netIncome={kpis.netIncome}
+          margin={kpis.margin}
+        />
 
-              {activeTab === "movimientos" ? (
-                <>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                    <FinanceKpiCard title="Total" value={monthSummary.total} tone="slate" />
-                    <FinanceKpiCard title="Cobrado" value={monthSummary.paid} tone="green" />
-                    <FinanceKpiCard title="Pendiente" value={monthSummary.pending} tone="amber" />
-                    <FinanceKpiCard title="IGV" value={monthSummary.igv} tone="blue" />
-                    <FinanceKpiCard title="Neto" value={monthSummary.net} tone="rose" />
-                  </div>
-                  <FinanceTable
-                    movements={filteredMovements}
-                    onStatusChange={handleStatusChange}
-                    onDelete={handleDeleteMovement}
-                    onEdit={handleEditMovement}
-                    disabled={isSubmitting}
-                  />
-                </>
-              ) : null}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <FinanceKpiCard title="Pendiente por cobrar" value={kpis.incomePending} tone="amber" />
+          <FinanceKpiCard title="Cancelado" value={monthSummary.cancelled} tone="rose" />
+          <FinanceKpiCard title="Gastos pagados" value={kpis.expensesPaid} tone="rose" />
+          <FinanceKpiCard title="Utilidad neta" value={kpis.netIncome} tone="green" />
+        </div>
+
+        <FinancePendingList
+          title="Pendientes por cobrar"
+          items={filteredMovements.filter((movement) => movement.status === "pending")}
+          emptyLabel="Sin pendientes."
+        />
+      </>
+    ) : null}
+
+    {activeTab === "movimientos" ? (
+      <>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <FinanceKpiCard title="Total" value={monthSummary.total} tone="slate" />
+          <FinanceKpiCard title="Pendiente" value={monthSummary.pending} tone="amber" />
+          <FinanceKpiCard title="Cancelado" value={monthSummary.cancelled} tone="rose" />
+          <FinanceKpiCard title="IGV" value={monthSummary.igv} tone="blue" />
+          <FinanceKpiCard title="Neto" value={monthSummary.net} tone="green" />
+        </div>
+
+        <FinanceTable
+          movements={filteredMovements}
+          onStatusChange={handleStatusChange}
+          onDelete={handleDeleteMovement}
+          onEdit={handleEditMovement}
+          disabled={isSubmitting}
+        />
+      </>
+    ) : null}
+  </div>
+)}
+
 
               {activeTab === "gastos" ? (
                 <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">

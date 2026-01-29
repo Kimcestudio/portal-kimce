@@ -1,4 +1,5 @@
-export type FinanceStatus = "pending" | "paid" | "cancelled";
+// ✅ SOLO 2 ESTADOS
+export type FinanceStatus = "pending" | "cancelled";
 
 export type FinanceAccountName = "LUIS" | "ALONDRA" | "KIMCE";
 
@@ -72,6 +73,7 @@ export interface CollaboratorPayment {
   devolucion?: number | null;
   montoFinal: number;
   fechaPago: string;
+  monthKey?: string; // ✅ agregado
   cuentaOrigen: FinanceAccountName;
   status: FinanceStatus;
   referencia?: string | null;
@@ -97,6 +99,7 @@ export interface Expense {
   descripcion: string;
   monto: number;
   fechaGasto: string;
+  monthKey?: string; // ✅ agregado
   cuentaOrigen: FinanceAccountName;
   status: FinanceStatus;
   requiereDevolucion: boolean;
@@ -107,7 +110,10 @@ export interface Expense {
   updatedAt: string;
 }
 
-export type TransferMovementType = "TRANSFERENCIA" | "INGRESO_CAJA" | "SALIDA_CAJA";
+export type TransferMovementType =
+  | "TRANSFERENCIA"
+  | "INGRESO_CAJA"
+  | "SALIDA_CAJA";
 
 export interface TransferMovement {
   id: string;
@@ -116,6 +122,7 @@ export interface TransferMovement {
   cuentaDestino?: FinanceAccountName | null;
   monto: number;
   fecha: string;
+  monthKey?: string; // ✅ agregado
   status: FinanceStatus;
   referencia?: string | null;
   notas?: string | null;
@@ -131,4 +138,10 @@ export type FinanceFilters = {
   includeCancelled: boolean;
 };
 
-export type FinanceTabKey = "dashboard" | "movimientos" | "pagos" | "gastos" | "cuentas" | "cierre";
+export type FinanceTabKey =
+  | "dashboard"
+  | "movimientos"
+  | "pagos"
+  | "gastos"
+  | "cuentas"
+  | "cierre";

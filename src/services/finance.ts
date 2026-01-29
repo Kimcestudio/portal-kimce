@@ -30,7 +30,6 @@ export async function listCollaborators(): Promise<Collaborator[]> {
   });
 }
 
-
 export function subscribeCollaborators(
   onChange: (items: Collaborator[]) => void,
 ): FinanceUnsubscribe {
@@ -46,7 +45,6 @@ export function subscribeCollaborators(
     onChange(items);
   });
 }
-
 
 export function subscribeFinanceMovements(
   onChange: (items: FinanceMovement[]) => void,
@@ -64,7 +62,6 @@ export function subscribeFinanceMovements(
   });
 }
 
-
 export function subscribeExpenses(
   onChange: (items: Expense[]) => void,
 ): FinanceUnsubscribe {
@@ -80,7 +77,6 @@ export function subscribeExpenses(
     onChange(items);
   });
 }
-
 
 export function subscribeTransfers(
   onChange: (items: TransferMovement[]) => void,
@@ -98,7 +94,6 @@ export function subscribeTransfers(
   });
 }
 
-
 export function subscribeCollaboratorPayments(
   onChange: (items: CollaboratorPayment[]) => void,
 ): FinanceUnsubscribe {
@@ -106,7 +101,10 @@ export function subscribeCollaboratorPayments(
 
   return onSnapshot(paymentsQuery, (snapshot) => {
     const items = snapshot.docs.map((item) => {
-      const data = item.data() as Omit<CollaboratorPayment, "id"> & { id?: string; estado?: FinanceStatus };
+      const data = item.data() as Omit<CollaboratorPayment, "id"> & {
+        id?: string;
+        estado?: FinanceStatus;
+      };
       const { id: _ignored, ...rest } = data;
       return normalizeCollaboratorPayment({
         ...rest,
@@ -118,7 +116,6 @@ export function subscribeCollaboratorPayments(
   });
 }
 
-
 export async function createIncomeMovement(
   input: Omit<FinanceMovement, "id" | "monthKey" | "createdAt" | "updatedAt" | "type" | "concept">,
 ) {
@@ -128,6 +125,7 @@ export async function createIncomeMovement(
     ? formatDateOnly(input.expectedPayDate) ?? input.expectedPayDate
     : null;
   const totalAmount = input.tax?.total ?? input.amount;
+
   const movement: Omit<FinanceMovement, "id"> = {
     type: "income",
     concept: input.clientName,
@@ -151,7 +149,9 @@ export async function createIncomeMovement(
   return { ...movement, id: docRef.id };
 }
 
-export async function createCollaborator(input: Omit<Collaborator, "id" | "createdAt" | "updatedAt">) {
+export async function createCollaborator(
+  input: Omit<Collaborator, "id" | "createdAt" | "updatedAt">,
+) {
   const now = new Date().toISOString();
   const collaborator: Omit<Collaborator, "id"> = {
     ...input,
@@ -167,13 +167,16 @@ export async function createCollaboratorPayment(
 ) {
   const now = new Date().toISOString();
   const dateOnly = formatDateOnly(input.fechaPago) ?? formatDateOnly(new Date()) ?? "";
+
   const payment: Omit<CollaboratorPayment, "id"> = {
     ...input,
     fechaPago: dateOnly,
+    monthKey: getMonthKeyFromDate(dateOnly) ?? getMonthKey(new Date()), // ✅ agregado
     status: normalizeStatus(input.status),
     createdAt: now,
     updatedAt: now,
   };
+
   const docRef = await addDoc(financeRefs.collaboratorPaymentsRef, payment);
   return { ...payment, id: docRef.id };
 }
@@ -181,27 +184,35 @@ export async function createCollaboratorPayment(
 export async function createExpense(input: Omit<Expense, "id" | "createdAt" | "updatedAt">) {
   const now = new Date().toISOString();
   const dateOnly = formatDateOnly(input.fechaGasto) ?? formatDateOnly(new Date()) ?? "";
+
   const expense: Omit<Expense, "id"> = {
     ...input,
     fechaGasto: dateOnly,
+    monthKey: getMonthKeyFromDate(dateOnly) ?? getMonthKey(new Date()), // ✅ agregado
     status: normalizeStatus(input.status),
     createdAt: now,
     updatedAt: now,
   };
+
   const docRef = await addDoc(financeRefs.expensesRef, expense);
   return { ...expense, id: docRef.id };
 }
 
-export async function createTransfer(input: Omit<TransferMovement, "id" | "createdAt" | "updatedAt">) {
+export async function createTransfer(
+  input: Omit<TransferMovement, "id" | "createdAt" | "updatedAt">,
+) {
   const now = new Date().toISOString();
   const dateOnly = formatDateOnly(input.fecha) ?? formatDateOnly(new Date()) ?? "";
+
   const transfer: Omit<TransferMovement, "id"> = {
     ...input,
     fecha: dateOnly,
+    monthKey: getMonthKeyFromDate(dateOnly) ?? getMonthKey(new Date()), // ✅ agregado
     status: normalizeStatus(input.status),
     createdAt: now,
     updatedAt: now,
   };
+
   const docRef = await addDoc(financeRefs.transfersRef, transfer);
   return { ...transfer, id: docRef.id };
 }
@@ -242,6 +253,7 @@ export async function updateIncomeMovement(
   const cleanedUpdates = Object.fromEntries(
     Object.entries(nextUpdates).filter(([, value]) => value !== undefined),
   );
+
   await updateDoc(doc(financeRefs.movementsRef, id), {
     ...cleanedUpdates,
     updatedAt: new Date().toISOString(),
@@ -252,24 +264,37 @@ export async function deleteFinanceMovement(id: string) {
   await deleteDoc(doc(financeRefs.movementsRef, id));
 }
 
+/**
+ * ✅ SOLO 2 estados para la UI y para normalización:
+ * - pending
+ * - cancelled
+ *
+ * Todo lo que venga como "paid"/"PAGADO" lo bajamos a "pending" (para no romper data vieja).
+ */
 function normalizeStatus(value: unknown): FinanceStatus {
-  if (value === "pending" || value === "paid" || value === "cancelled") {
-    return value;
-  }
+  if (value === "pending" || value === "cancelled") return value;
+
   if (value === "PENDIENTE") return "pending";
   if (value === "CANCELADO") return "cancelled";
-  if (value === "PAGADO" || value === "PAGADA") return "paid";
+
+  // data legacy
+  if (value === "paid" || value === "PAGADO" || value === "PAGADA") return "pending";
+
   return "pending";
 }
 
 function normalizeMovementUpdates(
   updates: Partial<Omit<FinanceMovement, "id" | "type" | "createdAt" | "monthKey">>,
 ) {
-  const incomeDate = updates.incomeDate ? formatDateOnly(updates.incomeDate) ?? updates.incomeDate : undefined;
+  const incomeDate = updates.incomeDate
+    ? formatDateOnly(updates.incomeDate) ?? updates.incomeDate
+    : undefined;
+
   const expectedPayDate =
     updates.expectedPayDate !== undefined && updates.expectedPayDate !== null
       ? formatDateOnly(updates.expectedPayDate) ?? updates.expectedPayDate
       : updates.expectedPayDate;
+
   return {
     ...updates,
     incomeDate,
@@ -284,6 +309,7 @@ function normalizeMovement(movement: FinanceMovement) {
   const expectedPayDate = movement.expectedPayDate
     ? formatDateOnly(movement.expectedPayDate) ?? movement.expectedPayDate
     : null;
+
   return {
     ...movement,
     incomeDate,
@@ -296,28 +322,34 @@ function normalizeMovement(movement: FinanceMovement) {
 function normalizeExpense(expense: Expense & { estado?: FinanceStatus }) {
   const fechaGasto = formatDateOnly(expense.fechaGasto) ?? expense.fechaGasto;
   const status = normalizeStatus(expense.status ?? expense.estado);
+
   return {
     ...expense,
     fechaGasto,
     status,
+    monthKey: expense.monthKey ?? getMonthKeyFromDate(fechaGasto) ?? undefined, // ✅ fallback
   };
 }
 
 function normalizeTransfer(transfer: TransferMovement) {
   const fecha = formatDateOnly(transfer.fecha) ?? transfer.fecha;
+
   return {
     ...transfer,
     fecha,
     status: normalizeStatus(transfer.status),
+    monthKey: transfer.monthKey ?? getMonthKeyFromDate(fecha) ?? undefined, // ✅ fallback
   };
 }
 
 function normalizeCollaboratorPayment(payment: CollaboratorPayment & { estado?: FinanceStatus }) {
   const fechaPago = formatDateOnly(payment.fechaPago) ?? payment.fechaPago;
   const status = normalizeStatus(payment.status ?? payment.estado);
+
   return {
     ...payment,
     fechaPago,
     status,
+    monthKey: payment.monthKey ?? getMonthKeyFromDate(fechaPago) ?? undefined, // ✅ fallback
   };
 }
