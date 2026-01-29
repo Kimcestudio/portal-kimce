@@ -243,6 +243,27 @@ export default function FinanceModulePage() {
     return { total, paid, pending, igv, net };
   }, [filters.includeCancelled, filters.monthKey, movements]);
 
+  const monthSummary = useMemo(() => {
+    const monthMovements = movements.filter((movement) => movement.monthKey === filters.monthKey);
+    const total = monthMovements.reduce(
+      (sum, movement) => sum + (movement.tax?.total ?? movement.amount),
+      0
+    );
+    const igv = monthMovements.reduce((sum, movement) => sum + (movement.tax?.igv ?? 0), 0);
+    const net = total - igv;
+    const paid = monthMovements.reduce(
+      (sum, movement) =>
+        sum + (movement.status === "CANCELADO" ? movement.tax?.total ?? movement.amount : 0),
+      0
+    );
+    const pending = monthMovements.reduce(
+      (sum, movement) =>
+        sum + (movement.status === "PENDIENTE" ? movement.tax?.total ?? movement.amount : 0),
+      0
+    );
+    return { total, paid, pending, igv, net };
+  }, [filters.monthKey, movements]);
+
   const openModal = (type: FinanceModalType) => {
     setModalType(type);
     setIsModalOpen(true);
