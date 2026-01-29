@@ -11,7 +11,8 @@ import {
   getWeekStartMonday,
   minutesToHHMM,
 } from "@/lib/attendanceUtils";
-import { listAttendanceRecords, listUsers } from "@/services/firebase/db";
+import { listAttendanceRecords, listUsers, listWorkSchedules } from "@/services/firebase/db";
+import { DEFAULT_WORK_SCHEDULES } from "@/services/firebase/workSchedules";
 import type { AdminAttendanceRecord } from "@/services/firebase/types";
 
 function computeBreakMinutes(record: AdminAttendanceRecord | null) {
@@ -37,6 +38,12 @@ export default function AdminHoursPage() {
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
 
   const users = listUsers();
+  const workSchedules = listWorkSchedules();
+  const scheduleOptions = workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES;
+  const scheduleById = useMemo(
+    () => new Map(scheduleOptions.map((schedule) => [schedule.id, schedule])),
+    [scheduleOptions]
+  );
   const records = listAttendanceRecords();
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
 
@@ -45,17 +52,29 @@ export default function AdminHoursPage() {
       ? users
       : users.filter((item) => item.uid === selectedUserId);
     return scopedUsers.map((item) => {
+      const schedule = scheduleById.get(item.workScheduleId ?? "") ?? scheduleOptions[0];
       const weekRecords = records.filter((record) => {
         if (record.userId !== item.uid) return false;
         return isSameWeek(new Date(`${record.date}T00:00:00`), weekStart);
       });
       const totalMinutes = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
-      const expectedMinutes = weekDates.reduce((total, date) => total + expectedMinutesForDate(date), 0);
+      const expectedMinutes = weekDates.reduce(
+        (total, date) => total + expectedMinutesForDate(date, schedule),
+        0
+      );
       const diffMinutes = totalMinutes - expectedMinutes;
       const status = diffMinutes < 0 ? "Pendiente" : "Al día";
-      return { user: item, weekRecords, totalMinutes, expectedMinutes, diffMinutes, status };
+      return {
+        user: item,
+        weekRecords,
+        totalMinutes,
+        expectedMinutes,
+        diffMinutes,
+        status,
+        schedule,
+      };
     });
-  }, [records, selectedUserId, users, weekDates, weekStart]);
+  }, [records, scheduleById, scheduleOptions, selectedUserId, users, weekDates, weekStart]);
 
   const detailUser = detailUserId
     ? users.find((item) => item.uid === detailUserId) ?? null

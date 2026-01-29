@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { doc, getDoc } from "firebase/firestore";
 import PageHeader from "@/components/PageHeader";
 import TodayAttendanceCard from "@/components/attendance/TodayAttendanceCard";
 import WeeklySummaryMiniCards from "@/components/attendance/WeeklySummaryMiniCards";
@@ -37,6 +38,9 @@ import {
   startBreak,
 } from "@/lib/storage/attendanceStorage";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { db } from "@/services/firebase/client";
+import type { WorkSchedule } from "@/services/firebase/types";
+import { DEFAULT_WORK_SCHEDULES, DEFAULT_WORK_SCHEDULE_ID } from "@/services/firebase/workSchedules";
 
 type AttendanceStatus = "OFF" | "IN_SHIFT" | "ON_BREAK" | "CLOSED";
 
@@ -52,6 +56,13 @@ const emptyCorrection: CorrectionDraft = {
   attendanceId: "",
   proposedChanges: "",
   reason: "",
+};
+
+const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+
+const formatGoalHours = (minutes: number) => {
+  const hours = minutes / 60;
+  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
 };
 
 function computeBreakMinutes(record: AttendanceRecord | null) {
@@ -100,6 +111,7 @@ export default function AttendancePageContent() {
     reason: "",
   });
   const [correctionDraft, setCorrectionDraft] = useState<CorrectionDraft>(emptyCorrection);
+  const [schedule, setSchedule] = useState<WorkSchedule>(DEFAULT_WORK_SCHEDULES[0]);
 
   const weekStart = useMemo(() => {
     const base = new Date();
@@ -108,6 +120,48 @@ export default function AttendancePageContent() {
   }, [weekOffset]);
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
+  const todayKey = DAY_KEYS[new Date().getDay()];
+  const dailyGoalMinutes = schedule.days[todayKey] ?? DEFAULT_WORK_SCHEDULES[0].days[todayKey];
+  const weeklyGoalMinutes = schedule.weeklyMinutes ?? DEFAULT_WORK_SCHEDULES[0].weeklyMinutes;
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    let isMounted = true;
+    const loadSchedule = async () => {
+      try {
+        const userRef = doc(db, "users", user.uid);
+        const userSnapshot = await getDoc(userRef);
+        const userData = userSnapshot.exists() ? userSnapshot.data() : null;
+        const scheduleId =
+          (userData?.workScheduleId as string | undefined) ??
+          user.workScheduleId ??
+          DEFAULT_WORK_SCHEDULE_ID;
+        const scheduleRef = doc(db, "workSchedules", scheduleId);
+        const scheduleSnapshot = await getDoc(scheduleRef);
+        if (!isMounted) return;
+        if (scheduleSnapshot.exists()) {
+          const data = scheduleSnapshot.data();
+          setSchedule({
+            id: scheduleSnapshot.id,
+            name: (data.name as string) ?? "Jornada",
+            weeklyMinutes: (data.weeklyMinutes as number) ?? DEFAULT_WORK_SCHEDULES[0].weeklyMinutes,
+            days: (data.days as WorkSchedule["days"]) ?? DEFAULT_WORK_SCHEDULES[0].days,
+          });
+        } else {
+          setSchedule(DEFAULT_WORK_SCHEDULES[0]);
+        }
+      } catch (error) {
+        console.error("[attendance] Error loading work schedule", error);
+        if (isMounted) {
+          setSchedule(DEFAULT_WORK_SCHEDULES[0]);
+        }
+      }
+    };
+    loadSchedule();
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.uid, user?.workScheduleId]);
 
   const reloadToday = () => {
     if (!user) return;
@@ -153,7 +207,7 @@ export default function AttendancePageContent() {
   const totalMinutes = todayRecord?.totalMinutes ?? 0;
 
   const expectedMinutesWeek = weekDates.reduce(
-    (total, date) => total + expectedMinutesForDate(date),
+    (total, date) => total + expectedMinutesForDate(date, schedule),
     0
   );
   const workedMinutesWeek = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
@@ -161,7 +215,7 @@ export default function AttendancePageContent() {
   const totalBalanceMinutes = user
     ? listAllRecords(user.uid).reduce((sum, record) => {
         const recordDate = new Date(`${record.date}T00:00:00`);
-        return sum + (record.totalMinutes - expectedMinutesForDate(recordDate));
+        return sum + (record.totalMinutes - expectedMinutesForDate(recordDate, schedule));
       }, 0)
     : 0;
   const completedDays = weekRecords.filter(
@@ -277,7 +331,7 @@ export default function AttendancePageContent() {
     .map((date) => {
       const dateISO = formatISODate(date);
       const record = weekRecords.find((item) => item.date === dateISO);
-      const targetHours = date.getDay() === 6 ? 4 : 8;
+      const targetHours = expectedMinutesForDate(date, schedule) / 60;
       return {
         label: date.toLocaleDateString("es-ES", { weekday: "short" }),
         hours: record ? Math.round((record.totalMinutes / 60) * 10) / 10 : 0,
@@ -290,8 +344,14 @@ export default function AttendancePageContent() {
       <PageHeader
         userName={user?.displayName ?? user?.email ?? undefined}
         rightSlot={
-          <div className="rounded-full bg-white px-4 py-2 text-xs font-semibold text-muted shadow-soft">
-            Semana actual · {formatISODate(weekStart)}
+          <div className="flex flex-wrap items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-muted shadow-soft">
+            <span>Semana actual · {formatISODate(weekStart)}</span>
+            <span className="h-3 w-px bg-line/80" />
+            <span>Jornada: {schedule.name}</span>
+            <span className="h-3 w-px bg-line/80" />
+            <span>Meta semanal {formatGoalHours(weeklyGoalMinutes)}</span>
+            <span className="h-3 w-px bg-line/80" />
+            <span>Meta diaria {formatGoalHours(dailyGoalMinutes)}</span>
           </div>
         }
       />

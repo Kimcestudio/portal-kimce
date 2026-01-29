@@ -2,16 +2,21 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import type { UserProfile } from "@/services/firebase/types";
 import {
   getCurrentUser,
   getStoredSession,
   onAuthStateChanged,
   signInWithEmailPassword,
+  signInWithGoogle,
+  setStoredSession,
   signOut,
   updateUserProfile,
 } from "@/services/firebase/auth";
-import { getUserById } from "@/services/firebase/db";
+import { db } from "@/services/firebase/client";
+import { getUserByEmail, getUserById, upsertUser } from "@/services/firebase/db";
+import { DEFAULT_WORK_SCHEDULE_ID } from "@/services/firebase/workSchedules";
 
 type AuthUser = {
   uid: string;
@@ -25,7 +30,8 @@ interface AuthContextValue {
   loading: boolean;
   viewMode: "collaborator" | "admin";
   setViewMode: (mode: "collaborator" | "admin") => void;
-  signInUser: (email: string, password: string) => Promise<UserProfile>;
+  signInWithEmail: (email: string, password: string) => Promise<UserProfile>;
+  signInWithGoogle: () => Promise<UserProfile>;
   signOutUser: () => Promise<void>;
   updateUser: (payload: Partial<UserProfile>) => void;
 }
@@ -43,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const stored = window.localStorage.getItem("view_mode");
     return stored === "admin" ? "admin" : "collaborator";
   });
+  const adminAllowlist = ["kimcestudio@gmail.com"]; // Actualiza esta lista para el bootstrap admin.
 
   useEffect(() => {
     const session = getStoredSession();
@@ -64,20 +71,173 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [profile?.role, viewMode]);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged((session) => {
-      setAuthUser(session ? { uid: session.uid, email: session.email } : null);
-      setProfile(session ? getUserById(session.uid) : null);
+    let isMounted = true;
+    const unsubscribe = onAuthStateChanged(async (session) => {
+      if (!isMounted) return;
+      if (!session) {
+        setAuthUser(null);
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setAuthUser({ uid: session.uid, email: session.email });
+      const localProfile = getUserById(session.uid);
+      let nextProfile = localProfile;
+      try {
+        const userRef = doc(db, "users", session.uid);
+        const snapshot = await getDoc(userRef);
+        if (snapshot.exists()) {
+          const data = snapshot.data() as Partial<UserProfile>;
+          if (!data.role || !data.workScheduleId) {
+            await setDoc(
+              userRef,
+              {
+                role: data.role ?? "collab",
+                workScheduleId: data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+            data.role = data.role ?? "collab";
+            data.workScheduleId = data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID;
+          }
+          nextProfile = {
+            uid: data.uid ?? session.uid,
+            email: data.email ?? session.email,
+            displayName: data.displayName ?? localProfile?.displayName ?? "Usuario",
+            photoURL: data.photoURL ?? localProfile?.photoURL ?? "",
+            role: data.role ?? localProfile?.role ?? "collab",
+            position: data.position ?? localProfile?.position ?? "Sin asignar",
+            workScheduleId:
+              data.workScheduleId ?? localProfile?.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
+            active: data.isActive ?? data.active ?? localProfile?.active ?? true,
+            approved: data.approved ?? localProfile?.approved,
+            isActive: data.isActive ?? localProfile?.isActive,
+            createdAt:
+              typeof data.createdAt === "string"
+                ? data.createdAt
+                : localProfile?.createdAt ?? new Date().toISOString(),
+          };
+          upsertUser(nextProfile);
+        }
+      } catch (error) {
+        if (process.env.NODE_ENV !== "production") {
+          console.log("[auth] Firestore sync failed", error);
+        }
+      }
+      if (!isMounted) return;
+      setProfile(nextProfile);
+      setLoading(false);
     });
     return () => {
+      isMounted = false;
       if (unsubscribe) unsubscribe();
     };
   }, []);
 
-  const signInUser = async (email: string, password: string) => {
+  const signInWithEmail = async (email: string, password: string) => {
     const response = await signInWithEmailPassword(email, password);
     setAuthUser({ uid: response.uid, email: response.email });
     setProfile(response);
     return response;
+  };
+
+  const signInWithGoogleUser = async () => {
+    const credential = await signInWithGoogle();
+    const firebaseUser = credential.user;
+    const firebaseUid = firebaseUser.uid;
+    const email = firebaseUser.email ?? "";
+    if (!firebaseUid) {
+      throw new Error("No se pudo validar el usuario.");
+    }
+    const userRef = doc(db, "users", firebaseUid);
+    const snapshot = await getDoc(userRef);
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[auth] Google uid", firebaseUid);
+    }
+    if (!snapshot.exists()) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[auth] Firestore user missing");
+      }
+      const isAdmin = adminAllowlist.includes(email.toLowerCase());
+      const newProfile: UserProfile = {
+        uid: firebaseUid,
+        email,
+        displayName: firebaseUser.displayName ?? "Usuario",
+        photoURL: firebaseUser.photoURL ?? "",
+        role: isAdmin ? "admin" : "collab",
+        position: "Pendiente",
+        workScheduleId: DEFAULT_WORK_SCHEDULE_ID,
+        active: true,
+        approved: false,
+        isActive: false,
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(userRef, {
+        uid: newProfile.uid,
+        email: newProfile.email,
+        displayName: newProfile.displayName,
+        photoURL: newProfile.photoURL,
+        approved: false,
+        isActive: false,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        role: newProfile.role,
+        position: newProfile.position,
+        workScheduleId: newProfile.workScheduleId,
+      });
+      upsertUser(newProfile);
+      throw new Error("Tu acceso está pendiente de aprobación.");
+    }
+    const data = snapshot.data() as Partial<UserProfile>;
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[auth] Firestore user data", data);
+    }
+    if (!data.role || !data.workScheduleId) {
+      await setDoc(
+        userRef,
+        {
+          role: data.role ?? "collab",
+          workScheduleId: data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+      data.role = data.role ?? "collab";
+      data.workScheduleId = data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID;
+    }
+    const approved = data.approved;
+    const isActive = data.isActive ?? true;
+    if (approved !== true) {
+      throw new Error("Tu acceso aún no está habilitado.");
+    }
+    if (isActive === false) {
+      throw new Error("Tu cuenta está desactivada.");
+    }
+    const existingProfile = email ? getUserByEmail(email) : null;
+    const mergedProfile: UserProfile = {
+      uid: data.uid ?? firebaseUid,
+      email: data.email ?? email,
+      displayName: data.displayName ?? firebaseUser.displayName ?? "Usuario",
+      photoURL: data.photoURL ?? firebaseUser.photoURL ?? "",
+      role: data.role ?? existingProfile?.role ?? "collab",
+      position: data.position ?? existingProfile?.position ?? "Sin asignar",
+      workScheduleId:
+        data.workScheduleId ?? existingProfile?.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
+      active: data.isActive ?? data.active ?? existingProfile?.active ?? true,
+      approved: data.approved ?? existingProfile?.approved,
+      isActive: data.isActive ?? existingProfile?.isActive,
+      createdAt:
+        typeof data.createdAt === "string"
+          ? data.createdAt
+          : existingProfile?.createdAt ?? new Date().toISOString(),
+    };
+    upsertUser(mergedProfile);
+    setStoredSession({ uid: mergedProfile.uid, email: mergedProfile.email });
+    setAuthUser({ uid: mergedProfile.uid, email: mergedProfile.email });
+    setProfile(mergedProfile);
+    return mergedProfile;
   };
 
   const signOutUser = async () => {
@@ -106,7 +266,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       loading,
       viewMode,
       setViewMode,
-      signInUser,
+      signInWithEmail,
+      signInWithGoogle: signInWithGoogleUser,
       signOutUser,
       updateUser,
     }),
