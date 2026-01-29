@@ -3,6 +3,7 @@ import type {
   FinanceSettings,
   RequestRecord,
   UserProfile,
+  WorkSchedule,
 } from "@/services/firebase/types";
 import { readStorage, writeStorage } from "@/services/firebase/storage";
 
@@ -24,6 +25,14 @@ export function listUsers() {
   return getCollection<UserProfile>("users");
 }
 
+export function listWorkSchedules() {
+  return getCollection<WorkSchedule>("workSchedules");
+}
+
+export function getWorkScheduleById(id: string) {
+  return listWorkSchedules().find((schedule) => schedule.id === id) ?? null;
+}
+
 export function getUserById(uid: string) {
   return listUsers().find((user) => user.uid === uid) ?? null;
 }
@@ -40,6 +49,18 @@ export function updateUser(uid: string, updates: Partial<UserProfile>) {
   users[index] = next;
   setCollection("users", users);
   return next;
+}
+
+export function upsertUser(profile: UserProfile) {
+  const users = listUsers();
+  const index = users.findIndex((user) => user.uid === profile.uid);
+  if (index === -1) {
+    users.push(profile);
+  } else {
+    users[index] = { ...users[index], ...profile };
+  }
+  setCollection("users", users);
+  return profile;
 }
 
 export function listRequests() {
