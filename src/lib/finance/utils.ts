@@ -75,6 +75,28 @@ export function getTodayDateString() {
   return formatLocalDate(new Date());
 }
 
+export function getStatusLabel(status: "pending" | "paid" | "cancelled") {
+  switch (status) {
+    case "paid":
+      return "Pagado";
+    case "cancelled":
+      return "Cancelado";
+    default:
+      return "Pendiente";
+  }
+}
+
+export function getStatusTone(status: "pending" | "paid" | "cancelled") {
+  switch (status) {
+    case "paid":
+      return "success";
+    case "cancelled":
+      return "danger";
+    default:
+      return "warning";
+  }
+}
+
 function formatLocalDate(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");

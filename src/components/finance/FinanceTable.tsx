@@ -1,6 +1,5 @@
-import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
-import Badge from "@/components/ui/Badge";
+import FinanceStatusSelect from "@/components/finance/FinanceStatusSelect";
 import type { FinanceMovement, FinanceStatus } from "@/lib/finance/types";
 import { formatCurrency, formatShortDate } from "@/lib/finance/utils";
 
@@ -44,7 +43,7 @@ export default function FinanceTable({
               </td>
               <td className="px-4 py-3 text-xs text-slate-500">{movement.accountDestination}</td>
               <td className="px-4 py-3">
-                <StatusChip
+                <FinanceStatusSelect
                   status={movement.status}
                   onChange={(status) => onStatusChange?.(movement.id, status)}
                   disabled={disabled || !onStatusChange}
@@ -79,61 +78,6 @@ export default function FinanceTable({
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function StatusChip({
-  status,
-  onChange,
-  disabled,
-}: {
-  status: FinanceStatus;
-  onChange?: (status: FinanceStatus) => void;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const tone = status === "CANCELADO" ? "success" : "warning";
-
-  return (
-    <div className="relative inline-flex">
-      <button
-        type="button"
-        className="rounded-full"
-        onClick={() => setOpen((prev) => !prev)}
-        disabled={disabled}
-      >
-        <Badge tone={tone} label={status === "CANCELADO" ? "Cancelado" : "Pendiente"} />
-      </button>
-      {open ? (
-        <div className="absolute left-0 top-9 z-30 min-w-[180px] rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
-          {status === "PENDIENTE" ? (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
-              onClick={() => {
-                onChange?.("CANCELADO");
-                setOpen(false);
-              }}
-            >
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Cancelado
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-slate-600 hover:bg-slate-50"
-              onClick={() => {
-                onChange?.("PENDIENTE");
-                setOpen(false);
-              }}
-            >
-              <span className="h-2 w-2 rounded-full bg-amber-500" />
-              Pendiente
-            </button>
-          )}
-        </div>
-      ) : null}
     </div>
   );
 }

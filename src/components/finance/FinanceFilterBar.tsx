@@ -23,8 +23,9 @@ export default function FinanceFilterBar({ filters, onChange }: FinanceFilterBar
         onChange={(value) => onChange({ ...filters, status: value as FinanceFilters["status"] })}
         options={[
           { value: "all", label: "Todo" },
-          { value: "PENDIENTE", label: "Pendiente" },
-          { value: "CANCELADO", label: "Cancelado" },
+          { value: "pending", label: "Pendiente" },
+          { value: "paid", label: "Pagado" },
+          { value: "cancelled", label: "Cancelado" },
         ]}
       />
       <Select
@@ -38,6 +39,15 @@ export default function FinanceFilterBar({ filters, onChange }: FinanceFilterBar
           { value: "KIMCE", label: "Kimce" },
         ]}
       />
+      <label className="flex items-center gap-2 rounded-xl border border-slate-200/60 bg-white px-3 py-2 text-xs font-semibold text-slate-500">
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border border-slate-300"
+          checked={filters.includeCancelled}
+          onChange={(event) => onChange({ ...filters, includeCancelled: event.target.checked })}
+        />
+        Incluir cancelados
+      </label>
     </div>
   );
 }

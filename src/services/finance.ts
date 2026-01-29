@@ -1,4 +1,13 @@
-import { getCollection, setCollection } from "@/services/firebase/db";
+import {
+  addDoc,
+  deleteDoc,
+  doc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  updateDoc,
+} from "firebase/firestore";
 import type {
   Collaborator,
   CollaboratorPayment,
@@ -7,38 +16,65 @@ import type {
   FinanceStatus,
   TransferMovement,
 } from "@/lib/finance/types";
+import { financeRefs } from "@/lib/finance/refs";
 import { formatDateOnly, getMonthKeyFromDate, getMonthKey } from "@/lib/finance/utils";
 
-const MOVEMENTS_COLLECTION = "finance_movements";
-const INCOMES_COLLECTION = "incomes";
-const COLLABORATORS_COLLECTION = "collaborators";
-const COLLABORATOR_PAYMENTS_COLLECTION = "collaboratorPayments";
-const EXPENSES_COLLECTION = "expenses";
-const TRANSFERS_COLLECTION = "transfers";
+type FinanceUnsubscribe = () => void;
 
-export function listFinanceMovements() {
-  const movements = getCollection<FinanceMovement>(MOVEMENTS_COLLECTION, []);
-  return movements.map((movement) => normalizeMovementDates(movement));
+export async function listCollaborators() {
+  const snapshot = await getDocs(financeRefs.collaboratorsRef);
+  return snapshot.docs.map((item) => ({
+    id: item.id,
+    ...item.data(),
+  }));
 }
 
-export function listCollaborators() {
-  return getCollection<Collaborator>(COLLABORATORS_COLLECTION, []);
+export function subscribeCollaborators(onChange: (items: Collaborator[]) => void): FinanceUnsubscribe {
+  const collaboratorsQuery = query(financeRefs.collaboratorsRef, orderBy("createdAt", "desc"));
+  return onSnapshot(collaboratorsQuery, (snapshot) => {
+    const items = snapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+    }));
+    onChange(items);
+  });
 }
 
-export function listCollaboratorPayments() {
-  return getCollection<CollaboratorPayment>(COLLABORATOR_PAYMENTS_COLLECTION, []);
+export function subscribeFinanceMovements(onChange: (items: FinanceMovement[]) => void): FinanceUnsubscribe {
+  const movementsQuery = query(financeRefs.incomesRef, orderBy("createdAt", "desc"));
+  return onSnapshot(movementsQuery, (snapshot) => {
+    const items = snapshot.docs.map((item) => normalizeMovement({ id: item.id, ...item.data() }));
+    onChange(items);
+  });
 }
 
-export function listExpenses() {
-  const expenses = getCollection<Expense>(EXPENSES_COLLECTION, []);
-  return expenses.map((expense) => normalizeExpenseDates(expense));
+export function subscribeExpenses(onChange: (items: Expense[]) => void): FinanceUnsubscribe {
+  const expensesQuery = query(financeRefs.expensesRef, orderBy("createdAt", "desc"));
+  return onSnapshot(expensesQuery, (snapshot) => {
+    const items = snapshot.docs.map((item) => normalizeExpense({ id: item.id, ...item.data() }));
+    onChange(items);
+  });
 }
 
-export function listTransfers() {
-  return getCollection<TransferMovement>(TRANSFERS_COLLECTION, []);
+export function subscribeTransfers(onChange: (items: TransferMovement[]) => void): FinanceUnsubscribe {
+  const transfersQuery = query(financeRefs.transfersRef, orderBy("createdAt", "desc"));
+  return onSnapshot(transfersQuery, (snapshot) => {
+    const items = snapshot.docs.map((item) => normalizeTransfer({ id: item.id, ...item.data() }));
+    onChange(items);
+  });
 }
 
-export function createIncomeMovement(
+export function subscribeCollaboratorPayments(
+  onChange: (items: CollaboratorPayment[]) => void,
+): FinanceUnsubscribe {
+  const paymentsQuery = query(financeRefs.collaboratorPaymentsRef, orderBy("createdAt", "desc"));
+  return onSnapshot(paymentsQuery, (snapshot) => {
+    const items = snapshot.docs.map((item) => normalizeCollaboratorPayment({ id: item.id, ...item.data() }));
+    onChange(items);
+  });
+}
+
+export async function createIncomeMovement(
   input: Omit<FinanceMovement, "id" | "monthKey" | "createdAt" | "updatedAt" | "type" | "concept">,
 ) {
   const now = new Date();
@@ -47,8 +83,7 @@ export function createIncomeMovement(
     ? formatDateOnly(input.expectedPayDate) ?? input.expectedPayDate
     : null;
   const totalAmount = input.tax?.total ?? input.amount;
-  const movement: FinanceMovement = {
-    id: `mov_${Date.now()}`,
+  const movement: Omit<FinanceMovement, "id"> = {
     type: "income",
     concept: input.clientName,
     clientName: input.clientName,
@@ -57,7 +92,7 @@ export function createIncomeMovement(
     incomeDate,
     expectedPayDate,
     accountDestination: input.accountDestination,
-    status: input.status,
+    status: normalizeStatus(input.status),
     reference: input.reference ?? null,
     notes: input.notes ?? null,
     tax: input.tax,
@@ -67,106 +102,139 @@ export function createIncomeMovement(
     updatedAt: now.toISOString(),
   };
 
-  const movements = listFinanceMovements();
-  const next = [movement, ...movements];
-  setCollection(MOVEMENTS_COLLECTION, next);
-  const incomes = getCollection<FinanceMovement>(INCOMES_COLLECTION, []);
-  setCollection(INCOMES_COLLECTION, [movement, ...incomes]);
-  return movement;
+  const docRef = await addDoc(financeRefs.incomesRef, movement);
+  return { ...movement, id: docRef.id };
 }
 
-export function createCollaborator(input: Omit<Collaborator, "id" | "createdAt" | "updatedAt">) {
+export async function createCollaborator(input: Omit<Collaborator, "id" | "createdAt" | "updatedAt">) {
   const now = new Date().toISOString();
-  const collaborator: Collaborator = {
-    id: `collab_${Date.now()}`,
+  const collaborator: Omit<Collaborator, "id"> = {
     ...input,
     createdAt: now,
     updatedAt: now,
   };
-  const collaborators = listCollaborators();
-  setCollection(COLLABORATORS_COLLECTION, [collaborator, ...collaborators]);
-  return collaborator;
+  const docRef = await addDoc(financeRefs.collaboratorsRef, collaborator);
+  return { ...collaborator, id: docRef.id };
 }
 
-export function createCollaboratorPayment(
+export async function createCollaboratorPayment(
   input: Omit<CollaboratorPayment, "id" | "createdAt" | "updatedAt">,
 ) {
   const now = new Date().toISOString();
-  const payment: CollaboratorPayment = {
-    id: `collab_pay_${Date.now()}`,
+  const dateOnly = formatDateOnly(input.fechaPago) ?? formatDateOnly(new Date()) ?? "";
+  const payment: Omit<CollaboratorPayment, "id"> = {
     ...input,
+    fechaPago: dateOnly,
+    status: normalizeStatus(input.status),
     createdAt: now,
     updatedAt: now,
   };
-  const payments = listCollaboratorPayments();
-  setCollection(COLLABORATOR_PAYMENTS_COLLECTION, [payment, ...payments]);
-  return payment;
+  const docRef = await addDoc(financeRefs.collaboratorPaymentsRef, payment);
+  return { ...payment, id: docRef.id };
 }
 
-export function createExpense(input: Omit<Expense, "id" | "createdAt" | "updatedAt">) {
+export async function createExpense(input: Omit<Expense, "id" | "createdAt" | "updatedAt">) {
   const now = new Date().toISOString();
   const dateOnly = formatDateOnly(input.fechaGasto) ?? formatDateOnly(new Date()) ?? "";
-  const expense: Expense = {
-    id: `expense_${Date.now()}`,
+  const expense: Omit<Expense, "id"> = {
     ...input,
     fechaGasto: dateOnly,
+    status: normalizeStatus(input.status),
     createdAt: now,
     updatedAt: now,
   };
-  const expenses = listExpenses();
-  setCollection(EXPENSES_COLLECTION, [expense, ...expenses]);
-  return expense;
+  const docRef = await addDoc(financeRefs.expensesRef, expense);
+  return { ...expense, id: docRef.id };
 }
 
-export function createTransfer(input: Omit<TransferMovement, "id" | "createdAt" | "updatedAt">) {
+export async function createTransfer(input: Omit<TransferMovement, "id" | "createdAt" | "updatedAt">) {
   const now = new Date().toISOString();
   const dateOnly = formatDateOnly(input.fecha) ?? formatDateOnly(new Date()) ?? "";
-  const transfer: TransferMovement = {
-    id: `transfer_${Date.now()}`,
+  const transfer: Omit<TransferMovement, "id"> = {
     ...input,
     fecha: dateOnly,
+    status: normalizeStatus(input.status),
     createdAt: now,
     updatedAt: now,
   };
-  const transfers = listTransfers();
-  setCollection(TRANSFERS_COLLECTION, [transfer, ...transfers]);
-  return transfer;
+  const docRef = await addDoc(financeRefs.transfersRef, transfer);
+  return { ...transfer, id: docRef.id };
 }
 
-export function updateFinanceMovementStatus(id: string, status: FinanceStatus) {
-  const movements = listFinanceMovements();
-  const index = movements.findIndex((movement) => movement.id === id);
-  if (index === -1) return movements;
-  movements[index] = { ...movements[index], status, updatedAt: new Date().toISOString() };
-  setCollection(MOVEMENTS_COLLECTION, movements);
-  return movements;
+export async function updateFinanceMovementStatus(id: string, status: FinanceStatus) {
+  await updateDoc(doc(financeRefs.movementsRef, id), {
+    status,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
-export function updateIncomeMovement(
+export async function updateExpenseStatus(id: string, status: FinanceStatus) {
+  await updateDoc(doc(financeRefs.expensesRef, id), {
+    status,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function updateTransferStatus(id: string, status: FinanceStatus) {
+  await updateDoc(doc(financeRefs.transfersRef, id), {
+    status,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function updateCollaboratorPaymentStatus(id: string, status: FinanceStatus) {
+  await updateDoc(doc(financeRefs.collaboratorPaymentsRef, id), {
+    status,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function updateIncomeMovement(
   id: string,
   updates: Partial<Omit<FinanceMovement, "id" | "type" | "createdAt" | "monthKey">>,
 ) {
-  const movements = listFinanceMovements();
-  const index = movements.findIndex((movement) => movement.id === id);
-  if (index === -1) return movements;
-  const current = movements[index];
-  const next = normalizeMovementDates({
-    ...current,
-    ...updates,
+  const nextUpdates = normalizeMovementUpdates(updates);
+  const cleanedUpdates = Object.fromEntries(
+    Object.entries(nextUpdates).filter(([, value]) => value !== undefined),
+  );
+  await updateDoc(doc(financeRefs.movementsRef, id), {
+    ...cleanedUpdates,
     updatedAt: new Date().toISOString(),
   });
-  movements[index] = next;
-  setCollection(MOVEMENTS_COLLECTION, movements);
-  const incomes = getCollection<FinanceMovement>(INCOMES_COLLECTION, []);
-  const incomeIndex = incomes.findIndex((movement) => movement.id === id);
-  if (incomeIndex !== -1) {
-    incomes[incomeIndex] = next;
-    setCollection(INCOMES_COLLECTION, incomes);
-  }
-  return movements;
 }
 
-function normalizeMovementDates(movement: FinanceMovement) {
+export async function deleteFinanceMovement(id: string) {
+  await deleteDoc(doc(financeRefs.movementsRef, id));
+}
+
+function normalizeStatus(value: unknown): FinanceStatus {
+  if (value === "pending" || value === "paid" || value === "cancelled") {
+    return value;
+  }
+  if (value === "PENDIENTE") return "pending";
+  if (value === "CANCELADO") return "cancelled";
+  if (value === "PAGADO" || value === "PAGADA") return "paid";
+  return "pending";
+}
+
+function normalizeMovementUpdates(
+  updates: Partial<Omit<FinanceMovement, "id" | "type" | "createdAt" | "monthKey">>,
+) {
+  const incomeDate = updates.incomeDate ? formatDateOnly(updates.incomeDate) ?? updates.incomeDate : undefined;
+  const expectedPayDate =
+    updates.expectedPayDate !== undefined && updates.expectedPayDate !== null
+      ? formatDateOnly(updates.expectedPayDate) ?? updates.expectedPayDate
+      : updates.expectedPayDate;
+  return {
+    ...updates,
+    incomeDate,
+    expectedPayDate,
+    status: updates.status ? normalizeStatus(updates.status) : undefined,
+    monthKey: incomeDate ? getMonthKeyFromDate(incomeDate) ?? undefined : undefined,
+  };
+}
+
+function normalizeMovement(movement: FinanceMovement) {
   const incomeDate = formatDateOnly(movement.incomeDate) ?? movement.incomeDate;
   const expectedPayDate = movement.expectedPayDate
     ? formatDateOnly(movement.expectedPayDate) ?? movement.expectedPayDate
@@ -175,21 +243,36 @@ function normalizeMovementDates(movement: FinanceMovement) {
     ...movement,
     incomeDate,
     expectedPayDate,
+    status: normalizeStatus(movement.status),
     monthKey: getMonthKeyFromDate(incomeDate) ?? movement.monthKey,
   };
 }
 
-function normalizeExpenseDates(expense: Expense) {
+function normalizeExpense(expense: Expense & { estado?: FinanceStatus }) {
   const fechaGasto = formatDateOnly(expense.fechaGasto) ?? expense.fechaGasto;
+  const status = normalizeStatus(expense.status ?? expense.estado);
   return {
     ...expense,
     fechaGasto,
+    status,
   };
 }
 
-export function deleteFinanceMovement(id: string) {
-  const movements = listFinanceMovements();
-  const next = movements.filter((movement) => movement.id !== id);
-  setCollection(MOVEMENTS_COLLECTION, next);
-  return next;
+function normalizeTransfer(transfer: TransferMovement) {
+  const fecha = formatDateOnly(transfer.fecha) ?? transfer.fecha;
+  return {
+    ...transfer,
+    fecha,
+    status: normalizeStatus(transfer.status),
+  };
+}
+
+function normalizeCollaboratorPayment(payment: CollaboratorPayment & { estado?: FinanceStatus }) {
+  const fechaPago = formatDateOnly(payment.fechaPago) ?? payment.fechaPago;
+  const status = normalizeStatus(payment.status ?? payment.estado);
+  return {
+    ...payment,
+    fechaPago,
+    status,
+  };
 }

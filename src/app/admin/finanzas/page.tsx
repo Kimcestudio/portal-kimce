@@ -10,6 +10,7 @@ import FinanceKpiCard from "@/components/finance/FinanceKpiCard";
 import FinanceFilterBar from "@/components/finance/FinanceFilterBar";
 import FinanceTable from "@/components/finance/FinanceTable";
 import FinancePendingList from "@/components/finance/FinancePendingList";
+import FinanceStatusSelect from "@/components/finance/FinanceStatusSelect";
 import FinanceModal, {
   type CollaboratorFormValues,
   type CollaboratorPaymentFormValues,
@@ -19,6 +20,7 @@ import FinanceModal, {
 } from "@/components/finance/FinanceModal";
 import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
 import { calcKpis, filterMovements } from "@/lib/finance/analytics";
+import { financeRefs } from "@/lib/finance/refs";
 import {
   formatDateOnly,
   formatMonthLabel,
@@ -28,12 +30,15 @@ import {
   getMonthKeyFromDate,
 } from "@/lib/finance/utils";
 import type {
+  Collaborator,
+  CollaboratorPayment,
   Expense,
   FinanceFilters,
   FinanceModalType,
   FinanceMovement,
   FinanceStatus,
   FinanceTabKey,
+  TransferMovement,
 } from "@/lib/finance/types";
 import {
   createCollaborator,
@@ -42,11 +47,18 @@ import {
   createIncomeMovement,
   createTransfer,
   deleteFinanceMovement,
-  listFinanceMovements,
-  listExpenses,
+  subscribeCollaboratorPayments,
+  subscribeCollaborators,
+  subscribeExpenses,
+  subscribeFinanceMovements,
+  subscribeTransfers,
+  updateCollaboratorPaymentStatus,
+  updateExpenseStatus,
   updateFinanceMovementStatus,
   updateIncomeMovement,
+  updateTransferStatus,
 } from "@/services/finance";
+import { db } from "@/services/firebase/client";
 
 const tabLabels: Record<FinanceTabKey, string> = {
   dashboard: "Dashboard",
@@ -62,6 +74,9 @@ export default function FinanceModulePage() {
   const [activeTab, setActiveTab] = useState<FinanceTabKey>("dashboard");
   const [movements, setMovements] = useState<FinanceMovement[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [payments, setPayments] = useState<CollaboratorPayment[]>([]);
+  const [transfers, setTransfers] = useState<TransferMovement[]>([]);
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<FinanceModalType>("income");
@@ -74,13 +89,79 @@ export default function FinanceModulePage() {
     status: "all",
     account: "all",
     category: "all",
+    includeCancelled: false,
   });
 
   useEffect(() => {
-    setMovements(listFinanceMovements());
-    setExpenses(listExpenses());
-    setIsLoading(false);
+    let movementsLoaded = false;
+    let expensesLoaded = false;
+    let paymentsLoaded = false;
+    let transfersLoaded = false;
+    let collaboratorsLoaded = false;
+
+    const markLoaded = () => {
+      if (
+        movementsLoaded &&
+        expensesLoaded &&
+        paymentsLoaded &&
+        transfersLoaded &&
+        collaboratorsLoaded
+      ) {
+        setIsLoading(false);
+      }
+    };
+
+    const unsubscribeMovements = subscribeFinanceMovements((items) => {
+      setMovements(items);
+      if (!movementsLoaded) {
+        movementsLoaded = true;
+        markLoaded();
+      }
+    });
+    const unsubscribeExpenses = subscribeExpenses((items) => {
+      setExpenses(items);
+      if (!expensesLoaded) {
+        expensesLoaded = true;
+        markLoaded();
+      }
+    });
+    const unsubscribePayments = subscribeCollaboratorPayments((items) => {
+      setPayments(items);
+      if (!paymentsLoaded) {
+        paymentsLoaded = true;
+        markLoaded();
+      }
+    });
+    const unsubscribeTransfers = subscribeTransfers((items) => {
+      setTransfers(items);
+      if (!transfersLoaded) {
+        transfersLoaded = true;
+        markLoaded();
+      }
+    });
+    const unsubscribeCollaborators = subscribeCollaborators((items) => {
+      setCollaborators(items);
+      if (!collaboratorsLoaded) {
+        collaboratorsLoaded = true;
+        markLoaded();
+      }
+    });
+
+    return () => {
+      unsubscribeMovements();
+      unsubscribeExpenses();
+      unsubscribePayments();
+      unsubscribeTransfers();
+      unsubscribeCollaborators();
+    };
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "movimientos" && activeTab !== "gastos") return;
+    console.log("[FINANCE] projectId:", db.app.options.projectId);
+    console.log("[FINANCE] income collection path:", financeRefs.incomesRef.path);
+    console.log("[FINANCE] expense collection path:", financeRefs.expensesRef.path);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!toast) return;
@@ -93,13 +174,74 @@ export default function FinanceModulePage() {
     return expenses.filter((expense) => {
       const monthKey = getMonthKeyFromDate(expense.fechaGasto);
       if (monthKey && monthKey !== filters.monthKey) return false;
-      if (filters.status !== "all" && expense.estado !== filters.status) return false;
+      if (!filters.includeCancelled && expense.status === "cancelled") return false;
+      if (filters.status !== "all" && expense.status !== filters.status) return false;
       if (filters.account !== "all" && expense.cuentaOrigen !== filters.account) return false;
       return true;
     });
   }, [expenses, filters]);
 
-  const kpis = useMemo(() => calcKpis(movements, filters.monthKey), [movements, filters.monthKey]);
+  const filteredPayments = useMemo(() => {
+    return payments.filter((payment) => {
+      const monthKey = getMonthKeyFromDate(payment.fechaPago);
+      if (monthKey && monthKey !== filters.monthKey) return false;
+      if (!filters.includeCancelled && payment.status === "cancelled") return false;
+      if (filters.status !== "all" && payment.status !== filters.status) return false;
+      if (filters.account !== "all" && payment.cuentaOrigen !== filters.account) return false;
+      return true;
+    });
+  }, [filters, payments]);
+
+  const filteredTransfers = useMemo(() => {
+    return transfers.filter((transfer) => {
+      const monthKey = getMonthKeyFromDate(transfer.fecha);
+      if (monthKey && monthKey !== filters.monthKey) return false;
+      if (!filters.includeCancelled && transfer.status === "cancelled") return false;
+      if (filters.status !== "all" && transfer.status !== filters.status) return false;
+      if (
+        filters.account !== "all" &&
+        transfer.cuentaOrigen !== filters.account &&
+        transfer.cuentaDestino !== filters.account
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [filters, transfers]);
+
+  const collaboratorLookup = useMemo(() => {
+    return new Map(collaborators.map((collaborator) => [collaborator.id, collaborator.nombreCompleto]));
+  }, [collaborators]);
+
+  const kpis = useMemo(
+    () => calcKpis(movements, filters.monthKey, filters.includeCancelled),
+    [filters.includeCancelled, filters.monthKey, movements],
+  );
+
+  const monthSummary = useMemo(() => {
+    const monthMovements = movements.filter((movement) => {
+      if (movement.monthKey !== filters.monthKey) return false;
+      if (!filters.includeCancelled && movement.status === "cancelled") return false;
+      return true;
+    });
+    const total = monthMovements.reduce(
+      (sum, movement) => sum + (movement.tax?.total ?? movement.amount),
+      0
+    );
+    const igv = monthMovements.reduce((sum, movement) => sum + (movement.tax?.igv ?? 0), 0);
+    const net = total - igv;
+    const paid = monthMovements.reduce(
+      (sum, movement) =>
+        sum + (movement.status === "paid" ? movement.tax?.total ?? movement.amount : 0),
+      0
+    );
+    const pending = monthMovements.reduce(
+      (sum, movement) =>
+        sum + (movement.status === "pending" ? movement.tax?.total ?? movement.amount : 0),
+      0
+    );
+    return { total, paid, pending, igv, net };
+  }, [filters.includeCancelled, filters.monthKey, movements]);
 
   const monthSummary = useMemo(() => {
     const monthMovements = movements.filter((movement) => movement.monthKey === filters.monthKey);
@@ -179,18 +321,17 @@ export default function FinanceModulePage() {
           },
         };
         if (editingMovement) {
-          updateIncomeMovement(editingMovement.id, incomePayload);
+          await updateIncomeMovement(editingMovement.id, incomePayload);
           setToast("Ingreso actualizado");
         } else {
-          createIncomeMovement(incomePayload);
+          await createIncomeMovement(incomePayload);
           setToast("Ingreso creado");
         }
-        setMovements(listFinanceMovements());
       }
 
       if (type === "collaborator") {
         const payload = values as CollaboratorFormValues;
-        createCollaborator({
+        await createCollaborator({
           nombreCompleto: payload.nombreCompleto,
           rolPuesto: payload.rolPuesto,
           tipoPago: payload.tipoPago,
@@ -209,7 +350,7 @@ export default function FinanceModulePage() {
 
       if (type === "collaborator_payment") {
         const payload = values as CollaboratorPaymentFormValues;
-        createCollaboratorPayment({
+        await createCollaboratorPayment({
           colaboradorId: payload.colaboradorId,
           periodo: payload.periodo,
           montoBase: payload.montoBase,
@@ -217,9 +358,9 @@ export default function FinanceModulePage() {
           descuento: payload.descuento,
           devolucion: payload.devolucion,
           montoFinal: payload.montoFinal,
-          fechaPago: new Date(payload.fechaPago).toISOString(),
+          fechaPago: payload.fechaPago,
           cuentaOrigen: payload.cuentaOrigen,
-          estado: payload.estado,
+          status: payload.status,
           referencia: payload.referencia,
           notas: payload.notas,
         });
@@ -228,27 +369,26 @@ export default function FinanceModulePage() {
 
       if (type === "expense") {
         const payload = values as ExpenseFormValues;
-        createExpense({
+        await createExpense({
           tipoGasto: payload.tipoGasto,
           categoria: payload.categoria,
           descripcion: payload.descripcion,
           monto: payload.monto,
           fechaGasto: payload.fechaGasto,
           cuentaOrigen: payload.cuentaOrigen,
-          estado: payload.estado,
+          status: payload.status,
           requiereDevolucion: payload.requiereDevolucion,
           devolucionMonto: payload.requiereDevolucion ? payload.devolucionMonto : null,
           referencia: payload.referencia,
           notas: payload.notas,
         });
-        setExpenses(listExpenses());
         setToast("Gasto creado");
       }
 
       if (type === "transfer") {
         const payload = values as TransferFormValues;
         const isTransfer = payload.tipoMovimiento === "TRANSFERENCIA";
-        createTransfer({
+        await createTransfer({
           tipoMovimiento: payload.tipoMovimiento,
           cuentaOrigen:
             isTransfer || payload.tipoMovimiento === "SALIDA_CAJA" ? payload.cuentaOrigen || null : null,
@@ -256,6 +396,7 @@ export default function FinanceModulePage() {
             isTransfer || payload.tipoMovimiento === "INGRESO_CAJA" ? payload.cuentaDestino || null : null,
           monto: payload.monto,
           fecha: payload.fecha,
+          status: payload.status,
           referencia: payload.referencia,
           notas: payload.notas,
         });
@@ -298,15 +439,28 @@ export default function FinanceModulePage() {
       }
     : null;
 
-  const handleStatusChange = (id: string, status: FinanceStatus) => {
-    const next = updateFinanceMovementStatus(id, status);
-    setMovements(next);
+  const handleStatusChange = async (id: string, status: FinanceStatus) => {
+    await updateFinanceMovementStatus(id, status);
     setToast("Estado actualizado");
   };
 
-  const handleDeleteMovement = (id: string) => {
-    const next = deleteFinanceMovement(id);
-    setMovements(next);
+  const handleExpenseStatusChange = async (id: string, status: FinanceStatus) => {
+    await updateExpenseStatus(id, status);
+    setToast("Estado actualizado");
+  };
+
+  const handleTransferStatusChange = async (id: string, status: FinanceStatus) => {
+    await updateTransferStatus(id, status);
+    setToast("Estado actualizado");
+  };
+
+  const handlePaymentStatusChange = async (id: string, status: FinanceStatus) => {
+    await updateCollaboratorPaymentStatus(id, status);
+    setToast("Estado actualizado");
+  };
+
+  const handleDeleteMovement = async (id: string) => {
+    await deleteFinanceMovement(id);
     setToast("Movimiento eliminado");
   };
 
@@ -324,6 +478,11 @@ export default function FinanceModulePage() {
               <p className="text-sm text-slate-500">
                 {formatMonthLabel(filters.monthKey)} · Control mensual de ingresos.
               </p>
+              {process.env.NODE_ENV === "development" && db.app.options.projectId ? (
+                <p className="text-xs text-slate-400">
+                  Firebase Project: {db.app.options.projectId}
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {activeTab === "pagos" ? (
@@ -396,7 +555,7 @@ export default function FinanceModulePage() {
                   </div>
                   <FinancePendingList
                     title="Pendientes por cobrar"
-                    items={filteredMovements.filter((movement) => movement.status === "PENDIENTE")}
+                    items={filteredMovements.filter((movement) => movement.status === "pending")}
                     emptyLabel="Sin pendientes."
                   />
                 </>
@@ -444,7 +603,13 @@ export default function FinanceModulePage() {
                             <p className="text-xs text-slate-500">{expense.referencia ?? "-"}</p>
                           </td>
                           <td className="px-4 py-3 text-xs text-slate-500">{expense.categoria}</td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{expense.estado}</td>
+                          <td className="px-4 py-3">
+                            <FinanceStatusSelect
+                              status={expense.status}
+                              onChange={(status) => handleExpenseStatusChange(expense.id, status)}
+                              disabled={isSubmitting}
+                            />
+                          </td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">
                             {formatCurrency(expense.monto)}
                           </td>
@@ -454,6 +619,103 @@ export default function FinanceModulePage() {
                         <tr>
                           <td colSpan={5} className="px-4 py-6 text-center text-xs text-slate-400">
                             Sin gastos registrados en este mes.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+
+              {activeTab === "pagos" ? (
+                <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3">Fecha</th>
+                        <th className="px-4 py-3">Colaborador</th>
+                        <th className="px-4 py-3">Periodo</th>
+                        <th className="px-4 py-3">Cuenta</th>
+                        <th className="px-4 py-3">Estado</th>
+                        <th className="px-4 py-3 text-right">Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredPayments.map((payment) => (
+                        <tr key={payment.id} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {formatShortDate(payment.fechaPago)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <p className="font-semibold text-slate-900">
+                              {collaboratorLookup.get(payment.colaboradorId) ?? "Colaborador"}
+                            </p>
+                            <p className="text-xs text-slate-500">{payment.referencia ?? "-"}</p>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{payment.periodo}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{payment.cuentaOrigen}</td>
+                          <td className="px-4 py-3">
+                            <FinanceStatusSelect
+                              status={payment.status}
+                              onChange={(status) => handlePaymentStatusChange(payment.id, status)}
+                              disabled={isSubmitting}
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                            {formatCurrency(payment.montoFinal)}
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredPayments.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">
+                            Sin pagos registrados en este mes.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+
+              {activeTab === "cuentas" ? (
+                <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3">Fecha</th>
+                        <th className="px-4 py-3">Tipo</th>
+                        <th className="px-4 py-3">Cuenta origen</th>
+                        <th className="px-4 py-3">Cuenta destino</th>
+                        <th className="px-4 py-3">Estado</th>
+                        <th className="px-4 py-3 text-right">Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTransfers.map((transfer) => (
+                        <tr key={transfer.id} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {formatShortDate(transfer.fecha)}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{transfer.tipoMovimiento}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{transfer.cuentaOrigen ?? "—"}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{transfer.cuentaDestino ?? "—"}</td>
+                          <td className="px-4 py-3">
+                            <FinanceStatusSelect
+                              status={transfer.status}
+                              onChange={(status) => handleTransferStatusChange(transfer.id, status)}
+                              disabled={isSubmitting}
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                            {formatCurrency(transfer.monto)}
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredTransfers.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">
+                            Sin transferencias registradas en este mes.
                           </td>
                         </tr>
                       ) : null}

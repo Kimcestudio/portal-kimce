@@ -59,7 +59,7 @@ export type CollaboratorPaymentFormValues = {
   montoFinal: number;
   fechaPago: string;
   cuentaOrigen: FinanceAccountName;
-  estado: FinanceStatus;
+  status: FinanceStatus;
   referencia: string;
   notas: string;
 };
@@ -71,7 +71,7 @@ export type ExpenseFormValues = {
   monto: number;
   fechaGasto: string;
   cuentaOrigen: FinanceAccountName;
-  estado: FinanceStatus;
+  status: FinanceStatus;
   requiereDevolucion: boolean;
   devolucionMonto: number;
   referencia: string;
@@ -84,6 +84,7 @@ export type TransferFormValues = {
   cuentaDestino: FinanceAccountName | undefined;
   monto: number;
   fecha: string;
+  status: FinanceStatus;
   referencia: string;
   notas: string;
 };
@@ -127,8 +128,9 @@ const accountOptions = [
 const s = (v?: string) => (v ?? "").trim();
 
 const statusOptions = [
-  { value: "PENDIENTE", label: "Pendiente" },
-  { value: "CANCELADO", label: "Cancelado" },
+  { value: "pending", label: "Pendiente" },
+  { value: "paid", label: "Pagado" },
+  { value: "cancelled", label: "Cancelado" },
 ];
 
 const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> } = {
@@ -142,7 +144,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       incomeDate: getTodayDateString(),
       expectedPayDate: "",
       accountDestination: "LUIS",
-      status: "PENDIENTE",
+      status: "pending",
       reference: "",
       notes: "",
       taxEnabled: false,
@@ -286,7 +288,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       montoFinal: 0,
       fechaPago: new Date().toISOString().slice(0, 10),
       cuentaOrigen: "LUIS",
-      estado: "PENDIENTE",
+      status: "pending",
       referencia: "",
       notas: "",
     },
@@ -329,7 +331,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         type: "select",
         options: accountOptions,
       },
-      { name: "estado", label: "Estado", type: "select", options: statusOptions },
+      { name: "status", label: "Estado", type: "select", options: statusOptions },
       {
         name: "referencia",
         label: "Referencia",
@@ -349,7 +351,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       monto: 0,
       fechaGasto: getTodayDateString(),
       cuentaOrigen: "LUIS",
-      estado: "PENDIENTE",
+      status: "pending",
       requiereDevolucion: false,
       devolucionMonto: 0,
       referencia: "",
@@ -397,7 +399,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         type: "select",
         options: accountOptions,
       },
-      { name: "estado", label: "Estado", type: "select", options: statusOptions },
+      { name: "status", label: "Estado", type: "select", options: statusOptions },
       { name: "requiereDevolucion", label: "Requiere devolución", type: "checkbox" },
       {
         name: "devolucionMonto",
@@ -425,6 +427,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       cuentaDestino: undefined,
       monto: 0,
       fecha: getTodayDateString(),
+      status: "pending",
       referencia: "",
       notas: "",
     },
@@ -476,6 +479,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       },
       { name: "monto", label: "Monto", type: "number", placeholder: "0", min: 0 },
       { name: "fecha", label: "Fecha", type: "date" },
+      { name: "status", label: "Estado", type: "select", options: statusOptions },
       {
         name: "referencia",
         label: "Referencia",
@@ -513,7 +517,14 @@ export default function FinanceModal({
 
   useEffect(() => {
     if (isOpen) {
-      setCollaborators(listCollaborators());
+      let isMounted = true;
+      listCollaborators()
+        .then((items) => {
+          if (isMounted) setCollaborators(items);
+        })
+        .catch(() => {
+          if (isMounted) setCollaborators([]);
+        });
       switch (modalType) {
         case "income":
           setForm({
@@ -549,7 +560,11 @@ export default function FinanceModal({
           setForm(config.defaultValues);
       }
       setLastCollaboratorId("");
+      return () => {
+        isMounted = false;
+      };
     }
+    return undefined;
   }, [config.defaultValues, initialValues, isOpen, modalType]);
 
   useEffect(() => {
