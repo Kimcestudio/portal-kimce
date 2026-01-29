@@ -25,8 +25,9 @@ export function calcKpis(movements: FinanceMovement[], monthKey: string, include
   const margin = incomePaid > 0 ? 100 : 0;
 
   return {
-    incomePaid,
     incomePending,
+    incomeCancelled,
+    // mantenemos estos campos en 0 para no romper UI hasta que actualicemos el page.tsx
     expensesPaid: 0,
     expensesPending: 0,
     netIncome,
