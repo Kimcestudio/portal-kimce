@@ -80,8 +80,8 @@ export type ExpenseFormValues = {
 
 export type TransferFormValues = {
   tipoMovimiento: TransferMovementType;
-  cuentaOrigen: FinanceAccountName | "";
-  cuentaDestino: FinanceAccountName | "";
+  cuentaOrigen: FinanceAccountName | undefined;
+  cuentaDestino: FinanceAccountName | undefined;
   monto: number;
   fecha: string;
   referencia: string;
@@ -106,6 +106,7 @@ type FinanceField = {
   max?: number;
   step?: number;
   readOnly?: boolean;
+  emptyValue?: string | undefined;
   showWhen?: (values: FinanceFormValuesMap[FinanceModalType]) => boolean;
 };
 
@@ -420,8 +421,8 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
     description: "Registra transferencias y movimientos entre cuentas.",
     defaultValues: {
       tipoMovimiento: "TRANSFERENCIA",
-      cuentaOrigen: "",
-      cuentaDestino: "",
+      cuentaOrigen: undefined,
+      cuentaDestino: undefined,
       monto: 0,
       fecha: getTodayDateString(),
       referencia: "",
@@ -462,6 +463,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         label: "Cuenta origen",
         type: "select",
         options: accountOptions,
+        emptyValue: undefined,
         showWhen: (values) => (values as TransferFormValues).tipoMovimiento !== "INGRESO_CAJA",
       },
       {
@@ -469,6 +471,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         label: "Cuenta destino",
         type: "select",
         options: accountOptions,
+        emptyValue: undefined,
         showWhen: (values) => (values as TransferFormValues).tipoMovimiento !== "SALIDA_CAJA",
       },
       { name: "monto", label: "Monto", type: "number", placeholder: "0", min: 0 },
@@ -511,10 +514,43 @@ export default function FinanceModal({
   useEffect(() => {
     if (isOpen) {
       setCollaborators(listCollaborators());
-      setForm({ ...config.defaultValues, ...(initialValues ?? {}) });
+      switch (modalType) {
+        case "income":
+          setForm({
+            ...financeFormRegistry.income.defaultValues,
+            ...((initialValues ?? {}) as Partial<IncomeFormValues>),
+          });
+          break;
+        case "collaborator":
+          setForm({
+            ...financeFormRegistry.collaborator.defaultValues,
+            ...((initialValues ?? {}) as Partial<CollaboratorFormValues>),
+          });
+          break;
+        case "collaborator_payment":
+          setForm({
+            ...financeFormRegistry.collaborator_payment.defaultValues,
+            ...((initialValues ?? {}) as Partial<CollaboratorPaymentFormValues>),
+          });
+          break;
+        case "expense":
+          setForm({
+            ...financeFormRegistry.expense.defaultValues,
+            ...((initialValues ?? {}) as Partial<ExpenseFormValues>),
+          });
+          break;
+        case "transfer":
+          setForm({
+            ...financeFormRegistry.transfer.defaultValues,
+            ...((initialValues ?? {}) as Partial<TransferFormValues>),
+          });
+          break;
+        default:
+          setForm(config.defaultValues);
+      }
       setLastCollaboratorId("");
     }
-  }, [config.defaultValues, initialValues, isOpen]);
+  }, [config.defaultValues, initialValues, isOpen, modalType]);
 
   useEffect(() => {
     if (modalType !== "collaborator_payment") return;
@@ -849,11 +885,12 @@ function renderField(
     return (
       <select
         className={baseClassName}
-        value={String(value ?? "")}
+        value={value ?? ""}
         onChange={(event) =>
           setValues((prev) => ({
             ...prev,
-            [field.name]: event.target.value,
+            [field.name]:
+              event.target.value === "" ? field.emptyValue ?? "" : event.target.value,
           }))
         }
         disabled={disabled}
