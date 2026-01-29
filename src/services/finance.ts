@@ -21,58 +21,103 @@ import { formatDateOnly, getMonthKeyFromDate, getMonthKey } from "@/lib/finance/
 
 type FinanceUnsubscribe = () => void;
 
-export async function listCollaborators() {
+export async function listCollaborators(): Promise<Collaborator[]> {
   const snapshot = await getDocs(financeRefs.collaboratorsRef);
-  return snapshot.docs.map((item) => ({
-    id: item.id,
-    ...item.data(),
-  }));
+  return snapshot.docs.map((item) => {
+    const data = item.data() as Omit<Collaborator, "id"> & { id?: string };
+    const { id: _ignored, ...rest } = data;
+    return { ...rest, id: item.id } as Collaborator;
+  });
 }
 
-export function subscribeCollaborators(onChange: (items: Collaborator[]) => void): FinanceUnsubscribe {
+
+export function subscribeCollaborators(
+  onChange: (items: Collaborator[]) => void,
+): FinanceUnsubscribe {
   const collaboratorsQuery = query(financeRefs.collaboratorsRef, orderBy("createdAt", "desc"));
+
   return onSnapshot(collaboratorsQuery, (snapshot) => {
-    const items = snapshot.docs.map((item) => ({
-      id: item.id,
-      ...item.data(),
-    }));
+    const items: Collaborator[] = snapshot.docs.map((item) => {
+      const data = item.data() as Omit<Collaborator, "id"> & { id?: string };
+      const { id: _ignored, ...rest } = data;
+      return { ...rest, id: item.id } as Collaborator;
+    });
+
     onChange(items);
   });
 }
 
-export function subscribeFinanceMovements(onChange: (items: FinanceMovement[]) => void): FinanceUnsubscribe {
+
+export function subscribeFinanceMovements(
+  onChange: (items: FinanceMovement[]) => void,
+): FinanceUnsubscribe {
   const movementsQuery = query(financeRefs.incomesRef, orderBy("createdAt", "desc"));
+
   return onSnapshot(movementsQuery, (snapshot) => {
-    const items = snapshot.docs.map((item) => normalizeMovement({ id: item.id, ...item.data() }));
+    const items = snapshot.docs.map((item) => {
+      const data = item.data() as Omit<FinanceMovement, "id"> & { id?: string };
+      const { id: _ignored, ...rest } = data;
+      return normalizeMovement({ ...rest, id: item.id } as FinanceMovement);
+    });
+
     onChange(items);
   });
 }
 
-export function subscribeExpenses(onChange: (items: Expense[]) => void): FinanceUnsubscribe {
+
+export function subscribeExpenses(
+  onChange: (items: Expense[]) => void,
+): FinanceUnsubscribe {
   const expensesQuery = query(financeRefs.expensesRef, orderBy("createdAt", "desc"));
+
   return onSnapshot(expensesQuery, (snapshot) => {
-    const items = snapshot.docs.map((item) => normalizeExpense({ id: item.id, ...item.data() }));
+    const items = snapshot.docs.map((item) => {
+      const data = item.data() as Omit<Expense, "id"> & { id?: string; estado?: FinanceStatus };
+      const { id: _ignored, ...rest } = data;
+      return normalizeExpense({ ...rest, id: item.id } as Expense & { estado?: FinanceStatus });
+    });
+
     onChange(items);
   });
 }
 
-export function subscribeTransfers(onChange: (items: TransferMovement[]) => void): FinanceUnsubscribe {
+
+export function subscribeTransfers(
+  onChange: (items: TransferMovement[]) => void,
+): FinanceUnsubscribe {
   const transfersQuery = query(financeRefs.transfersRef, orderBy("createdAt", "desc"));
+
   return onSnapshot(transfersQuery, (snapshot) => {
-    const items = snapshot.docs.map((item) => normalizeTransfer({ id: item.id, ...item.data() }));
+    const items = snapshot.docs.map((item) => {
+      const data = item.data() as Omit<TransferMovement, "id"> & { id?: string };
+      const { id: _ignored, ...rest } = data;
+      return normalizeTransfer({ ...rest, id: item.id } as TransferMovement);
+    });
+
     onChange(items);
   });
 }
+
 
 export function subscribeCollaboratorPayments(
   onChange: (items: CollaboratorPayment[]) => void,
 ): FinanceUnsubscribe {
   const paymentsQuery = query(financeRefs.collaboratorPaymentsRef, orderBy("createdAt", "desc"));
+
   return onSnapshot(paymentsQuery, (snapshot) => {
-    const items = snapshot.docs.map((item) => normalizeCollaboratorPayment({ id: item.id, ...item.data() }));
+    const items = snapshot.docs.map((item) => {
+      const data = item.data() as Omit<CollaboratorPayment, "id"> & { id?: string; estado?: FinanceStatus };
+      const { id: _ignored, ...rest } = data;
+      return normalizeCollaboratorPayment({
+        ...rest,
+        id: item.id,
+      } as CollaboratorPayment & { estado?: FinanceStatus });
+    });
+
     onChange(items);
   });
 }
+
 
 export async function createIncomeMovement(
   input: Omit<FinanceMovement, "id" | "monthKey" | "createdAt" | "updatedAt" | "type" | "concept">,
