@@ -12,6 +12,7 @@ import type {
   TransferMovementType,
 } from "@/lib/finance/types";
 import { listCollaborators } from "@/services/finance";
+import { getTodayDateString } from "@/lib/finance/utils";
 
 export type IncomeFormValues = {
   clientName: string;
@@ -20,10 +21,17 @@ export type IncomeFormValues = {
   incomeDate: string;
   expectedPayDate: string;
   accountDestination: FinanceAccountName;
-  responsible: FinanceAccountName;
   status: FinanceStatus;
   reference: string;
   notes: string;
+  taxEnabled: boolean;
+  taxRate: number;
+  taxMode: "inclusive" | "exclusive";
+  recurringEnabled: boolean;
+  recurringFreq: "monthly" | "weekly" | "yearly";
+  recurringDayOfMonth: number;
+  recurringStartAt: string;
+  recurringEndAt: string;
 };
 
 export type CollaboratorFormValues = {
@@ -51,7 +59,7 @@ export type CollaboratorPaymentFormValues = {
   montoFinal: number;
   fechaPago: string;
   cuentaOrigen: FinanceAccountName;
-  estado: FinanceStatus;
+  status: FinanceStatus;
   referencia: string;
   notas: string;
 };
@@ -63,8 +71,7 @@ export type ExpenseFormValues = {
   monto: number;
   fechaGasto: string;
   cuentaOrigen: FinanceAccountName;
-  responsable: FinanceAccountName;
-  estado: FinanceStatus;
+  status: FinanceStatus;
   requiereDevolucion: boolean;
   devolucionMonto: number;
   referencia: string;
@@ -73,11 +80,11 @@ export type ExpenseFormValues = {
 
 export type TransferFormValues = {
   tipoMovimiento: TransferMovementType;
-  cuentaOrigen: FinanceAccountName | "";
-  cuentaDestino: FinanceAccountName | "";
+  cuentaOrigen: FinanceAccountName | undefined;
+  cuentaDestino: FinanceAccountName | undefined;
   monto: number;
   fecha: string;
-  responsable: FinanceAccountName;
+  status: FinanceStatus;
   referencia: string;
   notas: string;
 };
@@ -100,6 +107,7 @@ type FinanceField = {
   max?: number;
   step?: number;
   readOnly?: boolean;
+  emptyValue?: string | undefined;
   showWhen?: (values: FinanceFormValuesMap[FinanceModalType]) => boolean;
 };
 
@@ -120,8 +128,9 @@ const accountOptions = [
 const s = (v?: string) => (v ?? "").trim();
 
 const statusOptions = [
-  { value: "PENDIENTE", label: "Pendiente" },
-  { value: "CANCELADO", label: "Cancelado" },
+  { value: "pending", label: "Pendiente" },
+  { value: "paid", label: "Pagado" },
+  { value: "cancelled", label: "Cancelado" },
 ];
 
 const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> } = {
@@ -132,13 +141,20 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       clientName: "",
       projectService: "",
       amount: 0,
-      incomeDate: new Date().toISOString().slice(0, 10),
+      incomeDate: getTodayDateString(),
       expectedPayDate: "",
       accountDestination: "LUIS",
-      responsible: "LUIS",
-      status: "PENDIENTE",
+      status: "pending",
       reference: "",
       notes: "",
+      taxEnabled: false,
+      taxRate: 18,
+      taxMode: "exclusive",
+      recurringEnabled: false,
+      recurringFreq: "monthly",
+      recurringDayOfMonth: 1,
+      recurringStartAt: getTodayDateString(),
+      recurringEndAt: "",
     },
     schema: (values) => {
       const errors: Record<string, string> = {};
@@ -146,6 +162,16 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       if (!values.incomeDate) errors.incomeDate = "Fecha requerida";
       if (!values.accountDestination) errors.accountDestination = "Cuenta requerida";
       if (values.amount <= 0 || Number.isNaN(values.amount)) errors.amount = "Monto inválido";
+      if ((values as IncomeFormValues).recurringEnabled) {
+        const recurring = values as IncomeFormValues;
+        if (!recurring.recurringStartAt) errors.recurringStartAt = "Inicio requerido";
+        if (
+          recurring.recurringFreq === "monthly" &&
+          (!recurring.recurringDayOfMonth || recurring.recurringDayOfMonth < 1 || recurring.recurringDayOfMonth > 31)
+        ) {
+          errors.recurringDayOfMonth = "Día entre 1 y 31";
+        }
+      }
       return errors;
     },
     fields: () => [
@@ -165,7 +191,6 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         type: "select",
         options: accountOptions,
       },
-      { name: "responsible", label: "Responsable", type: "select", options: accountOptions },
       { name: "status", label: "Estado", type: "select", options: statusOptions },
       {
         name: "reference",
@@ -263,7 +288,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       montoFinal: 0,
       fechaPago: new Date().toISOString().slice(0, 10),
       cuentaOrigen: "LUIS",
-      estado: "PENDIENTE",
+      status: "pending",
       referencia: "",
       notas: "",
     },
@@ -306,7 +331,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         type: "select",
         options: accountOptions,
       },
-      { name: "estado", label: "Estado", type: "select", options: statusOptions },
+      { name: "status", label: "Estado", type: "select", options: statusOptions },
       {
         name: "referencia",
         label: "Referencia",
@@ -324,10 +349,9 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       categoria: "SUNAT",
       descripcion: "",
       monto: 0,
-      fechaGasto: new Date().toISOString().slice(0, 10),
+      fechaGasto: getTodayDateString(),
       cuentaOrigen: "LUIS",
-      responsable: "LUIS",
-      estado: "PENDIENTE",
+      status: "pending",
       requiereDevolucion: false,
       devolucionMonto: 0,
       referencia: "",
@@ -375,8 +399,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         type: "select",
         options: accountOptions,
       },
-      { name: "responsable", label: "Responsable", type: "select", options: accountOptions },
-      { name: "estado", label: "Estado", type: "select", options: statusOptions },
+      { name: "status", label: "Estado", type: "select", options: statusOptions },
       { name: "requiereDevolucion", label: "Requiere devolución", type: "checkbox" },
       {
         name: "devolucionMonto",
@@ -400,11 +423,11 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
     description: "Registra transferencias y movimientos entre cuentas.",
     defaultValues: {
       tipoMovimiento: "TRANSFERENCIA",
-      cuentaOrigen: "",
-      cuentaDestino: "",
+      cuentaOrigen: undefined,
+      cuentaDestino: undefined,
       monto: 0,
-      fecha: new Date().toISOString().slice(0, 10),
-      responsable: "LUIS",
+      fecha: getTodayDateString(),
+      status: "pending",
       referencia: "",
       notas: "",
     },
@@ -443,6 +466,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         label: "Cuenta origen",
         type: "select",
         options: accountOptions,
+        emptyValue: undefined,
         showWhen: (values) => (values as TransferFormValues).tipoMovimiento !== "INGRESO_CAJA",
       },
       {
@@ -450,11 +474,12 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         label: "Cuenta destino",
         type: "select",
         options: accountOptions,
+        emptyValue: undefined,
         showWhen: (values) => (values as TransferFormValues).tipoMovimiento !== "SALIDA_CAJA",
       },
       { name: "monto", label: "Monto", type: "number", placeholder: "0", min: 0 },
       { name: "fecha", label: "Fecha", type: "date" },
-      { name: "responsable", label: "Responsable", type: "select", options: accountOptions },
+      { name: "status", label: "Estado", type: "select", options: statusOptions },
       {
         name: "referencia",
         label: "Referencia",
@@ -472,6 +497,7 @@ interface FinanceModalProps {
   onClose: () => void;
   onSubmit: (modalType: FinanceModalType, values: FinanceFormValuesMap[FinanceModalType]) => void;
   disabled?: boolean;
+  initialValues?: Partial<FinanceFormValuesMap[FinanceModalType]> | null;
 }
 
 export default function FinanceModal({
@@ -480,6 +506,7 @@ export default function FinanceModal({
   onClose,
   onSubmit,
   disabled,
+  initialValues,
 }: FinanceModalProps) {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const config = financeFormRegistry[modalType];
@@ -490,11 +517,55 @@ export default function FinanceModal({
 
   useEffect(() => {
     if (isOpen) {
-      setCollaborators(listCollaborators());
-      setForm(config.defaultValues);
+      let isMounted = true;
+      listCollaborators()
+        .then((items) => {
+          if (isMounted) setCollaborators(items);
+        })
+        .catch(() => {
+          if (isMounted) setCollaborators([]);
+        });
+      switch (modalType) {
+        case "income":
+          setForm({
+            ...financeFormRegistry.income.defaultValues,
+            ...((initialValues ?? {}) as Partial<IncomeFormValues>),
+          });
+          break;
+        case "collaborator":
+          setForm({
+            ...financeFormRegistry.collaborator.defaultValues,
+            ...((initialValues ?? {}) as Partial<CollaboratorFormValues>),
+          });
+          break;
+        case "collaborator_payment":
+          setForm({
+            ...financeFormRegistry.collaborator_payment.defaultValues,
+            ...((initialValues ?? {}) as Partial<CollaboratorPaymentFormValues>),
+          });
+          break;
+        case "expense":
+          setForm({
+            ...financeFormRegistry.expense.defaultValues,
+            ...((initialValues ?? {}) as Partial<ExpenseFormValues>),
+          });
+          break;
+        case "transfer":
+          setForm({
+            ...financeFormRegistry.transfer.defaultValues,
+            ...((initialValues ?? {}) as Partial<TransferFormValues>),
+          });
+          break;
+        default:
+          setForm(config.defaultValues);
+      }
       setLastCollaboratorId("");
+      return () => {
+        isMounted = false;
+      };
     }
-  }, [config.defaultValues, isOpen]);
+    return undefined;
+  }, [config.defaultValues, initialValues, isOpen, modalType]);
 
   useEffect(() => {
     if (modalType !== "collaborator_payment") return;
@@ -525,6 +596,28 @@ export default function FinanceModal({
 
   const errors = useMemo(() => config.schema(form as never), [config, form]);
   const isValid = Object.keys(errors).length === 0;
+  const incomeForm = modalType === "income" ? (form as IncomeFormValues) : null;
+  const updateIncomeForm = (updates: Partial<IncomeFormValues>) => {
+    setForm((prev) => ({
+      ...(prev as IncomeFormValues),
+      ...updates,
+    }));
+  };
+  const taxSummary = useMemo(() => {
+    if (!incomeForm) return null;
+    const rate = Math.max(0, incomeForm.taxRate) / 100;
+    const amount = Math.max(0, incomeForm.amount);
+    if (!incomeForm.taxEnabled || rate === 0) {
+      return { base: amount, igv: 0, total: amount };
+    }
+    if (incomeForm.taxMode === "inclusive") {
+      const base = amount / (1 + rate);
+      const igv = amount - base;
+      return { base, igv, total: amount };
+    }
+    const igv = amount * rate;
+    return { base: amount, igv, total: amount + igv };
+  }, [incomeForm]);
 
   if (!isOpen) return null;
 
@@ -534,7 +627,7 @@ export default function FinanceModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
-      <div className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-[0_30px_60px_rgba(15,23,42,0.35)]">
+      <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-[0_30px_60px_rgba(15,23,42,0.35)]">
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-slate-900">{config.title}</h3>
@@ -560,6 +653,153 @@ export default function FinanceModal({
             </Field>
           ))}
         </div>
+        {incomeForm && taxSummary ? (
+          <div className="mt-5 space-y-3">
+            <details className="rounded-2xl border border-slate-200/60 bg-slate-50/60 p-4">
+              <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">
+                IGV y cálculos
+              </summary>
+              <p className="mt-1 text-xs text-slate-500">
+                Define si el monto incluye IGV y revisa el detalle calculado.
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border border-slate-300"
+                    checked={incomeForm.taxEnabled}
+                    onChange={(event) =>
+                      updateIncomeForm({ taxEnabled: event.target.checked })
+                    }
+                    disabled={disabled}
+                  />
+                  Aplicar IGV
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    className="w-20 rounded-xl border border-slate-200/60 px-2 py-1 text-sm"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={incomeForm.taxRate}
+                    onChange={(event) =>
+                      updateIncomeForm({
+                        taxRate: event.target.value === "" ? 0 : Number(event.target.value),
+                      })
+                    }
+                    disabled={disabled || !incomeForm.taxEnabled}
+                  />
+                  <span className="text-xs text-slate-500">% IGV</span>
+                </div>
+                <label className="text-xs font-semibold text-slate-500">
+                  Monto ingresado
+                  <select
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    value={incomeForm.taxMode}
+                    onChange={(event) =>
+                      updateIncomeForm({
+                        taxMode: event.target.value as IncomeFormValues["taxMode"],
+                      })
+                    }
+                    disabled={disabled || !incomeForm.taxEnabled}
+                  >
+                    <option value="exclusive">Sin IGV</option>
+                    <option value="inclusive">Incluye IGV</option>
+                  </select>
+                </label>
+                <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                  <p>Base: {taxSummary.base.toFixed(2)}</p>
+                  <p>IGV: {taxSummary.igv.toFixed(2)}</p>
+                  <p>Total: {taxSummary.total.toFixed(2)}</p>
+                </div>
+              </div>
+            </details>
+            <details className="rounded-2xl border border-slate-200/60 bg-slate-50/60 p-4">
+              <summary className="cursor-pointer list-none text-sm font-semibold text-slate-900">
+                Ingreso recurrente
+              </summary>
+              <p className="mt-1 text-xs text-slate-500">
+                Configura frecuencia y fechas para ingresos programados.
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 rounded border border-slate-300"
+                    checked={incomeForm.recurringEnabled}
+                    onChange={(event) =>
+                      updateIncomeForm({ recurringEnabled: event.target.checked })
+                    }
+                    disabled={disabled}
+                  />
+                  Activar recurrencia
+                </label>
+                <label className="text-xs font-semibold text-slate-500">
+                  Frecuencia
+                  <select
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    value={incomeForm.recurringFreq}
+                    onChange={(event) =>
+                      updateIncomeForm({
+                        recurringFreq: event.target.value as IncomeFormValues["recurringFreq"],
+                      })
+                    }
+                    disabled={disabled || !incomeForm.recurringEnabled}
+                  >
+                    <option value="monthly">Mensual</option>
+                    <option value="weekly">Semanal</option>
+                    <option value="yearly">Anual</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-500">
+                  Día de cobro
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    type="number"
+                    min={1}
+                    max={31}
+                    value={incomeForm.recurringDayOfMonth}
+                    onChange={(event) =>
+                      updateIncomeForm({
+                        recurringDayOfMonth: event.target.value === "" ? 1 : Number(event.target.value),
+                      })
+                    }
+                    disabled={
+                      disabled || !incomeForm.recurringEnabled || incomeForm.recurringFreq !== "monthly"
+                    }
+                  />
+                  {errors.recurringDayOfMonth ? <ErrorText message={errors.recurringDayOfMonth} /> : null}
+                </label>
+                <label className="text-xs font-semibold text-slate-500">
+                  Inicio
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    type="date"
+                    value={incomeForm.recurringStartAt}
+                    onChange={(event) =>
+                      updateIncomeForm({ recurringStartAt: event.target.value })
+                    }
+                    disabled={disabled || !incomeForm.recurringEnabled}
+                  />
+                  {errors.recurringStartAt ? <ErrorText message={errors.recurringStartAt} /> : null}
+                </label>
+                <label className="text-xs font-semibold text-slate-500">
+                  Fin (opcional)
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    type="date"
+                    value={incomeForm.recurringEndAt}
+                    onChange={(event) =>
+                      updateIncomeForm({ recurringEndAt: event.target.value })
+                    }
+                    disabled={disabled || !incomeForm.recurringEnabled}
+                  />
+                </label>
+              </div>
+            </details>
+          </div>
+        ) : null}
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
@@ -577,6 +817,7 @@ export default function FinanceModal({
             className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)]"
             onClick={() => {
               if (!isValid) return;
+              if (disabled) return;
               onSubmit(modalType, form);
               setForm(config.defaultValues);
             }}
@@ -659,11 +900,12 @@ function renderField(
     return (
       <select
         className={baseClassName}
-        value={String(value ?? "")}
+        value={value ?? ""}
         onChange={(event) =>
           setValues((prev) => ({
             ...prev,
-            [field.name]: event.target.value,
+            [field.name]:
+              event.target.value === "" ? field.emptyValue ?? "" : event.target.value,
           }))
         }
         disabled={disabled}
