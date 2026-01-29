@@ -40,6 +40,7 @@ import type {
   FinanceTabKey,
   TransferMovement,
 } from "@/lib/finance/types";
+import { onSnapshot, orderBy, query } from "firebase/firestore";
 import {
   createCollaborator,
   createCollaboratorPayment,
@@ -47,11 +48,6 @@ import {
   createIncomeMovement,
   createTransfer,
   deleteFinanceMovement,
-  subscribeCollaboratorPayments,
-  subscribeCollaborators,
-  subscribeExpenses,
-  subscribeFinanceMovements,
-  subscribeTransfers,
   updateCollaboratorPaymentStatus,
   updateExpenseStatus,
   updateFinanceMovementStatus,
@@ -121,53 +117,128 @@ export default function FinanceModulePage() {
       }
     };
 
-    const unsubscribeMovements = subscribeFinanceMovements((items) => {
-      const normalized = items.map((movement) => ({
-        ...movement,
-        monthKey:
-          movement.monthKey ??
-          getMonthKeyFromDate(movement.incomeDate) ??
-          getMonthKey(new Date()),
-      }));
-      setMovements(normalized);
-      logDev("[FINANCE] movements snapshot", normalized.length);
-      if (!movementsLoaded) {
+    const handleSnapshotError = (label: string, error: { code?: string }) => {
+      // eslint-disable-next-line no-console
+      console.error(`[FINANCE] ${label} snapshot error`, error.code ?? error);
+      if (process.env.NODE_ENV === "development") {
+        setToast(`No tienes permisos para ver ${label}.`);
+      }
+    };
+
+    const movementsQuery = query(financeRefs.incomesRef, orderBy("createdAt", "desc"));
+    const unsubscribeMovements = onSnapshot(
+      movementsQuery,
+      (snapshot) => {
+        const normalized = snapshot.docs.map((doc) => {
+          const data = doc.data() as FinanceMovement;
+          return {
+            ...data,
+            id: doc.id,
+            monthKey:
+              data.monthKey ?? getMonthKeyFromDate(data.incomeDate) ?? getMonthKey(new Date()),
+          };
+        });
+        setMovements(normalized);
+        logDev("[FINANCE] movements snapshot", normalized.length);
+        if (!movementsLoaded) {
+          movementsLoaded = true;
+        }
+        markLoaded();
+      },
+      (error) => {
+        handleSnapshotError("movimientos", error);
         movementsLoaded = true;
-      }
-      markLoaded();
-    });
-    const unsubscribeExpenses = subscribeExpenses((items) => {
-      setExpenses(items);
-      logDev("[FINANCE] expenses snapshot", items.length);
-      if (!expensesLoaded) {
+        markLoaded();
+      },
+    );
+
+    const expensesQuery = query(financeRefs.expensesRef, orderBy("createdAt", "desc"));
+    const unsubscribeExpenses = onSnapshot(
+      expensesQuery,
+      (snapshot) => {
+        const items = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Expense),
+        }));
+        setExpenses(items);
+        logDev("[FINANCE] expenses snapshot", items.length);
+        if (!expensesLoaded) {
+          expensesLoaded = true;
+        }
+        markLoaded();
+      },
+      (error) => {
+        handleSnapshotError("gastos", error);
         expensesLoaded = true;
-      }
-      markLoaded();
-    });
-    const unsubscribePayments = subscribeCollaboratorPayments((items) => {
-      setPayments(items);
-      logDev("[FINANCE] payments snapshot", items.length);
-      if (!paymentsLoaded) {
+        markLoaded();
+      },
+    );
+
+    const paymentsQuery = query(financeRefs.collaboratorPaymentsRef, orderBy("createdAt", "desc"));
+    const unsubscribePayments = onSnapshot(
+      paymentsQuery,
+      (snapshot) => {
+        const items = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as CollaboratorPayment),
+        }));
+        setPayments(items);
+        logDev("[FINANCE] payments snapshot", items.length);
+        if (!paymentsLoaded) {
+          paymentsLoaded = true;
+        }
+        markLoaded();
+      },
+      (error) => {
+        handleSnapshotError("pagos", error);
         paymentsLoaded = true;
-      }
-      markLoaded();
-    });
-    const unsubscribeTransfers = subscribeTransfers((items) => {
-      setTransfers(items);
-      logDev("[FINANCE] transfers snapshot", items.length);
-      if (!transfersLoaded) {
+        markLoaded();
+      },
+    );
+
+    const transfersQuery = query(financeRefs.transfersRef, orderBy("createdAt", "desc"));
+    const unsubscribeTransfers = onSnapshot(
+      transfersQuery,
+      (snapshot) => {
+        const items = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as TransferMovement),
+        }));
+        setTransfers(items);
+        logDev("[FINANCE] transfers snapshot", items.length);
+        if (!transfersLoaded) {
+          transfersLoaded = true;
+        }
+        markLoaded();
+      },
+      (error) => {
+        handleSnapshotError("transferencias", error);
         transfersLoaded = true;
-      }
-      markLoaded();
-    });
-    const unsubscribeCollaborators = subscribeCollaborators((items) => {
-      setCollaborators(items);
-      logDev("[FINANCE] collaborators snapshot", items.length);
-      if (!collaboratorsLoaded) {
+        markLoaded();
+      },
+    );
+
+    const collaboratorsQuery = query(financeRefs.collaboratorsRef, orderBy("createdAt", "desc"));
+    const unsubscribeCollaborators = onSnapshot(
+      collaboratorsQuery,
+      (snapshot) => {
+        const items = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...(doc.data() as Collaborator),
+        }));
+        setCollaborators(items);
+        logDev("[FINANCE] collaborators snapshot", items.length);
+        if (!collaboratorsLoaded) {
+          collaboratorsLoaded = true;
+        }
+        markLoaded();
+      },
+      (error) => {
+        handleSnapshotError("colaboradores", error);
         collaboratorsLoaded = true;
-      }
-      markLoaded();
-    });
+        markLoaded();
+      },
+    );
 
     return () => {
       unsubscribeMovements();
