@@ -1,4 +1,3 @@
-// ✅ SOLO 2 ESTADOS
 export type FinanceStatus = "pending" | "cancelled";
 
 export type FinanceAccountName = "LUIS" | "ALONDRA" | "KIMCE";
@@ -122,7 +121,6 @@ export interface TransferMovement {
   cuentaDestino?: FinanceAccountName | null;
   monto: number;
   fecha: string;
-  monthKey?: string; // ✅ agregado
   status: FinanceStatus;
   referencia?: string | null;
   notas?: string | null;

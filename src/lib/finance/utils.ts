@@ -75,10 +75,8 @@ export function getTodayDateString() {
   return formatLocalDate(new Date());
 }
 
-export function getStatusLabel(status: "pending" | "paid" | "cancelled") {
+export function getStatusLabel(status: "pending" | "cancelled") {
   switch (status) {
-    case "paid":
-      return "Pagado";
     case "cancelled":
       return "Cancelado";
     default:
@@ -86,10 +84,8 @@ export function getStatusLabel(status: "pending" | "paid" | "cancelled") {
   }
 }
 
-export function getStatusTone(status: "pending" | "paid" | "cancelled") {
+export function getStatusTone(status: "pending" | "cancelled") {
   switch (status) {
-    case "paid":
-      return "success";
     case "cancelled":
       return "danger";
     default:

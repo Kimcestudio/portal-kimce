@@ -16,23 +16,13 @@ export function calcKpis(movements: FinanceMovement[], monthKey: string, include
     if (!includeCancelled && movement.status === "cancelled") return false;
     return true;
   });
-
-  // Solo 2 estados: pending | cancelled
-  const incomePending = sumBy(monthMovements, (item) =>
-    item.status === "pending" ? item.tax?.total ?? item.amount : 0,
+  const incomePaid = 0;
+  const incomePending = sumBy(
+    monthMovements,
+    (item) => (item.status === "pending" ? item.tax?.total ?? item.amount : 0),
   );
-
-  const incomeCancelled = sumBy(monthMovements, (item) =>
-    item.status === "cancelled" ? item.tax?.total ?? item.amount : 0,
-  );
-
-  // Si no hay "paid", netIncome = pending (lo que aún se espera cobrar)
-  // Si luego quieres "neto real", lo calculamos desde transferencias o cierres.
-  const netIncome = incomePending;
-
-  // Margen: con 2 estados, no tiene mucho sentido sin "pagado" y sin gastos reales.
-  // Lo dejamos simple y estable.
-  const margin = incomePending > 0 ? 100 : 0;
+  const netIncome = incomePaid;
+  const margin = incomePaid > 0 ? 100 : 0;
 
   return {
     incomePending,

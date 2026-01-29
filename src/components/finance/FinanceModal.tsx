@@ -129,7 +129,6 @@ const s = (v?: string) => (v ?? "").trim();
 
 const statusOptions = [
   { value: "pending", label: "Pendiente" },
-  { value: "paid", label: "Pagado" },
   { value: "cancelled", label: "Cancelado" },
 ];
 
