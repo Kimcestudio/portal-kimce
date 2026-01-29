@@ -28,7 +28,6 @@ export function calcKpis(movements: FinanceMovement[], monthKey: string, include
   const margin = netIncome > 0 ? 100 : 0;
 
   return {
-    incomePaid,
     incomePending,
     incomeCancelled,
     expensesPaid: 0,
