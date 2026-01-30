@@ -11,6 +11,7 @@ import FinanceFilterBar from "@/components/finance/FinanceFilterBar";
 import FinanceTable from "@/components/finance/FinanceTable";
 import FinancePendingList from "@/components/finance/FinancePendingList";
 import FinanceStatusSelect from "@/components/finance/FinanceStatusSelect";
+import FinanceMonthlyChart from "@/components/finance/FinanceMonthlyChart";
 import FinanceModal, {
   type CollaboratorFormValues,
   type CollaboratorPaymentFormValues,
@@ -19,7 +20,15 @@ import FinanceModal, {
   type TransferFormValues,
 } from "@/components/finance/FinanceModal";
 import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
-import { calcKpis, filterMovements } from "@/lib/finance/analytics";
+import {
+  calcKpis,
+  computeAlerts,
+  computeCashFlow,
+  computeMonthProjection,
+  computeMonthlySeries,
+  computeYearToDateTotals,
+  filterMovements,
+} from "@/lib/finance/analytics";
 import { financeRefs } from "@/lib/finance/refs";
 import {
   formatDateOnly,
@@ -77,8 +86,14 @@ export default function FinanceModulePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<FinanceModalType>("income");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const [editingMovement, setEditingMovement] = useState<FinanceMovement | null>(null);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [detailTab, setDetailTab] = useState<
+    "summary" | "income" | "expenses" | "payments" | "accounts"
+  >("summary");
+  const [isAnnualView, setIsAnnualView] = useState(false);
+  const [annualYear, setAnnualYear] = useState(() => new Date().getFullYear());
 
   const logDev = (...args: unknown[]) => {
     if (process.env.NODE_ENV === "development") {
@@ -121,7 +136,7 @@ export default function FinanceModulePage() {
       // eslint-disable-next-line no-console
       console.error(`[FINANCE] ${label} snapshot error`, error.code ?? error);
       if (process.env.NODE_ENV === "development") {
-        setToast(`No tienes permisos para ver ${label}.`);
+        setToast({ message: `No tienes permisos para ver ${label}.`, tone: "error" });
       }
     };
 
@@ -130,7 +145,7 @@ export default function FinanceModulePage() {
       movementsQuery,
       (snapshot) => {
         const normalized = snapshot.docs.map((doc) => {
-          const data = doc.data() as FinanceMovement;
+          const { id: _ignored, ...data } = doc.data() as FinanceMovement;
           return {
             ...data,
             id: doc.id,
@@ -156,10 +171,13 @@ export default function FinanceModulePage() {
     const unsubscribeExpenses = onSnapshot(
       expensesQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Expense),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as Expense;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setExpenses(items);
         logDev("[FINANCE] expenses snapshot", items.length);
         if (!expensesLoaded) {
@@ -178,10 +196,13 @@ export default function FinanceModulePage() {
     const unsubscribePayments = onSnapshot(
       paymentsQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as CollaboratorPayment),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as CollaboratorPayment;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setPayments(items);
         logDev("[FINANCE] payments snapshot", items.length);
         if (!paymentsLoaded) {
@@ -200,10 +221,13 @@ export default function FinanceModulePage() {
     const unsubscribeTransfers = onSnapshot(
       transfersQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as TransferMovement),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as TransferMovement;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setTransfers(items);
         logDev("[FINANCE] transfers snapshot", items.length);
         if (!transfersLoaded) {
@@ -222,10 +246,13 @@ export default function FinanceModulePage() {
     const unsubscribeCollaborators = onSnapshot(
       collaboratorsQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Collaborator),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as Collaborator;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setCollaborators(items);
         logDev("[FINANCE] collaborators snapshot", items.length);
         if (!collaboratorsLoaded) {
@@ -302,14 +329,230 @@ export default function FinanceModulePage() {
     });
   }, [filters, transfers]);
 
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    const addYear = (monthKey?: string | null) => {
+      if (!monthKey) return;
+      const [yearPart] = monthKey.split("-");
+      const year = Number(yearPart);
+      if (!Number.isNaN(year)) {
+        years.add(year);
+      }
+    };
+    movements.forEach((movement) => addYear(movement.monthKey));
+    expenses.forEach((expense) => addYear(expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto)));
+    payments.forEach((payment) => addYear(payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago)));
+    years.add(new Date().getFullYear());
+    return Array.from(years).sort((a, b) => b - a);
+  }, [expenses, movements, payments]);
+
+  useEffect(() => {
+    if (availableYears.length === 0) return;
+    if (!availableYears.includes(annualYear)) {
+      setAnnualYear(availableYears[0]);
+    }
+  }, [annualYear, availableYears]);
+
   const collaboratorLookup = useMemo(() => {
     return new Map(collaborators.map((collaborator) => [collaborator.id, collaborator.nombreCompleto]));
   }, [collaborators]);
 
   const kpis = useMemo(
-    () => calcKpis(movements, filters.monthKey, filters.includeCancelled),
-    [filters.includeCancelled, filters.monthKey, movements],
+    () => calcKpis(movements, expenses, filters.monthKey, filters.includeCancelled, filters.account),
+    [expenses, filters.account, filters.includeCancelled, filters.monthKey, movements],
   );
+
+  const projection = useMemo(
+    () => computeMonthProjection(movements, expenses, payments, filters.monthKey, filters.account),
+    [expenses, filters.account, filters.monthKey, movements, payments],
+  );
+
+  const monthlyCashFlow = useMemo(
+    () =>
+      computeCashFlow({
+        movements,
+        expenses,
+        payments,
+        transfers,
+        monthKey: filters.monthKey,
+        account: filters.account,
+      }),
+    [expenses, filters.account, filters.monthKey, movements, payments, transfers],
+  );
+
+  const currentDate = useMemo(() => new Date(), []);
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth() + 1;
+
+  const monthlySeries = useMemo(
+    () => computeMonthlySeries(movements, expenses, payments, filters.monthKey, 12, filters.account),
+    [expenses, filters.account, filters.monthKey, movements, payments],
+  );
+
+  const annualSeries = useMemo(
+    () =>
+      computeMonthlySeries(
+        movements,
+        expenses,
+        payments,
+        `${annualYear}-12`,
+        12,
+        filters.account,
+      ),
+    [annualYear, expenses, filters.account, movements, payments],
+  );
+
+  const ytdTotals = useMemo(() => {
+    const endMonth = annualYear === currentYear ? currentMonth : 12;
+    return computeYearToDateTotals(
+      movements,
+      expenses,
+      payments,
+      annualYear,
+      endMonth,
+      filters.account,
+    );
+  }, [annualYear, currentMonth, currentYear, expenses, filters.account, movements, payments]);
+
+  const annualCashFlow = useMemo(
+    () =>
+      computeCashFlow({
+        movements,
+        expenses,
+        payments,
+        transfers,
+        year: annualYear,
+        account: filters.account,
+      }),
+    [annualYear, expenses, filters.account, movements, payments, transfers],
+  );
+
+  const averageMonthlyCashFlow = annualSeries.length > 0 ? annualCashFlow.net / 12 : 0;
+
+  const annualStats = useMemo(() => {
+    if (annualSeries.length === 0) {
+      return {
+        totalIncome: 0,
+        totalExpenses: 0,
+        net: 0,
+        margin: 0,
+        avgNet: 0,
+        bestMonth: null as (typeof annualSeries)[number] | null,
+        worstMonth: null as (typeof annualSeries)[number] | null,
+      };
+    }
+    const totalIncome = annualSeries.reduce((sum, row) => sum + row.incomeTotal, 0);
+    const totalExpenses = annualSeries.reduce((sum, row) => sum + row.expensesTotal, 0);
+    const net = totalIncome - totalExpenses;
+    const margin = totalIncome > 0 ? (net / totalIncome) * 100 : 0;
+    const bestMonth = annualSeries.reduce(
+      (best, row) => (best && best.net > row.net ? best : row),
+      annualSeries[0],
+    );
+    const worstMonth = annualSeries.reduce(
+      (worst, row) => (worst && worst.net < row.net ? worst : row),
+      annualSeries[0],
+    );
+    const avgNet = annualSeries.length > 0 ? net / annualSeries.length : 0;
+    return { totalIncome, totalExpenses, net, margin, avgNet, bestMonth, worstMonth };
+  }, [annualSeries]);
+
+  const annualChartData = useMemo(() => {
+    return annualSeries.map((row) => ({
+      month: formatMonthLabel(row.monthKey),
+      income: row.incomeTotal,
+      expenses: row.expensesTotal,
+      net: row.net,
+    }));
+  }, [annualSeries]);
+
+  const topClients = useMemo(() => {
+    const map = new Map<string, number>();
+    ytdTotals.movements.forEach((movement) => {
+      const current = map.get(movement.clientName) ?? 0;
+      map.set(movement.clientName, current + (movement.tax?.total ?? movement.amount));
+    });
+    return Array.from(map.entries())
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [ytdTotals.movements]);
+
+  const topExpenseCategories = useMemo(() => {
+    const map = new Map<string, number>();
+    ytdTotals.expenses.forEach((expense) => {
+      const current = map.get(expense.categoria) ?? 0;
+      map.set(expense.categoria, current + expense.monto);
+    });
+    return Array.from(map.entries())
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [ytdTotals.expenses]);
+
+  const actualExpenses = kpis.expensesPaid + projection.paymentsPaid;
+  const actualNet = kpis.incomePaid - actualExpenses;
+
+  const heroContent = useMemo(() => {
+    if (isAnnualView) {
+      return {
+        title: `Estado del año – ${annualYear}`,
+        incomeLabel: "Ingresos totales",
+        expensesLabel: "Egresos totales",
+        cashFlowLabel: "Flujo de caja anual",
+        netLabel: "Utilidad anual",
+        marginLabel: "Margen anual",
+        incomePaid: annualStats.totalIncome,
+        expensesPaid: annualStats.totalExpenses,
+        cashFlow: annualCashFlow.net,
+        netIncome: annualStats.net,
+        margin: annualStats.margin,
+      };
+    }
+    return {
+      title: `Estado del mes – ${formatMonthLabel(filters.monthKey)}`,
+      incomeLabel: "Ingresos cobrados",
+      expensesLabel: "Gastos pagados",
+      cashFlowLabel: "Flujo de caja",
+      netLabel: "Utilidad neta",
+      marginLabel: "Margen neto",
+      incomePaid: kpis.incomePaid,
+      expensesPaid: kpis.expensesPaid,
+      cashFlow: monthlyCashFlow.net,
+      netIncome: kpis.netIncome,
+      margin: kpis.margin,
+    };
+  }, [
+    annualCashFlow.net,
+    annualStats.margin,
+    annualStats.net,
+    annualStats.totalExpenses,
+    annualStats.totalIncome,
+    annualYear,
+    filters.monthKey,
+    isAnnualView,
+    kpis.expensesPaid,
+    kpis.incomePaid,
+    kpis.margin,
+    kpis.netIncome,
+    monthlyCashFlow.net,
+  ]);
+
+  const alerts = useMemo(() => {
+    const bestMonthLabel = isAnnualView && annualStats.bestMonth
+      ? formatMonthLabel(annualStats.bestMonth.monthKey)
+      : null;
+    return computeAlerts(
+      {
+        projectedIncome: projection.incomeProjected,
+        projectedExpenses: projection.expensesProjected,
+        projectedNet: projection.projectedNet,
+        projectedMargin: projection.projectedMargin,
+        incomePending: projection.incomePending,
+      },
+      { bestMonthLabel },
+    );
+  }, [annualStats.bestMonth, isAnnualView, projection]);
 
   const monthSummary = useMemo(() => {
     const monthMovements = movements.filter((movement) => {
@@ -323,7 +566,11 @@ export default function FinanceModulePage() {
     );
     const igv = monthMovements.reduce((sum, movement) => sum + (movement.tax?.igv ?? 0), 0);
     const net = total - igv;
-    const paid = 0;
+    const paid = monthMovements.reduce(
+      (sum, movement) =>
+        sum + (movement.status !== "pending" && movement.status !== "cancelled" ? movement.tax?.total ?? movement.amount : 0),
+      0,
+    );
     const pending = monthMovements.reduce(
       (sum, movement) =>
         sum + (movement.status === "pending" ? movement.tax?.total ?? movement.amount : 0),
@@ -331,6 +578,119 @@ export default function FinanceModulePage() {
     );
     return { total, paid, pending, igv, net };
   }, [filters.includeCancelled, filters.monthKey, movements]);
+
+  const detailTotals = useMemo(() => {
+    const incomeTotal = filteredMovements.reduce(
+      (sum, item) => sum + (item.tax?.total ?? item.amount),
+      0,
+    );
+    const expenseTotal = filteredExpenses.reduce((sum, item) => sum + item.monto, 0);
+    const paymentTotal = filteredPayments.reduce((sum, item) => sum + item.montoFinal, 0);
+    const transferTotal = filteredTransfers.reduce((sum, item) => sum + item.monto, 0);
+    return { incomeTotal, expenseTotal, paymentTotal, transferTotal };
+  }, [filteredExpenses, filteredMovements, filteredPayments, filteredTransfers]);
+
+  const incomeSummary = useMemo(() => {
+    const map = new Map<
+      string,
+      { clientName: string; status: FinanceStatus; total: number; count: number }
+    >();
+    filteredMovements.forEach((movement) => {
+      const key = `${movement.clientName}-${movement.status}`;
+      const current = map.get(key) ?? {
+        clientName: movement.clientName,
+        status: movement.status,
+        total: 0,
+        count: 0,
+      };
+      current.total += movement.tax?.total ?? movement.amount;
+      current.count += 1;
+      map.set(key, current);
+    });
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [filteredMovements]);
+
+  const expenseSummary = useMemo(() => {
+    const map = new Map<
+      string,
+      { categoria: Expense["categoria"]; status: FinanceStatus; total: number; count: number }
+    >();
+    filteredExpenses.forEach((expense) => {
+      const key = `${expense.categoria}-${expense.status}`;
+      const current = map.get(key) ?? {
+        categoria: expense.categoria,
+        status: expense.status,
+        total: 0,
+        count: 0,
+      };
+      current.total += expense.monto;
+      current.count += 1;
+      map.set(key, current);
+    });
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [filteredExpenses]);
+
+  const paymentSummary = useMemo(() => {
+    const map = new Map<string, { name: string; total: number; count: number }>();
+    filteredPayments.forEach((payment) => {
+      const name = collaboratorLookup.get(payment.colaboradorId) ?? "Colaborador";
+      const current = map.get(name) ?? { name, total: 0, count: 0 };
+      current.total += payment.montoFinal;
+      current.count += 1;
+      map.set(name, current);
+    });
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [collaboratorLookup, filteredPayments]);
+
+  const exportDetailCsv = () => {
+    const rows: string[][] = [
+      ["Tipo", "Nombre", "Estado", "Monto", "Fecha"],
+    ];
+    filteredMovements.forEach((movement) => {
+      rows.push([
+        "Ingreso",
+        movement.clientName,
+        movement.status,
+        `${movement.tax?.total ?? movement.amount}`,
+        movement.incomeDate,
+      ]);
+    });
+    filteredExpenses.forEach((expense) => {
+      rows.push([
+        "Gasto",
+        expense.categoria,
+        expense.status,
+        `${expense.monto}`,
+        expense.fechaGasto,
+      ]);
+    });
+    filteredPayments.forEach((payment) => {
+      rows.push([
+        "Pago colaborador",
+        collaboratorLookup.get(payment.colaboradorId) ?? "Colaborador",
+        payment.status,
+        `${payment.montoFinal}`,
+        payment.fechaPago,
+      ]);
+    });
+    filteredTransfers.forEach((transfer) => {
+      rows.push([
+        "Transferencia",
+        transfer.tipoMovimiento,
+        transfer.status,
+        `${transfer.monto}`,
+        transfer.fecha,
+      ]);
+    });
+    const csvContent = rows.map((row) => row.map((value) => `"${value}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `desglose-finanzas-${filters.monthKey}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const openModal = (type: FinanceModalType) => {
     setModalType(type);
@@ -340,7 +700,7 @@ export default function FinanceModulePage() {
   };
 
   const handleCreateMovement = async (type: FinanceModalType, values: unknown) => {
-    if (isSubmitting) return;
+    if (isSubmitting) return false;
     setIsSubmitting(true);
     try {
       if (type === "income") {
@@ -390,10 +750,10 @@ export default function FinanceModulePage() {
         };
         if (editingMovement) {
           await updateIncomeMovement(editingMovement.id, incomePayload);
-          setToast("Ingreso actualizado");
+          setToast({ message: "Ingreso actualizado", tone: "success" });
         } else {
           await createIncomeMovement(incomePayload);
-          setToast("Ingreso creado");
+          setToast({ message: "Ingreso creado", tone: "success" });
         }
       }
 
@@ -413,7 +773,7 @@ export default function FinanceModulePage() {
           activo: payload.activo,
           notas: payload.notas,
         });
-        setToast("Colaborador creado");
+        setToast({ message: "Colaborador creado", tone: "success" });
       }
 
       if (type === "collaborator_payment") {
@@ -432,7 +792,7 @@ export default function FinanceModulePage() {
           referencia: payload.referencia,
           notas: payload.notas,
         });
-        setToast("Pago registrado");
+        setToast({ message: "Pago registrado", tone: "success" });
       }
 
       if (type === "expense") {
@@ -450,7 +810,7 @@ export default function FinanceModulePage() {
           referencia: payload.referencia,
           notas: payload.notas,
         });
-        setToast("Gasto creado");
+        setToast({ message: "Gasto creado", tone: "success" });
       }
 
       if (type === "transfer") {
@@ -468,9 +828,20 @@ export default function FinanceModulePage() {
           referencia: payload.referencia,
           notas: payload.notas,
         });
-        setToast("Movimiento creado");
+        setToast({ message: "Movimiento creado", tone: "success" });
       }
+      setEditingMovement(null);
       setIsModalOpen(false);
+      return true;
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("[FINANCE] save error", error);
+      const message =
+        error instanceof Error && error.message
+          ? `Error al guardar: ${error.message}`
+          : "Error inesperado al guardar.";
+      setToast({ message, tone: "error" });
+      return false;
     } finally {
       setIsSubmitting(false);
     }
@@ -509,27 +880,27 @@ export default function FinanceModulePage() {
 
   const handleStatusChange = async (id: string, status: FinanceStatus) => {
     await updateFinanceMovementStatus(id, status);
-    setToast("Estado actualizado");
+    setToast({ message: "Estado actualizado", tone: "success" });
   };
 
   const handleExpenseStatusChange = async (id: string, status: FinanceStatus) => {
     await updateExpenseStatus(id, status);
-    setToast("Estado actualizado");
+    setToast({ message: "Estado actualizado", tone: "success" });
   };
 
   const handleTransferStatusChange = async (id: string, status: FinanceStatus) => {
     await updateTransferStatus(id, status);
-    setToast("Estado actualizado");
+    setToast({ message: "Estado actualizado", tone: "success" });
   };
 
   const handlePaymentStatusChange = async (id: string, status: FinanceStatus) => {
     await updateCollaboratorPaymentStatus(id, status);
-    setToast("Estado actualizado");
+    setToast({ message: "Estado actualizado", tone: "success" });
   };
 
   const handleDeleteMovement = async (id: string) => {
     await deleteFinanceMovement(id);
-    setToast("Movimiento eliminado");
+    setToast({ message: "Movimiento eliminado", tone: "success" });
   };
 
   return (
@@ -589,8 +960,14 @@ export default function FinanceModulePage() {
           </div>
 
           {toast ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-700">
-              {toast}
+            <div
+              className={`rounded-2xl border px-4 py-2 text-xs ${
+                toast.tone === "error"
+                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              {toast.message}
             </div>
           ) : null}
 
@@ -608,18 +985,316 @@ export default function FinanceModulePage() {
             <div className="space-y-6">
               {activeTab === "dashboard" ? (
                 <>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 rounded-full bg-slate-100 p-1 text-xs font-semibold text-slate-500">
+                      <button
+                        type="button"
+                        className={`rounded-full px-3 py-1 ${!isAnnualView ? "bg-white text-slate-900 shadow-sm" : ""}`}
+                        onClick={() => setIsAnnualView(false)}
+                      >
+                        Mensual
+                      </button>
+                      <button
+                        type="button"
+                        className={`rounded-full px-3 py-1 ${isAnnualView ? "bg-white text-slate-900 shadow-sm" : ""}`}
+                        onClick={() => setIsAnnualView(true)}
+                      >
+                        Anual
+                      </button>
+                    </div>
+                    {isAnnualView ? (
+                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        <span>Año</span>
+                        <select
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                          value={annualYear}
+                          onChange={(event) => setAnnualYear(Number(event.target.value))}
+                        >
+                          {availableYears.map((year) => (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDetailTab("summary");
+                        setIsDetailOpen(true);
+                      }}
+                      className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
+                    >
+                      Ver desglose
+                    </button>
+                  </div>
                   <FinanceHeroCard
-                    monthKey={filters.monthKey}
-                    incomePaid={kpis.incomePaid}
-                    expensesPaid={kpis.expensesPaid}
-                    netIncome={kpis.netIncome}
-                    margin={kpis.margin}
+                    title={heroContent.title}
+                    incomeLabel={heroContent.incomeLabel}
+                    expensesLabel={heroContent.expensesLabel}
+                    cashFlowLabel={heroContent.cashFlowLabel}
+                    netLabel={heroContent.netLabel}
+                    marginLabel={heroContent.marginLabel}
+                    incomePaid={heroContent.incomePaid}
+                    expensesPaid={heroContent.expensesPaid}
+                    cashFlow={heroContent.cashFlow}
+                    netIncome={heroContent.netIncome}
+                    margin={heroContent.margin}
                   />
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                          Proyección del mes
+                        </p>
+                        <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">
+                          Estimado
+                        </span>
+                      </div>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs text-slate-500">Ingresos proyectados</p>
+                          <p className="text-lg font-semibold text-slate-900">
+                            {formatCurrency(projection.incomeProjected)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Egresos proyectados</p>
+                          <p className="text-lg font-semibold text-slate-900">
+                            {formatCurrency(projection.expensesProjected)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Utilidad proyectada</p>
+                          <p className="text-lg font-semibold text-slate-900">
+                            {formatCurrency(projection.projectedNet)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-slate-500">Margen proyectado</p>
+                          <p className="text-lg font-semibold text-slate-900">
+                            {projection.projectedMargin.toFixed(1)}%
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                        Real vs Proyectado
+                      </p>
+                      <div className="mt-4 space-y-3 text-sm">
+                        {[
+                          {
+                            label: "Ingresos",
+                            real: kpis.incomePaid,
+                            projected: projection.incomeProjected,
+                          },
+                          {
+                            label: "Egresos",
+                            real: actualExpenses,
+                            projected: projection.expensesProjected,
+                          },
+                          {
+                            label: "Utilidad",
+                            real: actualNet,
+                            projected: projection.projectedNet,
+                          },
+                        ].map((row) => {
+                          const delta = row.projected - row.real;
+                          const percent = row.real !== 0 ? (delta / Math.abs(row.real)) * 100 : 0;
+                          return (
+                            <div key={row.label} className="flex items-center justify-between gap-4">
+                              <div>
+                                <p className="text-xs text-slate-500">{row.label}</p>
+                                <p className="font-semibold text-slate-900">
+                                  {formatCurrency(row.real)} → {formatCurrency(row.projected)}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-xs text-slate-500">Δ</p>
+                                <p className={`font-semibold ${delta >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                                  {formatCurrency(delta)} ({percent.toFixed(1)}%)
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                      Acumulado YTD {annualYear}
+                    </p>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                      <FinanceKpiCard title="Ingresos acumulados" value={ytdTotals.totalIncome} tone="blue" />
+                      <FinanceKpiCard title="Egresos acumulados" value={ytdTotals.totalExpenses} tone="rose" />
+                      <FinanceKpiCard title="Utilidad acumulada" value={ytdTotals.net} tone="green" />
+                      <div className="rounded-2xl border border-slate-200/60 bg-slate-50/80 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                          Margen acumulado
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold text-slate-900">
+                          {ytdTotals.margin.toFixed(1)}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <FinanceKpiCard title="Ingresos cobrados" value={kpis.incomePaid} tone="blue" />
                     <FinanceKpiCard title="Pendiente por cobrar" value={kpis.incomePending} tone="amber" />
                     <FinanceKpiCard title="Gastos pagados" value={kpis.expensesPaid} tone="rose" />
+                    <FinanceKpiCard title="Flujo de caja" value={monthlyCashFlow.net} tone="slate" />
                     <FinanceKpiCard title="Utilidad neta" value={kpis.netIncome} tone="green" />
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                        Resumen mensual (últimos 12)
+                      </p>
+                      <div className="mt-4 overflow-x-auto">
+                        <table className="w-full text-left text-sm">
+                          <thead className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                            <tr>
+                              <th className="px-2 py-2">Mes</th>
+                              <th className="px-2 py-2 text-right">Ingresos</th>
+                              <th className="px-2 py-2 text-right">Egresos</th>
+                              <th className="px-2 py-2 text-right">Utilidad</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {monthlySeries.map((row) => (
+                              <tr key={row.monthKey} className="border-t border-slate-100">
+                                <td className="px-2 py-2 text-xs text-slate-500">
+                                  {formatMonthLabel(row.monthKey)}
+                                </td>
+                                <td className="px-2 py-2 text-right">{formatCurrency(row.incomeTotal)}</td>
+                                <td className="px-2 py-2 text-right">{formatCurrency(row.expensesTotal)}</td>
+                                <td className="px-2 py-2 text-right font-semibold text-slate-900">
+                                  {formatCurrency(row.net)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                          Vista anual
+                        </p>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          <FinanceKpiCard title="Total anual" value={annualStats.net} tone="green" />
+                          <FinanceKpiCard title="Promedio mensual" value={annualStats.avgNet} tone="blue" />
+                          <FinanceKpiCard
+                            title="Mejor mes"
+                            value={annualStats.bestMonth ? annualStats.bestMonth.net : 0}
+                            tone="green"
+                          />
+                          <FinanceKpiCard
+                            title="Peor mes"
+                            value={annualStats.worstMonth ? annualStats.worstMonth.net : 0}
+                            tone="rose"
+                          />
+                        </div>
+                        {isAnnualView ? (
+                          <div className="mt-6">
+                            {annualChartData.length === 0 ? (
+                              <div className="rounded-xl bg-slate-50 px-3 py-6 text-center text-xs text-slate-400">
+                                Sin datos para el año seleccionado.
+                              </div>
+                            ) : (
+                              <FinanceMonthlyChart data={annualChartData} />
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                      {isAnnualView ? (
+                        <>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <FinanceKpiCard title="Flujo de caja anual" value={annualCashFlow.net} tone="slate" />
+                            <FinanceKpiCard
+                              title="Promedio flujo mensual"
+                              value={averageMonthlyCashFlow}
+                              tone="blue"
+                            />
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                Top 5 clientes
+                              </p>
+                              <ul className="mt-3 space-y-2 text-sm">
+                                {topClients.length === 0 ? (
+                                  <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400">
+                                    Sin ingresos en el periodo.
+                                  </li>
+                                ) : (
+                                  topClients.map((client) => (
+                                    <li key={client.name} className="flex items-center justify-between">
+                                      <span className="text-xs text-slate-500">{client.name}</span>
+                                      <span className="text-sm font-semibold text-slate-900">
+                                        {formatCurrency(client.total)}
+                                      </span>
+                                    </li>
+                                  ))
+                                )}
+                              </ul>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                Top 5 categorías de gasto
+                              </p>
+                              <ul className="mt-3 space-y-2 text-sm">
+                                {topExpenseCategories.length === 0 ? (
+                                  <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400">
+                                    Sin gastos en el periodo.
+                                  </li>
+                                ) : (
+                                  topExpenseCategories.map((category) => (
+                                    <li key={category.name} className="flex items-center justify-between">
+                                      <span className="text-xs text-slate-500">{category.name}</span>
+                                      <span className="text-sm font-semibold text-slate-900">
+                                        {formatCurrency(category.total)}
+                                      </span>
+                                    </li>
+                                  ))
+                                )}
+                              </ul>
+                            </div>
+                          </div>
+                        </>
+                      ) : null}
+                      <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                          Insights & alertas
+                        </p>
+                        <ul className="mt-3 space-y-2 text-sm">
+                          {alerts.length === 0 ? (
+                            <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                              Sin alertas por ahora.
+                            </li>
+                          ) : (
+                            alerts.map((alert, index) => (
+                              <li
+                                key={`${alert.message}-${index}`}
+                                className={`rounded-xl px-3 py-2 text-xs font-semibold ${
+                                  alert.tone === "danger"
+                                    ? "bg-rose-50 text-rose-700"
+                                    : alert.tone === "warning"
+                                      ? "bg-amber-50 text-amber-700"
+                                      : "bg-sky-50 text-sky-700"
+                                }`}
+                              >
+                                {alert.message}
+                              </li>
+                            ))
+                          )}
+                        </ul>
+                      </div>
+                    </div>
                   </div>
                   <FinancePendingList
                     title="Pendientes por cobrar"
@@ -796,6 +1471,255 @@ export default function FinanceModulePage() {
         </div>
       </FinanceGate>
 
+      {isDetailOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+          <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white p-6 shadow-[0_30px_60px_rgba(15,23,42,0.35)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                  Desglose del mes · {formatMonthLabel(filters.monthKey)}
+                </p>
+                <h2 className="text-xl font-semibold text-slate-900">Detalle financiero</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500"
+                  onClick={exportDetailCsv}
+                >
+                  Exportar CSV
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500"
+                  onClick={() => setIsDetailOpen(false)}
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+              {[
+                { key: "summary", label: "Resumen" },
+                { key: "income", label: "Ingresos" },
+                { key: "expenses", label: "Gastos" },
+                { key: "payments", label: "Pagos a colaboradores" },
+                { key: "accounts", label: "Cuentas & Caja" },
+              ].map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setDetailTab(tab.key as typeof detailTab)}
+                  className={`rounded-full px-3 py-1 ${
+                    detailTab === tab.key ? "bg-slate-900 text-white" : "bg-slate-100"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-6 space-y-4">
+              {detailTab === "summary" ? (
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <FinanceKpiCard title="Ingresos del mes" value={detailTotals.incomeTotal} tone="blue" />
+                    <FinanceKpiCard title="Gastos del mes" value={detailTotals.expenseTotal} tone="rose" />
+                    <FinanceKpiCard title="Pagos a colaboradores" value={detailTotals.paymentTotal} tone="amber" />
+                    <FinanceKpiCard title="Movimientos caja" value={detailTotals.transferTotal} tone="slate" />
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">KPI del mes</p>
+                      <div className="mt-3 space-y-2 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span>Ingresos cobrados</span>
+                          <span className="font-semibold">{formatCurrency(kpis.incomePaid)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Gastos pagados</span>
+                          <span className="font-semibold">{formatCurrency(kpis.expensesPaid)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Utilidad neta</span>
+                          <span className="font-semibold">{formatCurrency(kpis.netIncome)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Margen neto</span>
+                          <span className="font-semibold">{kpis.margin.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                        Proyección del mes
+                      </p>
+                      <div className="mt-3 space-y-2 text-sm">
+                        <div className="flex items-center justify-between">
+                          <span>Ingresos proyectados</span>
+                          <span className="font-semibold">{formatCurrency(projection.incomeProjected)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Egresos proyectados</span>
+                          <span className="font-semibold">{formatCurrency(projection.expensesProjected)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Utilidad proyectada</span>
+                          <span className="font-semibold">{formatCurrency(projection.projectedNet)}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span>Margen proyectado</span>
+                          <span className="font-semibold">{projection.projectedMargin.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              ) : null}
+
+              {detailTab === "income" ? (
+                <div className="rounded-2xl border border-slate-200/60 bg-white">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3">Cliente</th>
+                        <th className="px-4 py-3">Estado</th>
+                        <th className="px-4 py-3 text-right">Cantidad</th>
+                        <th className="px-4 py-3 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {incomeSummary.map((row) => (
+                        <tr key={`${row.clientName}-${row.status}`} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs text-slate-500">{row.clientName}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{row.status}</td>
+                          <td className="px-4 py-3 text-right text-xs text-slate-500">{row.count}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                            {formatCurrency(row.total)}
+                          </td>
+                        </tr>
+                      ))}
+                      {incomeSummary.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-6 text-center text-xs text-slate-400">
+                            Sin ingresos en este mes.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+
+              {detailTab === "expenses" ? (
+                <div className="rounded-2xl border border-slate-200/60 bg-white">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3">Categoría</th>
+                        <th className="px-4 py-3">Estado</th>
+                        <th className="px-4 py-3 text-right">Cantidad</th>
+                        <th className="px-4 py-3 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expenseSummary.map((row) => (
+                        <tr key={`${row.categoria}-${row.status}`} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs text-slate-500">{row.categoria}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{row.status}</td>
+                          <td className="px-4 py-3 text-right text-xs text-slate-500">{row.count}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                            {formatCurrency(row.total)}
+                          </td>
+                        </tr>
+                      ))}
+                      {expenseSummary.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-6 text-center text-xs text-slate-400">
+                            Sin gastos en este mes.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+
+              {detailTab === "payments" ? (
+                <div className="rounded-2xl border border-slate-200/60 bg-white">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3">Colaborador</th>
+                        <th className="px-4 py-3 text-right">Cantidad</th>
+                        <th className="px-4 py-3 text-right">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paymentSummary.map((row) => (
+                        <tr key={row.name} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs text-slate-500">{row.name}</td>
+                          <td className="px-4 py-3 text-right text-xs text-slate-500">{row.count}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                            {formatCurrency(row.total)}
+                          </td>
+                        </tr>
+                      ))}
+                      {paymentSummary.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="px-4 py-6 text-center text-xs text-slate-400">
+                            Sin pagos en este mes.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+
+              {detailTab === "accounts" ? (
+                <div className="rounded-2xl border border-slate-200/60 bg-white">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
+                      <tr>
+                        <th className="px-4 py-3">Fecha</th>
+                        <th className="px-4 py-3">Tipo</th>
+                        <th className="px-4 py-3">Estado</th>
+                        <th className="px-4 py-3 text-right">Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredTransfers.map((transfer) => (
+                        <tr key={transfer.id} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {formatShortDate(transfer.fecha)}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {transfer.tipoMovimiento}
+                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{transfer.status}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                            {formatCurrency(transfer.monto)}
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredTransfers.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="px-4 py-6 text-center text-xs text-slate-400">
+                            Sin movimientos en este mes.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       <FinanceModal
         isOpen={isModalOpen}
         modalType={modalType}
@@ -805,6 +1729,7 @@ export default function FinanceModulePage() {
         }}
         onSubmit={handleCreateMovement}
         disabled={isSubmitting}
+        isSubmitting={isSubmitting}
         initialValues={incomeInitialValues}
       />
     </div>

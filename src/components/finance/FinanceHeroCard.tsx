@@ -1,17 +1,29 @@
-import { formatCurrency, getMonthLabel } from "@/lib/finance/utils";
+import { formatCurrency } from "@/lib/finance/utils";
 
 interface FinanceHeroCardProps {
-  monthKey: string;
+  title: string;
+  incomeLabel: string;
+  expensesLabel: string;
+  cashFlowLabel: string;
+  netLabel: string;
+  marginLabel: string;
   incomePaid: number;
   expensesPaid: number;
+  cashFlow: number;
   netIncome: number;
   margin: number;
 }
 
 export default function FinanceHeroCard({
-  monthKey,
+  title,
+  incomeLabel,
+  expensesLabel,
+  cashFlowLabel,
+  netLabel,
+  marginLabel,
   incomePaid,
   expensesPaid,
+  cashFlow,
   netIncome,
   margin,
 }: FinanceHeroCardProps) {
@@ -20,23 +32,26 @@ export default function FinanceHeroCard({
       <div className="absolute right-0 top-0 h-32 w-32 -translate-y-1/3 translate-x-1/4 rounded-full bg-white/10 blur-2xl" />
       <div className="absolute bottom-0 left-0 h-32 w-32 -translate-x-1/3 translate-y-1/4 rounded-full bg-white/10 blur-2xl" />
       <div className="relative z-10 space-y-3">
-        <div className="text-xs uppercase tracking-[0.3em] text-white/70">Estado del mes</div>
-        <div className="text-2xl font-semibold capitalize">{getMonthLabel(monthKey)}</div>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="text-xs uppercase tracking-[0.3em] text-white/70">{title}</div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
-            <p className="text-xs text-white/70">Ingresos cobrados</p>
+            <p className="text-xs text-white/70">{incomeLabel}</p>
             <p className="text-xl font-semibold">{formatCurrency(incomePaid)}</p>
           </div>
           <div>
-            <p className="text-xs text-white/70">Gastos pagados</p>
+            <p className="text-xs text-white/70">{expensesLabel}</p>
             <p className="text-xl font-semibold">{formatCurrency(expensesPaid)}</p>
           </div>
           <div>
-            <p className="text-xs text-white/70">Utilidad neta</p>
+            <p className="text-xs text-white/70">{cashFlowLabel}</p>
+            <p className="text-xl font-semibold">{formatCurrency(cashFlow)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-white/70">{netLabel}</p>
             <p className="text-xl font-semibold">{formatCurrency(netIncome)}</p>
           </div>
           <div>
-            <p className="text-xs text-white/70">Margen neto</p>
+            <p className="text-xs text-white/70">{marginLabel}</p>
             <p className="text-xl font-semibold">{margin.toFixed(1)}%</p>
           </div>
         </div>
