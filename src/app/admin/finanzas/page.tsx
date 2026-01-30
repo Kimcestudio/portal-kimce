@@ -130,7 +130,7 @@ export default function FinanceModulePage() {
       movementsQuery,
       (snapshot) => {
         const normalized = snapshot.docs.map((doc) => {
-          const data = doc.data() as FinanceMovement;
+          const { id: _ignored, ...data } = doc.data() as FinanceMovement;
           return {
             ...data,
             id: doc.id,
@@ -156,10 +156,13 @@ export default function FinanceModulePage() {
     const unsubscribeExpenses = onSnapshot(
       expensesQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Expense),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as Expense;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setExpenses(items);
         logDev("[FINANCE] expenses snapshot", items.length);
         if (!expensesLoaded) {
@@ -178,10 +181,13 @@ export default function FinanceModulePage() {
     const unsubscribePayments = onSnapshot(
       paymentsQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as CollaboratorPayment),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as CollaboratorPayment;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setPayments(items);
         logDev("[FINANCE] payments snapshot", items.length);
         if (!paymentsLoaded) {
@@ -200,10 +206,13 @@ export default function FinanceModulePage() {
     const unsubscribeTransfers = onSnapshot(
       transfersQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as TransferMovement),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as TransferMovement;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setTransfers(items);
         logDev("[FINANCE] transfers snapshot", items.length);
         if (!transfersLoaded) {
@@ -222,10 +231,13 @@ export default function FinanceModulePage() {
     const unsubscribeCollaborators = onSnapshot(
       collaboratorsQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Collaborator),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as Collaborator;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setCollaborators(items);
         logDev("[FINANCE] collaborators snapshot", items.length);
         if (!collaboratorsLoaded) {

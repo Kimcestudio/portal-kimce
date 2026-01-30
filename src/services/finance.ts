@@ -23,19 +23,25 @@ type FinanceUnsubscribe = () => void;
 
 export async function listCollaborators() {
   const snapshot = await getDocs(financeRefs.collaboratorsRef);
-  return snapshot.docs.map((item) => ({
-    id: item.id,
-    ...item.data(),
-  }));
+  return snapshot.docs.map((item) => {
+    const { id: _ignored, ...data } = item.data();
+    return {
+      ...data,
+      id: item.id,
+    };
+  });
 }
 
 export function subscribeCollaborators(onChange: (items: Collaborator[]) => void): FinanceUnsubscribe {
   const collaboratorsQuery = query(financeRefs.collaboratorsRef, orderBy("createdAt", "desc"));
   return onSnapshot(collaboratorsQuery, (snapshot) => {
-    const items = snapshot.docs.map((item) => ({
-      id: item.id,
-      ...item.data(),
-    }));
+    const items = snapshot.docs.map((item) => {
+      const { id: _ignored, ...data } = item.data();
+      return {
+        ...data,
+        id: item.id,
+      };
+    });
     onChange(items);
   });
 }
@@ -43,7 +49,10 @@ export function subscribeCollaborators(onChange: (items: Collaborator[]) => void
 export function subscribeFinanceMovements(onChange: (items: FinanceMovement[]) => void): FinanceUnsubscribe {
   const movementsQuery = query(financeRefs.incomesRef, orderBy("createdAt", "desc"));
   return onSnapshot(movementsQuery, (snapshot) => {
-    const items = snapshot.docs.map((item) => normalizeMovement({ id: item.id, ...item.data() }));
+    const items = snapshot.docs.map((item) => {
+      const { id: _ignored, ...data } = item.data();
+      return normalizeMovement({ ...data, id: item.id });
+    });
     onChange(items);
   });
 }
@@ -51,7 +60,10 @@ export function subscribeFinanceMovements(onChange: (items: FinanceMovement[]) =
 export function subscribeExpenses(onChange: (items: Expense[]) => void): FinanceUnsubscribe {
   const expensesQuery = query(financeRefs.expensesRef, orderBy("createdAt", "desc"));
   return onSnapshot(expensesQuery, (snapshot) => {
-    const items = snapshot.docs.map((item) => normalizeExpense({ id: item.id, ...item.data() }));
+    const items = snapshot.docs.map((item) => {
+      const { id: _ignored, ...data } = item.data();
+      return normalizeExpense({ ...data, id: item.id });
+    });
     onChange(items);
   });
 }
@@ -59,7 +71,10 @@ export function subscribeExpenses(onChange: (items: Expense[]) => void): Finance
 export function subscribeTransfers(onChange: (items: TransferMovement[]) => void): FinanceUnsubscribe {
   const transfersQuery = query(financeRefs.transfersRef, orderBy("createdAt", "desc"));
   return onSnapshot(transfersQuery, (snapshot) => {
-    const items = snapshot.docs.map((item) => normalizeTransfer({ id: item.id, ...item.data() }));
+    const items = snapshot.docs.map((item) => {
+      const { id: _ignored, ...data } = item.data();
+      return normalizeTransfer({ ...data, id: item.id });
+    });
     onChange(items);
   });
 }
@@ -69,7 +84,10 @@ export function subscribeCollaboratorPayments(
 ): FinanceUnsubscribe {
   const paymentsQuery = query(financeRefs.collaboratorPaymentsRef, orderBy("createdAt", "desc"));
   return onSnapshot(paymentsQuery, (snapshot) => {
-    const items = snapshot.docs.map((item) => normalizeCollaboratorPayment({ id: item.id, ...item.data() }));
+    const items = snapshot.docs.map((item) => {
+      const { id: _ignored, ...data } = item.data();
+      return normalizeCollaboratorPayment({ ...data, id: item.id });
+    });
     onChange(items);
   });
 }
