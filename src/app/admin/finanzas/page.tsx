@@ -11,6 +11,7 @@ import FinanceFilterBar from "@/components/finance/FinanceFilterBar";
 import FinanceTable from "@/components/finance/FinanceTable";
 import FinancePendingList from "@/components/finance/FinancePendingList";
 import FinanceStatusSelect from "@/components/finance/FinanceStatusSelect";
+import FinanceMonthlyChart from "@/components/finance/FinanceMonthlyChart";
 import FinanceModal, {
   type CollaboratorFormValues,
   type CollaboratorPaymentFormValues,
@@ -22,9 +23,10 @@ import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
 import {
   calcKpis,
   computeAlerts,
-  computeHistoricalTotals,
+  computeCashFlow,
   computeMonthProjection,
   computeMonthlySeries,
+  computeYearToDateTotals,
   filterMovements,
 } from "@/lib/finance/analytics";
 import { financeRefs } from "@/lib/finance/refs";
@@ -91,6 +93,7 @@ export default function FinanceModulePage() {
     "summary" | "income" | "expenses" | "payments" | "accounts"
   >("summary");
   const [isAnnualView, setIsAnnualView] = useState(false);
+  const [annualYear, setAnnualYear] = useState(() => new Date().getFullYear());
 
   const logDev = (...args: unknown[]) => {
     if (process.env.NODE_ENV === "development") {
@@ -326,6 +329,30 @@ export default function FinanceModulePage() {
     });
   }, [filters, transfers]);
 
+  const availableYears = useMemo(() => {
+    const years = new Set<number>();
+    const addYear = (monthKey?: string | null) => {
+      if (!monthKey) return;
+      const [yearPart] = monthKey.split("-");
+      const year = Number(yearPart);
+      if (!Number.isNaN(year)) {
+        years.add(year);
+      }
+    };
+    movements.forEach((movement) => addYear(movement.monthKey));
+    expenses.forEach((expense) => addYear(expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto)));
+    payments.forEach((payment) => addYear(payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago)));
+    years.add(new Date().getFullYear());
+    return Array.from(years).sort((a, b) => b - a);
+  }, [expenses, movements, payments]);
+
+  useEffect(() => {
+    if (availableYears.length === 0) return;
+    if (!availableYears.includes(annualYear)) {
+      setAnnualYear(availableYears[0]);
+    }
+  }, [annualYear, availableYears]);
+
   const collaboratorLookup = useMemo(() => {
     return new Map(collaborators.map((collaborator) => [collaborator.id, collaborator.nombreCompleto]));
   }, [collaborators]);
@@ -336,24 +363,71 @@ export default function FinanceModulePage() {
   );
 
   const projection = useMemo(
-    () => computeMonthProjection(movements, expenses, filters.monthKey, filters.account),
-    [expenses, filters.account, filters.monthKey, movements],
+    () => computeMonthProjection(movements, expenses, payments, filters.monthKey, filters.account),
+    [expenses, filters.account, filters.monthKey, movements, payments],
   );
 
-  const historicalTotals = useMemo(
-    () => computeHistoricalTotals(movements, expenses, filters.account),
-    [expenses, filters.account, movements],
+  const monthlyCashFlow = useMemo(
+    () =>
+      computeCashFlow({
+        movements,
+        expenses,
+        payments,
+        transfers,
+        monthKey: filters.monthKey,
+        account: filters.account,
+      }),
+    [expenses, filters.account, filters.monthKey, movements, payments, transfers],
   );
+
+  const currentDate = useMemo(() => new Date(), []);
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth() + 1;
 
   const monthlySeries = useMemo(
-    () => computeMonthlySeries(movements, expenses, filters.monthKey, 12, filters.account),
-    [expenses, filters.account, filters.monthKey, movements],
+    () => computeMonthlySeries(movements, expenses, payments, filters.monthKey, 12, filters.account),
+    [expenses, filters.account, filters.monthKey, movements, payments],
   );
 
-  const annualSeries = useMemo(() => {
-    const [yearPart] = filters.monthKey.split("-");
-    return computeMonthlySeries(movements, expenses, `${yearPart}-12`, 12, filters.account);
-  }, [expenses, filters.account, filters.monthKey, movements]);
+  const annualSeries = useMemo(
+    () =>
+      computeMonthlySeries(
+        movements,
+        expenses,
+        payments,
+        `${annualYear}-12`,
+        12,
+        filters.account,
+      ),
+    [annualYear, expenses, filters.account, movements, payments],
+  );
+
+  const ytdTotals = useMemo(() => {
+    const endMonth = annualYear === currentYear ? currentMonth : 12;
+    return computeYearToDateTotals(
+      movements,
+      expenses,
+      payments,
+      annualYear,
+      endMonth,
+      filters.account,
+    );
+  }, [annualYear, currentMonth, currentYear, expenses, filters.account, movements, payments]);
+
+  const annualCashFlow = useMemo(
+    () =>
+      computeCashFlow({
+        movements,
+        expenses,
+        payments,
+        transfers,
+        year: annualYear,
+        account: filters.account,
+      }),
+    [annualYear, expenses, filters.account, movements, payments, transfers],
+  );
+
+  const averageMonthlyCashFlow = annualSeries.length > 0 ? annualCashFlow.net / 12 : 0;
 
   const annualStats = useMemo(() => {
     if (annualSeries.length === 0) {
@@ -367,8 +441,8 @@ export default function FinanceModulePage() {
         worstMonth: null as (typeof annualSeries)[number] | null,
       };
     }
-    const totalIncome = annualSeries.reduce((sum, row) => sum + row.incomePaid + row.incomePending, 0);
-    const totalExpenses = annualSeries.reduce((sum, row) => sum + row.expensesPaid + row.expensesPending, 0);
+    const totalIncome = annualSeries.reduce((sum, row) => sum + row.incomeTotal, 0);
+    const totalExpenses = annualSeries.reduce((sum, row) => sum + row.expensesTotal, 0);
     const net = totalIncome - totalExpenses;
     const margin = totalIncome > 0 ? (net / totalIncome) * 100 : 0;
     const bestMonth = annualSeries.reduce(
@@ -382,6 +456,87 @@ export default function FinanceModulePage() {
     const avgNet = annualSeries.length > 0 ? net / annualSeries.length : 0;
     return { totalIncome, totalExpenses, net, margin, avgNet, bestMonth, worstMonth };
   }, [annualSeries]);
+
+  const annualChartData = useMemo(() => {
+    return annualSeries.map((row) => ({
+      month: formatMonthLabel(row.monthKey),
+      income: row.incomeTotal,
+      expenses: row.expensesTotal,
+      net: row.net,
+    }));
+  }, [annualSeries]);
+
+  const topClients = useMemo(() => {
+    const map = new Map<string, number>();
+    ytdTotals.movements.forEach((movement) => {
+      const current = map.get(movement.clientName) ?? 0;
+      map.set(movement.clientName, current + (movement.tax?.total ?? movement.amount));
+    });
+    return Array.from(map.entries())
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [ytdTotals.movements]);
+
+  const topExpenseCategories = useMemo(() => {
+    const map = new Map<string, number>();
+    ytdTotals.expenses.forEach((expense) => {
+      const current = map.get(expense.categoria) ?? 0;
+      map.set(expense.categoria, current + expense.monto);
+    });
+    return Array.from(map.entries())
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  }, [ytdTotals.expenses]);
+
+  const actualExpenses = kpis.expensesPaid + projection.paymentsPaid;
+  const actualNet = kpis.incomePaid - actualExpenses;
+
+  const heroContent = useMemo(() => {
+    if (isAnnualView) {
+      return {
+        title: `Estado del año – ${annualYear}`,
+        incomeLabel: "Ingresos totales",
+        expensesLabel: "Egresos totales",
+        cashFlowLabel: "Flujo de caja anual",
+        netLabel: "Utilidad anual",
+        marginLabel: "Margen anual",
+        incomePaid: annualStats.totalIncome,
+        expensesPaid: annualStats.totalExpenses,
+        cashFlow: annualCashFlow.net,
+        netIncome: annualStats.net,
+        margin: annualStats.margin,
+      };
+    }
+    return {
+      title: `Estado del mes – ${formatMonthLabel(filters.monthKey)}`,
+      incomeLabel: "Ingresos cobrados",
+      expensesLabel: "Gastos pagados",
+      cashFlowLabel: "Flujo de caja",
+      netLabel: "Utilidad neta",
+      marginLabel: "Margen neto",
+      incomePaid: kpis.incomePaid,
+      expensesPaid: kpis.expensesPaid,
+      cashFlow: monthlyCashFlow.net,
+      netIncome: kpis.netIncome,
+      margin: kpis.margin,
+    };
+  }, [
+    annualCashFlow.net,
+    annualStats.margin,
+    annualStats.net,
+    annualStats.totalExpenses,
+    annualStats.totalIncome,
+    annualYear,
+    filters.monthKey,
+    isAnnualView,
+    kpis.expensesPaid,
+    kpis.incomePaid,
+    kpis.margin,
+    kpis.netIncome,
+    monthlyCashFlow.net,
+  ]);
 
   const alerts = useMemo(() => {
     const bestMonthLabel = isAnnualView && annualStats.bestMonth
@@ -411,7 +566,11 @@ export default function FinanceModulePage() {
     );
     const igv = monthMovements.reduce((sum, movement) => sum + (movement.tax?.igv ?? 0), 0);
     const net = total - igv;
-    const paid = 0;
+    const paid = monthMovements.reduce(
+      (sum, movement) =>
+        sum + (movement.status !== "pending" && movement.status !== "cancelled" ? movement.tax?.total ?? movement.amount : 0),
+      0,
+    );
     const pending = monthMovements.reduce(
       (sum, movement) =>
         sum + (movement.status === "pending" ? movement.tax?.total ?? movement.amount : 0),
@@ -430,6 +589,108 @@ export default function FinanceModulePage() {
     const transferTotal = filteredTransfers.reduce((sum, item) => sum + item.monto, 0);
     return { incomeTotal, expenseTotal, paymentTotal, transferTotal };
   }, [filteredExpenses, filteredMovements, filteredPayments, filteredTransfers]);
+
+  const incomeSummary = useMemo(() => {
+    const map = new Map<
+      string,
+      { clientName: string; status: FinanceStatus; total: number; count: number }
+    >();
+    filteredMovements.forEach((movement) => {
+      const key = `${movement.clientName}-${movement.status}`;
+      const current = map.get(key) ?? {
+        clientName: movement.clientName,
+        status: movement.status,
+        total: 0,
+        count: 0,
+      };
+      current.total += movement.tax?.total ?? movement.amount;
+      current.count += 1;
+      map.set(key, current);
+    });
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [filteredMovements]);
+
+  const expenseSummary = useMemo(() => {
+    const map = new Map<
+      string,
+      { categoria: Expense["categoria"]; status: FinanceStatus; total: number; count: number }
+    >();
+    filteredExpenses.forEach((expense) => {
+      const key = `${expense.categoria}-${expense.status}`;
+      const current = map.get(key) ?? {
+        categoria: expense.categoria,
+        status: expense.status,
+        total: 0,
+        count: 0,
+      };
+      current.total += expense.monto;
+      current.count += 1;
+      map.set(key, current);
+    });
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [filteredExpenses]);
+
+  const paymentSummary = useMemo(() => {
+    const map = new Map<string, { name: string; total: number; count: number }>();
+    filteredPayments.forEach((payment) => {
+      const name = collaboratorLookup.get(payment.colaboradorId) ?? "Colaborador";
+      const current = map.get(name) ?? { name, total: 0, count: 0 };
+      current.total += payment.montoFinal;
+      current.count += 1;
+      map.set(name, current);
+    });
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  }, [collaboratorLookup, filteredPayments]);
+
+  const exportDetailCsv = () => {
+    const rows: string[][] = [
+      ["Tipo", "Nombre", "Estado", "Monto", "Fecha"],
+    ];
+    filteredMovements.forEach((movement) => {
+      rows.push([
+        "Ingreso",
+        movement.clientName,
+        movement.status,
+        `${movement.tax?.total ?? movement.amount}`,
+        movement.incomeDate,
+      ]);
+    });
+    filteredExpenses.forEach((expense) => {
+      rows.push([
+        "Gasto",
+        expense.categoria,
+        expense.status,
+        `${expense.monto}`,
+        expense.fechaGasto,
+      ]);
+    });
+    filteredPayments.forEach((payment) => {
+      rows.push([
+        "Pago colaborador",
+        collaboratorLookup.get(payment.colaboradorId) ?? "Colaborador",
+        payment.status,
+        `${payment.montoFinal}`,
+        payment.fechaPago,
+      ]);
+    });
+    filteredTransfers.forEach((transfer) => {
+      rows.push([
+        "Transferencia",
+        transfer.tipoMovimiento,
+        transfer.status,
+        `${transfer.monto}`,
+        transfer.fecha,
+      ]);
+    });
+    const csvContent = rows.map((row) => row.map((value) => `"${value}"`).join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `desglose-finanzas-${filters.monthKey}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const openModal = (type: FinanceModalType) => {
     setModalType(type);
@@ -741,6 +1002,22 @@ export default function FinanceModulePage() {
                         Anual
                       </button>
                     </div>
+                    {isAnnualView ? (
+                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-500">
+                        <span>Año</span>
+                        <select
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-700"
+                          value={annualYear}
+                          onChange={(event) => setAnnualYear(Number(event.target.value))}
+                        >
+                          {availableYears.map((year) => (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => {
@@ -749,15 +1026,21 @@ export default function FinanceModulePage() {
                       }}
                       className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
                     >
-                      Ver detalle del mes
+                      Ver desglose
                     </button>
                   </div>
                   <FinanceHeroCard
-                    monthKey={filters.monthKey}
-                    incomePaid={kpis.incomePaid}
-                    expensesPaid={kpis.expensesPaid}
-                    netIncome={kpis.netIncome}
-                    margin={kpis.margin}
+                    title={heroContent.title}
+                    incomeLabel={heroContent.incomeLabel}
+                    expensesLabel={heroContent.expensesLabel}
+                    cashFlowLabel={heroContent.cashFlowLabel}
+                    netLabel={heroContent.netLabel}
+                    marginLabel={heroContent.marginLabel}
+                    incomePaid={heroContent.incomePaid}
+                    expensesPaid={heroContent.expensesPaid}
+                    cashFlow={heroContent.cashFlow}
+                    netIncome={heroContent.netIncome}
+                    margin={heroContent.margin}
                   />
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
@@ -777,7 +1060,7 @@ export default function FinanceModulePage() {
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-slate-500">Gastos proyectados</p>
+                          <p className="text-xs text-slate-500">Egresos proyectados</p>
                           <p className="text-lg font-semibold text-slate-900">
                             {formatCurrency(projection.expensesProjected)}
                           </p>
@@ -808,13 +1091,13 @@ export default function FinanceModulePage() {
                             projected: projection.incomeProjected,
                           },
                           {
-                            label: "Gastos",
-                            real: kpis.expensesPaid,
+                            label: "Egresos",
+                            real: actualExpenses,
                             projected: projection.expensesProjected,
                           },
                           {
                             label: "Utilidad",
-                            real: kpis.netIncome,
+                            real: actualNet,
                             projected: projection.projectedNet,
                           },
                         ].map((row) => {
@@ -842,42 +1125,41 @@ export default function FinanceModulePage() {
                   </div>
                   <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                     <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      Acumulado histórico
+                      Acumulado YTD {annualYear}
                     </p>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <FinanceKpiCard title="Ingresos históricos" value={historicalTotals.totalIncome} tone="blue" />
-                      <FinanceKpiCard title="Gastos históricos" value={historicalTotals.totalExpenses} tone="rose" />
-                      <FinanceKpiCard title="Utilidad acumulada" value={historicalTotals.net} tone="green" />
+                      <FinanceKpiCard title="Ingresos acumulados" value={ytdTotals.totalIncome} tone="blue" />
+                      <FinanceKpiCard title="Egresos acumulados" value={ytdTotals.totalExpenses} tone="rose" />
+                      <FinanceKpiCard title="Utilidad acumulada" value={ytdTotals.net} tone="green" />
                       <div className="rounded-2xl border border-slate-200/60 bg-slate-50/80 p-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                          Margen promedio
+                          Margen acumulado
                         </p>
                         <p className="mt-2 text-2xl font-semibold text-slate-900">
-                          {historicalTotals.margin.toFixed(1)}%
+                          {ytdTotals.margin.toFixed(1)}%
                         </p>
                       </div>
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <FinanceKpiCard title="Ingresos cobrados" value={kpis.incomePaid} tone="blue" />
                     <FinanceKpiCard title="Pendiente por cobrar" value={kpis.incomePending} tone="amber" />
                     <FinanceKpiCard title="Gastos pagados" value={kpis.expensesPaid} tone="rose" />
+                    <FinanceKpiCard title="Flujo de caja" value={monthlyCashFlow.net} tone="slate" />
                     <FinanceKpiCard title="Utilidad neta" value={kpis.netIncome} tone="green" />
                   </div>
                   <div className="grid gap-4 lg:grid-cols-2">
                     <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                        Mes a mes (últimos 12)
+                        Resumen mensual (últimos 12)
                       </p>
                       <div className="mt-4 overflow-x-auto">
                         <table className="w-full text-left text-sm">
                           <thead className="text-xs uppercase tracking-[0.2em] text-slate-400">
                             <tr>
                               <th className="px-2 py-2">Mes</th>
-                              <th className="px-2 py-2 text-right">Ingresos cobrados</th>
-                              <th className="px-2 py-2 text-right">Pendientes</th>
-                              <th className="px-2 py-2 text-right">Gastos pagados</th>
-                              <th className="px-2 py-2 text-right">Pendientes</th>
+                              <th className="px-2 py-2 text-right">Ingresos</th>
+                              <th className="px-2 py-2 text-right">Egresos</th>
                               <th className="px-2 py-2 text-right">Utilidad</th>
                             </tr>
                           </thead>
@@ -887,10 +1169,8 @@ export default function FinanceModulePage() {
                                 <td className="px-2 py-2 text-xs text-slate-500">
                                   {formatMonthLabel(row.monthKey)}
                                 </td>
-                                <td className="px-2 py-2 text-right">{formatCurrency(row.incomePaid)}</td>
-                                <td className="px-2 py-2 text-right">{formatCurrency(row.incomePending)}</td>
-                                <td className="px-2 py-2 text-right">{formatCurrency(row.expensesPaid)}</td>
-                                <td className="px-2 py-2 text-right">{formatCurrency(row.expensesPending)}</td>
+                                <td className="px-2 py-2 text-right">{formatCurrency(row.incomeTotal)}</td>
+                                <td className="px-2 py-2 text-right">{formatCurrency(row.expensesTotal)}</td>
                                 <td className="px-2 py-2 text-right font-semibold text-slate-900">
                                   {formatCurrency(row.net)}
                                 </td>
@@ -920,45 +1200,73 @@ export default function FinanceModulePage() {
                           />
                         </div>
                         {isAnnualView ? (
-                          <div className="mt-4 overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                              <thead className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                                <tr>
-                                  <th className="px-2 py-2">Mes</th>
-                                  <th className="px-2 py-2 text-right">Ingresos</th>
-                                  <th className="px-2 py-2 text-right">Gastos</th>
-                                  <th className="px-2 py-2 text-right">Utilidad</th>
-                                  <th className="px-2 py-2 text-right">Margen</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {annualSeries.map((row) => {
-                                  const totalIncome = row.incomePaid + row.incomePending;
-                                  const totalExpenses = row.expensesPaid + row.expensesPending;
-                                  const margin = totalIncome > 0 ? (row.net / totalIncome) * 100 : 0;
-                                  return (
-                                    <tr key={row.monthKey} className="border-t border-slate-100">
-                                      <td className="px-2 py-2 text-xs text-slate-500">
-                                        {formatMonthLabel(row.monthKey)}
-                                      </td>
-                                      <td className="px-2 py-2 text-right">
-                                        {formatCurrency(totalIncome)}
-                                      </td>
-                                      <td className="px-2 py-2 text-right">
-                                        {formatCurrency(totalExpenses)}
-                                      </td>
-                                      <td className="px-2 py-2 text-right font-semibold text-slate-900">
-                                        {formatCurrency(row.net)}
-                                      </td>
-                                      <td className="px-2 py-2 text-right">{margin.toFixed(1)}%</td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
+                          <div className="mt-6">
+                            {annualChartData.length === 0 ? (
+                              <div className="rounded-xl bg-slate-50 px-3 py-6 text-center text-xs text-slate-400">
+                                Sin datos para el año seleccionado.
+                              </div>
+                            ) : (
+                              <FinanceMonthlyChart data={annualChartData} />
+                            )}
                           </div>
                         ) : null}
                       </div>
+                      {isAnnualView ? (
+                        <>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <FinanceKpiCard title="Flujo de caja anual" value={annualCashFlow.net} tone="slate" />
+                            <FinanceKpiCard
+                              title="Promedio flujo mensual"
+                              value={averageMonthlyCashFlow}
+                              tone="blue"
+                            />
+                          </div>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                Top 5 clientes
+                              </p>
+                              <ul className="mt-3 space-y-2 text-sm">
+                                {topClients.length === 0 ? (
+                                  <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400">
+                                    Sin ingresos en el periodo.
+                                  </li>
+                                ) : (
+                                  topClients.map((client) => (
+                                    <li key={client.name} className="flex items-center justify-between">
+                                      <span className="text-xs text-slate-500">{client.name}</span>
+                                      <span className="text-sm font-semibold text-slate-900">
+                                        {formatCurrency(client.total)}
+                                      </span>
+                                    </li>
+                                  ))
+                                )}
+                              </ul>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                Top 5 categorías de gasto
+                              </p>
+                              <ul className="mt-3 space-y-2 text-sm">
+                                {topExpenseCategories.length === 0 ? (
+                                  <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400">
+                                    Sin gastos en el periodo.
+                                  </li>
+                                ) : (
+                                  topExpenseCategories.map((category) => (
+                                    <li key={category.name} className="flex items-center justify-between">
+                                      <span className="text-xs text-slate-500">{category.name}</span>
+                                      <span className="text-sm font-semibold text-slate-900">
+                                        {formatCurrency(category.total)}
+                                      </span>
+                                    </li>
+                                  ))
+                                )}
+                              </ul>
+                            </div>
+                          </div>
+                        </>
+                      ) : null}
                       <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                           Insights & alertas
@@ -1173,13 +1481,22 @@ export default function FinanceModulePage() {
                 </p>
                 <h2 className="text-xl font-semibold text-slate-900">Detalle financiero</h2>
               </div>
-              <button
-                type="button"
-                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500"
-                onClick={() => setIsDetailOpen(false)}
-              >
-                Cerrar
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500"
+                  onClick={exportDetailCsv}
+                >
+                  Exportar CSV
+                </button>
+                <button
+                  type="button"
+                  className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500"
+                  onClick={() => setIsDetailOpen(false)}
+                >
+                  Cerrar
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
@@ -1244,7 +1561,7 @@ export default function FinanceModulePage() {
                           <span className="font-semibold">{formatCurrency(projection.incomeProjected)}</span>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span>Gastos proyectados</span>
+                          <span>Egresos proyectados</span>
                           <span className="font-semibold">{formatCurrency(projection.expensesProjected)}</span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -1266,29 +1583,24 @@ export default function FinanceModulePage() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
                       <tr>
-                        <th className="px-4 py-3">Fecha</th>
                         <th className="px-4 py-3">Cliente</th>
                         <th className="px-4 py-3">Estado</th>
-                        <th className="px-4 py-3 text-right">Monto</th>
+                        <th className="px-4 py-3 text-right">Cantidad</th>
+                        <th className="px-4 py-3 text-right">Total</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredMovements.map((movement) => (
-                        <tr key={movement.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {formatShortDate(movement.incomeDate)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <p className="font-semibold text-slate-900">{movement.clientName}</p>
-                            <p className="text-xs text-slate-500">{movement.projectService ?? "-"}</p>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{movement.status}</td>
+                      {incomeSummary.map((row) => (
+                        <tr key={`${row.clientName}-${row.status}`} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs text-slate-500">{row.clientName}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{row.status}</td>
+                          <td className="px-4 py-3 text-right text-xs text-slate-500">{row.count}</td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                            {formatCurrency(movement.tax?.total ?? movement.amount)}
+                            {formatCurrency(row.total)}
                           </td>
                         </tr>
                       ))}
-                      {filteredMovements.length === 0 ? (
+                      {incomeSummary.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="px-4 py-6 text-center text-xs text-slate-400">
                             Sin ingresos en este mes.
@@ -1305,29 +1617,24 @@ export default function FinanceModulePage() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
                       <tr>
-                        <th className="px-4 py-3">Fecha</th>
-                        <th className="px-4 py-3">Descripción</th>
+                        <th className="px-4 py-3">Categoría</th>
                         <th className="px-4 py-3">Estado</th>
-                        <th className="px-4 py-3 text-right">Monto</th>
+                        <th className="px-4 py-3 text-right">Cantidad</th>
+                        <th className="px-4 py-3 text-right">Total</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredExpenses.map((expense) => (
-                        <tr key={expense.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {formatShortDate(expense.fechaGasto)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <p className="font-semibold text-slate-900">{expense.descripcion}</p>
-                            <p className="text-xs text-slate-500">{expense.referencia ?? "-"}</p>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{expense.status}</td>
+                      {expenseSummary.map((row) => (
+                        <tr key={`${row.categoria}-${row.status}`} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs text-slate-500">{row.categoria}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{row.status}</td>
+                          <td className="px-4 py-3 text-right text-xs text-slate-500">{row.count}</td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                            {formatCurrency(expense.monto)}
+                            {formatCurrency(row.total)}
                           </td>
                         </tr>
                       ))}
-                      {filteredExpenses.length === 0 ? (
+                      {expenseSummary.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="px-4 py-6 text-center text-xs text-slate-400">
                             Sin gastos en este mes.
@@ -1344,33 +1651,24 @@ export default function FinanceModulePage() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
                       <tr>
-                        <th className="px-4 py-3">Fecha</th>
                         <th className="px-4 py-3">Colaborador</th>
-                        <th className="px-4 py-3">Estado</th>
-                        <th className="px-4 py-3 text-right">Monto</th>
+                        <th className="px-4 py-3 text-right">Cantidad</th>
+                        <th className="px-4 py-3 text-right">Total</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredPayments.map((payment) => (
-                        <tr key={payment.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {formatShortDate(payment.fechaPago)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <p className="font-semibold text-slate-900">
-                              {collaboratorLookup.get(payment.colaboradorId) ?? "—"}
-                            </p>
-                            <p className="text-xs text-slate-500">{payment.periodo}</p>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{payment.status}</td>
+                      {paymentSummary.map((row) => (
+                        <tr key={row.name} className="border-t border-slate-100">
+                          <td className="px-4 py-3 text-xs text-slate-500">{row.name}</td>
+                          <td className="px-4 py-3 text-right text-xs text-slate-500">{row.count}</td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                            {formatCurrency(payment.montoFinal)}
+                            {formatCurrency(row.total)}
                           </td>
                         </tr>
                       ))}
-                      {filteredPayments.length === 0 ? (
+                      {paymentSummary.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="px-4 py-6 text-center text-xs text-slate-400">
+                          <td colSpan={3} className="px-4 py-6 text-center text-xs text-slate-400">
                             Sin pagos en este mes.
                           </td>
                         </tr>
