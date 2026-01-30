@@ -24,7 +24,7 @@ export default function FinanceFilterBar({ filters, onChange }: FinanceFilterBar
         options={[
           { value: "all", label: "Todo" },
           { value: "pending", label: "Pendiente" },
-          { value: "cancelled", label: "Cancelado" },
+          { value: "cancelled", label: "Pagado" },
         ]}
       />
       <Select
@@ -45,7 +45,7 @@ export default function FinanceFilterBar({ filters, onChange }: FinanceFilterBar
           checked={filters.includeCancelled}
           onChange={(event) => onChange({ ...filters, includeCancelled: event.target.checked })}
         />
-        Incluir cancelados
+        Incluir pagados
       </label>
     </div>
   );

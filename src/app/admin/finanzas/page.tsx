@@ -56,14 +56,21 @@ import {
   createExpense,
   createIncomeMovement,
   createTransfer,
+  deleteCollaboratorPayment,
+  deleteExpense,
   deleteFinanceMovement,
+  deleteTransfer,
+  updateCollaboratorPayment,
   updateCollaboratorPaymentStatus,
+  updateExpense,
   updateExpenseStatus,
   updateFinanceMovementStatus,
   updateIncomeMovement,
+  updateTransfer,
   updateTransferStatus,
 } from "@/services/finance";
 import { db } from "@/services/firebase/client";
+import { Pencil, Trash2 } from "lucide-react";
 
 const tabLabels: Record<FinanceTabKey, string> = {
   dashboard: "Dashboard",
@@ -88,6 +95,9 @@ export default function FinanceModulePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const [editingMovement, setEditingMovement] = useState<FinanceMovement | null>(null);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [editingPayment, setEditingPayment] = useState<CollaboratorPayment | null>(null);
+  const [editingTransfer, setEditingTransfer] = useState<TransferMovement | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<
     "summary" | "income" | "expenses" | "payments" | "accounts"
@@ -107,7 +117,7 @@ export default function FinanceModulePage() {
     status: "all",
     account: "all",
     category: "all",
-    includeCancelled: false,
+    includeCancelled: true,
   });
 
   useEffect(() => {
@@ -478,6 +488,26 @@ export default function FinanceModulePage() {
     }));
   }, [annualSeries]);
 
+  const annualKpis = useMemo(() => {
+    const totals = annualSeries.reduce(
+      (acc, row) => {
+        acc.incomePaid += row.incomePaid;
+        acc.incomePending += row.incomePending;
+        acc.expensesPaid += row.expensesPaid;
+        acc.paymentsPaid += row.paymentsPaid;
+        return acc;
+      },
+      {
+        incomePaid: 0,
+        incomePending: 0,
+        expensesPaid: 0,
+        paymentsPaid: 0,
+      },
+    );
+    const netIncome = totals.incomePaid - totals.expensesPaid;
+    return { ...totals, netIncome };
+  }, [annualSeries]);
+
   const actualExpenses = kpis.expensesPaid + projection.paymentsPaid;
   const actualNet = kpis.incomePaid - actualExpenses;
   const realVsProjectedRows = useMemo(
@@ -511,7 +541,7 @@ export default function FinanceModulePage() {
   const heroContent = useMemo(() => {
     if (isAnnualView) {
       return {
-        title: `Estado del año – ${annualYear}`,
+        title: `ESTADO DEL AÑO – ${annualYear}`,
         incomeLabel: "Ingresos totales",
         expensesLabel: "Egresos totales",
         cashFlowLabel: "Flujo de caja anual",
@@ -525,7 +555,7 @@ export default function FinanceModulePage() {
       };
     }
     return {
-      title: `Estado del mes – ${formatMonthLabel(filters.monthKey)}`,
+      title: `ESTADO DEL MES – ${formatMonthLabel(filters.monthKey)}`,
       incomeLabel: "Ingresos cobrados",
       expensesLabel: "Gastos pagados",
       cashFlowLabel: "Flujo de caja",
@@ -578,7 +608,7 @@ export default function FinanceModulePage() {
     const net = total - igv;
     const paid = monthMovements.reduce(
       (sum, movement) =>
-        sum + (movement.status !== "pending" && movement.status !== "cancelled" ? movement.tax?.total ?? movement.amount : 0),
+        sum + (movement.status !== "pending" ? movement.tax?.total ?? movement.amount : 0),
       0,
     );
     const pending = monthMovements.reduce(
@@ -707,6 +737,9 @@ export default function FinanceModulePage() {
     setIsModalOpen(true);
     setIsSubmitting(false);
     setEditingMovement(null);
+    setEditingExpense(null);
+    setEditingPayment(null);
+    setEditingTransfer(null);
   };
 
   const handleCreateMovement = async (type: FinanceModalType, values: unknown) => {
@@ -788,7 +821,7 @@ export default function FinanceModulePage() {
 
       if (type === "collaborator_payment") {
         const payload = values as CollaboratorPaymentFormValues;
-        await createCollaboratorPayment({
+        const paymentPayload = {
           colaboradorId: payload.colaboradorId,
           periodo: payload.periodo,
           montoBase: payload.montoBase,
@@ -801,13 +834,19 @@ export default function FinanceModulePage() {
           status: payload.status,
           referencia: payload.referencia,
           notas: payload.notas,
-        });
-        setToast({ message: "Pago registrado", tone: "success" });
+        };
+        if (editingPayment) {
+          await updateCollaboratorPayment(editingPayment.id, paymentPayload);
+          setToast({ message: "Pago actualizado", tone: "success" });
+        } else {
+          await createCollaboratorPayment(paymentPayload);
+          setToast({ message: "Pago registrado", tone: "success" });
+        }
       }
 
       if (type === "expense") {
         const payload = values as ExpenseFormValues;
-        await createExpense({
+        const expensePayload = {
           tipoGasto: payload.tipoGasto,
           categoria: payload.categoria,
           descripcion: payload.descripcion,
@@ -819,14 +858,20 @@ export default function FinanceModulePage() {
           devolucionMonto: payload.requiereDevolucion ? payload.devolucionMonto : null,
           referencia: payload.referencia,
           notas: payload.notas,
-        });
-        setToast({ message: "Gasto creado", tone: "success" });
+        };
+        if (editingExpense) {
+          await updateExpense(editingExpense.id, expensePayload);
+          setToast({ message: "Gasto actualizado", tone: "success" });
+        } else {
+          await createExpense(expensePayload);
+          setToast({ message: "Gasto creado", tone: "success" });
+        }
       }
 
       if (type === "transfer") {
         const payload = values as TransferFormValues;
         const isTransfer = payload.tipoMovimiento === "TRANSFERENCIA";
-        await createTransfer({
+        const transferPayload = {
           tipoMovimiento: payload.tipoMovimiento,
           cuentaOrigen:
             isTransfer || payload.tipoMovimiento === "SALIDA_CAJA" ? payload.cuentaOrigen || null : null,
@@ -837,10 +882,19 @@ export default function FinanceModulePage() {
           status: payload.status,
           referencia: payload.referencia,
           notas: payload.notas,
-        });
-        setToast({ message: "Movimiento creado", tone: "success" });
+        };
+        if (editingTransfer) {
+          await updateTransfer(editingTransfer.id, transferPayload);
+          setToast({ message: "Movimiento actualizado", tone: "success" });
+        } else {
+          await createTransfer(transferPayload);
+          setToast({ message: "Movimiento creado", tone: "success" });
+        }
       }
       setEditingMovement(null);
+      setEditingExpense(null);
+      setEditingPayment(null);
+      setEditingTransfer(null);
       setIsModalOpen(false);
       return true;
     } catch (error) {
@@ -859,8 +913,42 @@ export default function FinanceModulePage() {
 
   const handleEditMovement = (movement: FinanceMovement) => {
     setEditingMovement(movement);
+    setEditingExpense(null);
+    setEditingPayment(null);
+    setEditingTransfer(null);
     setModalType("income");
     setIsModalOpen(true);
+    setIsSubmitting(false);
+  };
+
+  const handleEditExpense = (expense: Expense) => {
+    setEditingExpense(expense);
+    setEditingMovement(null);
+    setEditingPayment(null);
+    setEditingTransfer(null);
+    setModalType("expense");
+    setIsModalOpen(true);
+    setIsSubmitting(false);
+  };
+
+  const handleEditPayment = (payment: CollaboratorPayment) => {
+    setEditingPayment(payment);
+    setEditingMovement(null);
+    setEditingExpense(null);
+    setEditingTransfer(null);
+    setModalType("collaborator_payment");
+    setIsModalOpen(true);
+    setIsSubmitting(false);
+  };
+
+  const handleEditTransfer = (transfer: TransferMovement) => {
+    setEditingTransfer(transfer);
+    setEditingMovement(null);
+    setEditingExpense(null);
+    setEditingPayment(null);
+    setModalType("transfer");
+    setIsModalOpen(true);
+    setIsSubmitting(false);
   };
 
   const incomeInitialValues: Partial<IncomeFormValues> | null = editingMovement
@@ -888,6 +976,74 @@ export default function FinanceModulePage() {
       }
     : null;
 
+  const expenseInitialValues: Partial<ExpenseFormValues> | null = editingExpense
+    ? {
+        tipoGasto: editingExpense.tipoGasto,
+        categoria: editingExpense.categoria,
+        descripcion: editingExpense.descripcion,
+        monto: editingExpense.monto,
+        fechaGasto: formatDateOnly(editingExpense.fechaGasto) ?? editingExpense.fechaGasto,
+        cuentaOrigen: editingExpense.cuentaOrigen,
+        status: editingExpense.status,
+        requiereDevolucion: editingExpense.requiereDevolucion,
+        devolucionMonto: editingExpense.devolucionMonto ?? 0,
+        referencia: editingExpense.referencia ?? "",
+        notas: editingExpense.notas ?? "",
+      }
+    : null;
+
+  const paymentInitialValues: Partial<CollaboratorPaymentFormValues> | null = editingPayment
+    ? {
+        colaboradorId: editingPayment.colaboradorId,
+        periodo: editingPayment.periodo,
+        montoBase: editingPayment.montoBase,
+        bono: editingPayment.bono ?? 0,
+        descuento: editingPayment.descuento ?? 0,
+        devolucion: editingPayment.devolucion ?? 0,
+        montoFinal: editingPayment.montoFinal,
+        fechaPago: formatDateOnly(editingPayment.fechaPago) ?? editingPayment.fechaPago,
+        cuentaOrigen: editingPayment.cuentaOrigen,
+        status: editingPayment.status,
+        referencia: editingPayment.referencia ?? "",
+        notas: editingPayment.notas ?? "",
+      }
+    : null;
+
+  const transferInitialValues: Partial<TransferFormValues> | null = editingTransfer
+    ? {
+        tipoMovimiento: editingTransfer.tipoMovimiento,
+        cuentaOrigen: editingTransfer.cuentaOrigen ?? undefined,
+        cuentaDestino: editingTransfer.cuentaDestino ?? undefined,
+        monto: editingTransfer.monto,
+        fecha: formatDateOnly(editingTransfer.fecha) ?? editingTransfer.fecha,
+        status: editingTransfer.status,
+        referencia: editingTransfer.referencia ?? "",
+        notas: editingTransfer.notas ?? "",
+      }
+    : null;
+
+  const modalInitialValues = useMemo(() => {
+    switch (modalType) {
+      case "collaborator":
+        return null;
+      case "expense":
+        return expenseInitialValues;
+      case "collaborator_payment":
+        return paymentInitialValues;
+      case "transfer":
+        return transferInitialValues;
+      case "income":
+      default:
+        return incomeInitialValues;
+    }
+  }, [
+    expenseInitialValues,
+    incomeInitialValues,
+    modalType,
+    paymentInitialValues,
+    transferInitialValues,
+  ]);
+
   const handleStatusChange = async (id: string, status: FinanceStatus) => {
     await updateFinanceMovementStatus(id, status);
     setToast({ message: "Estado actualizado", tone: "success" });
@@ -909,7 +1065,26 @@ export default function FinanceModulePage() {
   };
 
   const handleDeleteMovement = async (id: string) => {
+    if (!window.confirm("¿Eliminar este ingreso?")) return;
     await deleteFinanceMovement(id);
+    setToast({ message: "Movimiento eliminado", tone: "success" });
+  };
+
+  const handleDeleteExpense = async (id: string) => {
+    if (!window.confirm("¿Eliminar este gasto?")) return;
+    await deleteExpense(id);
+    setToast({ message: "Gasto eliminado", tone: "success" });
+  };
+
+  const handleDeletePayment = async (id: string) => {
+    if (!window.confirm("¿Eliminar este pago?")) return;
+    await deleteCollaboratorPayment(id);
+    setToast({ message: "Pago eliminado", tone: "success" });
+  };
+
+  const handleDeleteTransfer = async (id: string) => {
+    if (!window.confirm("¿Eliminar este movimiento?")) return;
+    await deleteTransfer(id);
     setToast({ message: "Movimiento eliminado", tone: "success" });
   };
 
@@ -1058,65 +1233,46 @@ export default function FinanceModulePage() {
                     <>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                         <FinanceKpiCard
-                          title="Ingresos acumulados del año"
-                          value={annualStats.totalIncome}
+                          title="Ingresos cobrados"
+                          value={annualKpis.incomePaid}
                           tone="blue"
                         />
                         <FinanceKpiCard
-                          title="Egresos acumulados del año"
-                          value={annualStats.totalExpenses}
+                          title="Pendiente por cobrar"
+                          value={annualKpis.incomePending}
+                          tone="amber"
+                        />
+                        <FinanceKpiCard
+                          title="Gastos pagados"
+                          value={annualKpis.expensesPaid}
                           tone="rose"
                         />
-                        <FinanceKpiCard title="Utilidad acumulada" value={annualStats.net} tone="green" />
-                        <div className="rounded-2xl border border-slate-200/60 bg-slate-50/80 p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                            Margen anual
-                          </p>
-                          <p className="mt-2 text-2xl font-semibold text-slate-900">
-                            {annualStats.margin.toFixed(1)}%
-                          </p>
-                        </div>
-                        <FinanceKpiCard title="Flujo de caja anual" value={annualCashFlow.net} tone="slate" />
+                        <FinanceKpiCard title="Flujo de caja" value={annualCashFlow.net} tone="slate" />
+                        <FinanceKpiCard title="Utilidad neta" value={annualKpis.netIncome} tone="green" />
                       </div>
                       <div className="grid gap-4 lg:grid-cols-2">
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                            Vista anual · Resumen por mes
+                            Vista anual
                           </p>
-                          <div className="mt-4 overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                              <thead className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                                <tr>
-                                  <th className="px-2 py-2">Mes</th>
-                                  <th className="px-2 py-2 text-right">Ingresos</th>
-                                  <th className="px-2 py-2 text-right">Egresos</th>
-                                  <th className="px-2 py-2 text-right">Utilidad</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {annualSeries.map((row) => (
-                                  <tr key={row.monthKey} className="border-t border-slate-100">
-                                    <td className="px-2 py-2 text-xs text-slate-500">
-                                      {formatMonthLabel(row.monthKey)}
-                                    </td>
-                                    <td className="px-2 py-2 text-right">
-                                      {formatCurrency(row.incomeTotal)}
-                                    </td>
-                                    <td className="px-2 py-2 text-right">
-                                      {formatCurrency(row.expensesTotal)}
-                                    </td>
-                                    <td className="px-2 py-2 text-right font-semibold text-slate-900">
-                                      {formatCurrency(row.net)}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <FinanceKpiCard title="Total anual" value={annualStats.net} tone="green" />
+                            <FinanceKpiCard title="Promedio mensual" value={annualStats.avgNet} tone="blue" />
+                            <FinanceKpiCard
+                              title="Mejor mes"
+                              value={annualStats.bestMonth ? annualStats.bestMonth.net : 0}
+                              tone="green"
+                            />
+                            <FinanceKpiCard
+                              title="Peor mes"
+                              value={annualStats.worstMonth ? annualStats.worstMonth.net : 0}
+                              tone="rose"
+                            />
                           </div>
                         </div>
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                            Gráficos anuales
+                            Gráfico mensual del año
                           </p>
                           <div className="mt-4">
                             {annualChartData.length === 0 ? (
@@ -1350,6 +1506,7 @@ export default function FinanceModulePage() {
                         <th className="px-4 py-3">Categoría</th>
                         <th className="px-4 py-3">Estado</th>
                         <th className="px-4 py-3 text-right">Monto</th>
+                        <th className="px-4 py-3 text-right">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1373,11 +1530,33 @@ export default function FinanceModulePage() {
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">
                             {formatCurrency(expense.monto)}
                           </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                                onClick={() => handleEditExpense(expense)}
+                                disabled={isSubmitting}
+                                aria-label="Editar"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                                onClick={() => handleDeleteExpense(expense.id)}
+                                disabled={isSubmitting}
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                       {filteredExpenses.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="px-4 py-6 text-center text-xs text-slate-400">
+                          <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">
                             Sin gastos registrados en este mes.
                           </td>
                         </tr>
@@ -1398,6 +1577,7 @@ export default function FinanceModulePage() {
                         <th className="px-4 py-3">Cuenta</th>
                         <th className="px-4 py-3">Estado</th>
                         <th className="px-4 py-3 text-right">Monto</th>
+                        <th className="px-4 py-3 text-right">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1424,11 +1604,33 @@ export default function FinanceModulePage() {
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">
                             {formatCurrency(payment.montoFinal)}
                           </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                                onClick={() => handleEditPayment(payment)}
+                                disabled={isSubmitting}
+                                aria-label="Editar"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                                onClick={() => handleDeletePayment(payment.id)}
+                                disabled={isSubmitting}
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                       {filteredPayments.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">
+                          <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
                             Sin pagos registrados en este mes.
                           </td>
                         </tr>
@@ -1449,6 +1651,7 @@ export default function FinanceModulePage() {
                         <th className="px-4 py-3">Cuenta destino</th>
                         <th className="px-4 py-3">Estado</th>
                         <th className="px-4 py-3 text-right">Monto</th>
+                        <th className="px-4 py-3 text-right">Acciones</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1470,11 +1673,33 @@ export default function FinanceModulePage() {
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">
                             {formatCurrency(transfer.monto)}
                           </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                                onClick={() => handleEditTransfer(transfer)}
+                                disabled={isSubmitting}
+                                aria-label="Editar"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
+                                onClick={() => handleDeleteTransfer(transfer.id)}
+                                disabled={isSubmitting}
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                       {filteredTransfers.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">
+                          <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
                             Sin transferencias registradas en este mes.
                           </td>
                         </tr>
@@ -1743,11 +1968,14 @@ export default function FinanceModulePage() {
         onClose={() => {
           setIsModalOpen(false);
           setEditingMovement(null);
+          setEditingExpense(null);
+          setEditingPayment(null);
+          setEditingTransfer(null);
         }}
         onSubmit={handleCreateMovement}
         disabled={isSubmitting}
         isSubmitting={isSubmitting}
-        initialValues={incomeInitialValues}
+        initialValues={modalInitialValues}
       />
     </div>
   );
