@@ -34,7 +34,7 @@ export default function FinanceStatusSelect({
       {open ? (
         <div className="absolute left-0 top-9 z-30 min-w-[180px] rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
           {options.map((option) => {
-            const dotClass = option === "cancelled" ? "bg-rose-500" : "bg-amber-500";
+            const dotClass = option === "cancelled" ? "bg-emerald-500" : "bg-amber-500";
             return (
               <button
                 key={option}

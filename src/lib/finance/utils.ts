@@ -78,7 +78,7 @@ export function getTodayDateString() {
 export function getStatusLabel(status: "pending" | "cancelled") {
   switch (status) {
     case "cancelled":
-      return "Cancelado";
+      return "Pagado";
     default:
       return "Pendiente";
   }
@@ -87,7 +87,7 @@ export function getStatusLabel(status: "pending" | "cancelled") {
 export function getStatusTone(status: "pending" | "cancelled") {
   switch (status) {
     case "cancelled":
-      return "danger";
+      return "success";
     default:
       return "warning";
   }
