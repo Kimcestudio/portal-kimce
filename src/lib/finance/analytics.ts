@@ -88,24 +88,15 @@ export function computeMonthProjection(
   const monthMovements = movements.filter(
     (movement) =>
       movement.monthKey === monthKey &&
-      movement.status !== "cancelled" &&
       (account === "all" || movement.accountDestination === account),
   );
   const monthExpenses = expenses.filter((expense) => {
     const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
-    return (
-      expenseMonthKey === monthKey &&
-      expense.status !== "cancelled" &&
-      (account === "all" || expense.cuentaOrigen === account)
-    );
+    return expenseMonthKey === monthKey && (account === "all" || expense.cuentaOrigen === account);
   });
   const monthPayments = payments.filter((payment) => {
     const paymentMonthKey = payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
-    return (
-      paymentMonthKey === monthKey &&
-      payment.status !== "cancelled" &&
-      (account === "all" || payment.cuentaOrigen === account)
-    );
+    return paymentMonthKey === monthKey && (account === "all" || payment.cuentaOrigen === account);
   });
   const incomePaid = sumBy(monthMovements, (item) =>
     isPaid(item.status) ? item.tax?.total ?? item.amount : 0,
@@ -169,7 +160,7 @@ export function computeCashFlow({
 
   const incomePaid = sumBy(movements, (movement) => {
     if (!matchesPeriod(movement.monthKey)) return 0;
-    if (movement.status === "pending" || movement.status === "cancelled") return 0;
+    if (!isPaid(movement.status)) return 0;
     if (account !== "all" && movement.accountDestination !== account) return 0;
     return movement.tax?.total ?? movement.amount;
   });
@@ -177,7 +168,7 @@ export function computeCashFlow({
   const expensesPaid = sumBy(expenses, (expense) => {
     const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
     if (!matchesPeriod(expenseMonthKey)) return 0;
-    if (expense.status === "pending" || expense.status === "cancelled") return 0;
+    if (!isPaid(expense.status)) return 0;
     if (account !== "all" && expense.cuentaOrigen !== account) return 0;
     return expense.monto;
   });
@@ -185,7 +176,7 @@ export function computeCashFlow({
   const paymentsPaid = sumBy(payments, (payment) => {
     const paymentMonthKey = payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
     if (!matchesPeriod(paymentMonthKey)) return 0;
-    if (payment.status === "pending" || payment.status === "cancelled") return 0;
+    if (!isPaid(payment.status)) return 0;
     if (account !== "all" && payment.cuentaOrigen !== account) return 0;
     return payment.montoFinal;
   });
@@ -194,7 +185,7 @@ export function computeCashFlow({
     (totals, transfer) => {
       const transferMonthKey = getMonthKeyFromDate(transfer.fecha);
       if (!matchesPeriod(transferMonthKey)) return totals;
-      if (transfer.status === "pending" || transfer.status === "cancelled") return totals;
+      if (!isPaid(transfer.status)) return totals;
       if (account === "all") {
         if (transfer.tipoMovimiento === "INGRESO_CAJA") {
           totals.in += transfer.monto;
@@ -247,20 +238,17 @@ export function computeYearToDateTotals(
     monthKey.startsWith(yearPrefix) && monthKey <= lastMonthKey;
 
   const filteredMovements = movements.filter((movement) => {
-    if (movement.status === "cancelled") return false;
     if (!isWithinRange(movement.monthKey)) return false;
     return account === "all" || movement.accountDestination === account;
   });
   const filteredExpenses = expenses.filter((expense) => {
     const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
     if (!expenseMonthKey || !isWithinRange(expenseMonthKey)) return false;
-    if (expense.status === "cancelled") return false;
     return account === "all" || expense.cuentaOrigen === account;
   });
   const filteredPayments = payments.filter((payment) => {
     const paymentMonthKey = payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
     if (!paymentMonthKey || !isWithinRange(paymentMonthKey)) return false;
-    if (payment.status === "cancelled") return false;
     return account === "all" || payment.cuentaOrigen === account;
   });
   const totalIncome = sumBy(filteredMovements, (movement) => movement.tax?.total ?? movement.amount);
@@ -293,24 +281,15 @@ export function computeMonthlySeries(
     const monthMovements = movements.filter(
       (movement) =>
         movement.monthKey === monthKey &&
-        movement.status !== "cancelled" &&
         (account === "all" || movement.accountDestination === account),
     );
     const monthExpenses = expenses.filter((expense) => {
       const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
-      return (
-        expenseMonthKey === monthKey &&
-        expense.status !== "cancelled" &&
-        (account === "all" || expense.cuentaOrigen === account)
-      );
+      return expenseMonthKey === monthKey && (account === "all" || expense.cuentaOrigen === account);
     });
     const monthPayments = payments.filter((payment) => {
       const paymentMonthKey = payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
-      return (
-        paymentMonthKey === monthKey &&
-        payment.status !== "cancelled" &&
-        (account === "all" || payment.cuentaOrigen === account)
-      );
+      return paymentMonthKey === monthKey && (account === "all" || payment.cuentaOrigen === account);
     });
     const incomePaid = sumBy(monthMovements, (movement) =>
       isPaid(movement.status) ? movement.tax?.total ?? movement.amount : 0,
@@ -401,7 +380,7 @@ export function computeAlerts(
 }
 
 function isPaid(status: FinanceStatus) {
-  return status !== "pending" && status !== "cancelled";
+  return status !== "pending";
 }
 
 function buildMonthKeys(baseMonthKey: string, lastN: number) {

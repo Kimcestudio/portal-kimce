@@ -129,7 +129,7 @@ const s = (v?: string) => (v ?? "").trim();
 
 const statusOptions = [
   { value: "pending", label: "Pendiente" },
-  { value: "cancelled", label: "Cancelado" },
+  { value: "cancelled", label: "Pagado" },
 ];
 
 const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> } = {
