@@ -20,6 +20,7 @@ import FinanceModal, {
   type TransferFormValues,
 } from "@/components/finance/FinanceModal";
 import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
+import Card from "@/components/ui/Card";
 import {
   calcKpis,
   computeAlerts,
@@ -32,9 +33,10 @@ import {
 import { financeRefs } from "@/lib/finance/refs";
 import {
   formatDateOnly,
+  formatCurrency,
   formatMonthLabel,
   formatShortDate,
-  formatCurrency,
+  getStatusLabel,
   getMonthKey,
   getMonthKeyFromDate,
 } from "@/lib/finance/utils";
@@ -488,26 +490,6 @@ export default function FinanceModulePage() {
     }));
   }, [annualSeries]);
 
-  const annualKpis = useMemo(() => {
-    const totals = annualSeries.reduce(
-      (acc, row) => {
-        acc.incomePaid += row.incomePaid;
-        acc.incomePending += row.incomePending;
-        acc.expensesPaid += row.expensesPaid;
-        acc.paymentsPaid += row.paymentsPaid;
-        return acc;
-      },
-      {
-        incomePaid: 0,
-        incomePending: 0,
-        expensesPaid: 0,
-        paymentsPaid: 0,
-      },
-    );
-    const netIncome = totals.incomePaid - totals.expensesPaid;
-    return { ...totals, netIncome };
-  }, [annualSeries]);
-
   const actualExpenses = kpis.expensesPaid + projection.paymentsPaid;
   const actualNet = kpis.incomePaid - actualExpenses;
   const realVsProjectedRows = useMemo(
@@ -541,7 +523,7 @@ export default function FinanceModulePage() {
   const heroContent = useMemo(() => {
     if (isAnnualView) {
       return {
-        title: `ESTADO DEL AÑO – ${annualYear}`,
+        title: `Estado del año – ${annualYear}`,
         incomeLabel: "Ingresos totales",
         expensesLabel: "Egresos totales",
         cashFlowLabel: "Flujo de caja anual",
@@ -555,7 +537,7 @@ export default function FinanceModulePage() {
       };
     }
     return {
-      title: `ESTADO DEL MES – ${formatMonthLabel(filters.monthKey)}`,
+      title: `Estado del mes – ${formatMonthLabel(filters.monthKey)}`,
       incomeLabel: "Ingresos cobrados",
       expensesLabel: "Gastos pagados",
       cashFlowLabel: "Flujo de caja",
@@ -1233,22 +1215,27 @@ export default function FinanceModulePage() {
                     <>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                         <FinanceKpiCard
-                          title="Ingresos cobrados"
-                          value={annualKpis.incomePaid}
+                          title="Ingresos acumulados"
+                          value={annualStats.totalIncome}
                           tone="blue"
                         />
                         <FinanceKpiCard
-                          title="Pendiente por cobrar"
-                          value={annualKpis.incomePending}
-                          tone="amber"
-                        />
-                        <FinanceKpiCard
-                          title="Gastos pagados"
-                          value={annualKpis.expensesPaid}
+                          title="Egresos acumulados"
+                          value={annualStats.totalExpenses}
                           tone="rose"
                         />
-                        <FinanceKpiCard title="Flujo de caja" value={annualCashFlow.net} tone="slate" />
-                        <FinanceKpiCard title="Utilidad neta" value={annualKpis.netIncome} tone="green" />
+                        <FinanceKpiCard title="Flujo de caja anual" value={annualCashFlow.net} tone="slate" />
+                        <FinanceKpiCard title="Utilidad acumulada" value={annualStats.net} tone="green" />
+                        <Card className="border border-transparent bg-gradient-to-br from-[#fff7ed] via-[#ffedd5] to-white">
+                          <div className="space-y-2 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Margen acumulado
+                            </p>
+                            <p className="text-2xl font-semibold text-slate-900">
+                              {annualStats.margin.toFixed(1)}%
+                            </p>
+                          </div>
+                        </Card>
                       </div>
                       <div className="grid gap-4 lg:grid-cols-2">
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
@@ -1289,15 +1276,11 @@ export default function FinanceModulePage() {
                   ) : (
                     <>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                        <FinanceKpiCard title="Ingresos cobrados del mes" value={kpis.incomePaid} tone="blue" />
-                        <FinanceKpiCard
-                          title="Pendiente por cobrar del mes"
-                          value={kpis.incomePending}
-                          tone="amber"
-                        />
-                        <FinanceKpiCard title="Gastos pagados del mes" value={kpis.expensesPaid} tone="rose" />
-                        <FinanceKpiCard title="Flujo de caja del mes" value={monthlyCashFlow.net} tone="slate" />
-                        <FinanceKpiCard title="Utilidad neta del mes" value={kpis.netIncome} tone="green" />
+                        <FinanceKpiCard title="Ingresos cobrados" value={kpis.incomePaid} tone="blue" />
+                        <FinanceKpiCard title="Pendiente por cobrar" value={kpis.incomePending} tone="amber" />
+                        <FinanceKpiCard title="Gastos pagados" value={kpis.expensesPaid} tone="rose" />
+                        <FinanceKpiCard title="Flujo de caja" value={monthlyCashFlow.net} tone="slate" />
+                        <FinanceKpiCard title="Utilidad neta" value={kpis.netIncome} tone="green" />
                       </div>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
@@ -1835,7 +1818,9 @@ export default function FinanceModulePage() {
                       {incomeSummary.map((row) => (
                         <tr key={`${row.clientName}-${row.status}`} className="border-t border-slate-100">
                           <td className="px-4 py-3 text-xs text-slate-500">{row.clientName}</td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{row.status}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {getStatusLabel(row.status)}
+                          </td>
                           <td className="px-4 py-3 text-right text-xs text-slate-500">{row.count}</td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">
                             {formatCurrency(row.total)}
@@ -1869,7 +1854,9 @@ export default function FinanceModulePage() {
                       {expenseSummary.map((row) => (
                         <tr key={`${row.categoria}-${row.status}`} className="border-t border-slate-100">
                           <td className="px-4 py-3 text-xs text-slate-500">{row.categoria}</td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{row.status}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {getStatusLabel(row.status)}
+                          </td>
                           <td className="px-4 py-3 text-right text-xs text-slate-500">{row.count}</td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">
                             {formatCurrency(row.total)}
@@ -1940,7 +1927,9 @@ export default function FinanceModulePage() {
                           <td className="px-4 py-3 text-xs text-slate-500">
                             {transfer.tipoMovimiento}
                           </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{transfer.status}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {getStatusLabel(transfer.status)}
+                          </td>
                           <td className="px-4 py-3 text-right font-semibold text-slate-900">
                             {formatCurrency(transfer.monto)}
                           </td>
