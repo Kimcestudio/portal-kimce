@@ -1296,8 +1296,8 @@ export default function FinanceModulePage() {
                           tone="amber"
                         />
                         <FinanceKpiCard title="Gastos pagados del mes" value={kpis.expensesPaid} tone="rose" />
-                        <FinanceKpiCard title="Utilidad neta del mes" value={kpis.netIncome} tone="green" />
                         <FinanceKpiCard title="Flujo de caja del mes" value={monthlyCashFlow.net} tone="slate" />
+                        <FinanceKpiCard title="Utilidad neta del mes" value={kpis.netIncome} tone="green" />
                       </div>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
