@@ -77,7 +77,7 @@ export default function FinanceModulePage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<FinanceModalType>("income");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
   const [editingMovement, setEditingMovement] = useState<FinanceMovement | null>(null);
 
   const logDev = (...args: unknown[]) => {
@@ -121,7 +121,7 @@ export default function FinanceModulePage() {
       // eslint-disable-next-line no-console
       console.error(`[FINANCE] ${label} snapshot error`, error.code ?? error);
       if (process.env.NODE_ENV === "development") {
-        setToast(`No tienes permisos para ver ${label}.`);
+        setToast({ message: `No tienes permisos para ver ${label}.`, tone: "error" });
       }
     };
 
@@ -130,7 +130,7 @@ export default function FinanceModulePage() {
       movementsQuery,
       (snapshot) => {
         const normalized = snapshot.docs.map((doc) => {
-          const data = doc.data() as FinanceMovement;
+          const { id: _ignored, ...data } = doc.data() as FinanceMovement;
           return {
             ...data,
             id: doc.id,
@@ -156,10 +156,13 @@ export default function FinanceModulePage() {
     const unsubscribeExpenses = onSnapshot(
       expensesQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Expense),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as Expense;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setExpenses(items);
         logDev("[FINANCE] expenses snapshot", items.length);
         if (!expensesLoaded) {
@@ -178,10 +181,13 @@ export default function FinanceModulePage() {
     const unsubscribePayments = onSnapshot(
       paymentsQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as CollaboratorPayment),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as CollaboratorPayment;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setPayments(items);
         logDev("[FINANCE] payments snapshot", items.length);
         if (!paymentsLoaded) {
@@ -200,10 +206,13 @@ export default function FinanceModulePage() {
     const unsubscribeTransfers = onSnapshot(
       transfersQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as TransferMovement),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as TransferMovement;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setTransfers(items);
         logDev("[FINANCE] transfers snapshot", items.length);
         if (!transfersLoaded) {
@@ -222,10 +231,13 @@ export default function FinanceModulePage() {
     const unsubscribeCollaborators = onSnapshot(
       collaboratorsQuery,
       (snapshot) => {
-        const items = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...(doc.data() as Collaborator),
-        }));
+        const items = snapshot.docs.map((doc) => {
+          const { id: _ignored, ...data } = doc.data() as Collaborator;
+          return {
+            ...data,
+            id: doc.id,
+          };
+        });
         setCollaborators(items);
         logDev("[FINANCE] collaborators snapshot", items.length);
         if (!collaboratorsLoaded) {
@@ -340,7 +352,7 @@ export default function FinanceModulePage() {
   };
 
   const handleCreateMovement = async (type: FinanceModalType, values: unknown) => {
-    if (isSubmitting) return;
+    if (isSubmitting) return false;
     setIsSubmitting(true);
     try {
       if (type === "income") {
@@ -390,10 +402,10 @@ export default function FinanceModulePage() {
         };
         if (editingMovement) {
           await updateIncomeMovement(editingMovement.id, incomePayload);
-          setToast("Ingreso actualizado");
+          setToast({ message: "Ingreso actualizado", tone: "success" });
         } else {
           await createIncomeMovement(incomePayload);
-          setToast("Ingreso creado");
+          setToast({ message: "Ingreso creado", tone: "success" });
         }
       }
 
@@ -413,7 +425,7 @@ export default function FinanceModulePage() {
           activo: payload.activo,
           notas: payload.notas,
         });
-        setToast("Colaborador creado");
+        setToast({ message: "Colaborador creado", tone: "success" });
       }
 
       if (type === "collaborator_payment") {
@@ -432,7 +444,7 @@ export default function FinanceModulePage() {
           referencia: payload.referencia,
           notas: payload.notas,
         });
-        setToast("Pago registrado");
+        setToast({ message: "Pago registrado", tone: "success" });
       }
 
       if (type === "expense") {
@@ -450,7 +462,7 @@ export default function FinanceModulePage() {
           referencia: payload.referencia,
           notas: payload.notas,
         });
-        setToast("Gasto creado");
+        setToast({ message: "Gasto creado", tone: "success" });
       }
 
       if (type === "transfer") {
@@ -468,9 +480,20 @@ export default function FinanceModulePage() {
           referencia: payload.referencia,
           notas: payload.notas,
         });
-        setToast("Movimiento creado");
+        setToast({ message: "Movimiento creado", tone: "success" });
       }
+      setEditingMovement(null);
       setIsModalOpen(false);
+      return true;
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("[FINANCE] save error", error);
+      const message =
+        error instanceof Error && error.message
+          ? `Error al guardar: ${error.message}`
+          : "Error inesperado al guardar.";
+      setToast({ message, tone: "error" });
+      return false;
     } finally {
       setIsSubmitting(false);
     }
@@ -509,27 +532,27 @@ export default function FinanceModulePage() {
 
   const handleStatusChange = async (id: string, status: FinanceStatus) => {
     await updateFinanceMovementStatus(id, status);
-    setToast("Estado actualizado");
+    setToast({ message: "Estado actualizado", tone: "success" });
   };
 
   const handleExpenseStatusChange = async (id: string, status: FinanceStatus) => {
     await updateExpenseStatus(id, status);
-    setToast("Estado actualizado");
+    setToast({ message: "Estado actualizado", tone: "success" });
   };
 
   const handleTransferStatusChange = async (id: string, status: FinanceStatus) => {
     await updateTransferStatus(id, status);
-    setToast("Estado actualizado");
+    setToast({ message: "Estado actualizado", tone: "success" });
   };
 
   const handlePaymentStatusChange = async (id: string, status: FinanceStatus) => {
     await updateCollaboratorPaymentStatus(id, status);
-    setToast("Estado actualizado");
+    setToast({ message: "Estado actualizado", tone: "success" });
   };
 
   const handleDeleteMovement = async (id: string) => {
     await deleteFinanceMovement(id);
-    setToast("Movimiento eliminado");
+    setToast({ message: "Movimiento eliminado", tone: "success" });
   };
 
   return (
@@ -589,8 +612,14 @@ export default function FinanceModulePage() {
           </div>
 
           {toast ? (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-700">
-              {toast}
+            <div
+              className={`rounded-2xl border px-4 py-2 text-xs ${
+                toast.tone === "error"
+                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              {toast.message}
             </div>
           ) : null}
 
@@ -805,6 +834,7 @@ export default function FinanceModulePage() {
         }}
         onSubmit={handleCreateMovement}
         disabled={isSubmitting}
+        isSubmitting={isSubmitting}
         initialValues={incomeInitialValues}
       />
     </div>

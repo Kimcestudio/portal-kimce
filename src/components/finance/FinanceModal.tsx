@@ -494,8 +494,12 @@ interface FinanceModalProps {
   isOpen: boolean;
   modalType: FinanceModalType;
   onClose: () => void;
-  onSubmit: (modalType: FinanceModalType, values: FinanceFormValuesMap[FinanceModalType]) => void;
+  onSubmit: (
+    modalType: FinanceModalType,
+    values: FinanceFormValuesMap[FinanceModalType],
+  ) => Promise<boolean>;
   disabled?: boolean;
+  isSubmitting?: boolean;
   initialValues?: Partial<FinanceFormValuesMap[FinanceModalType]> | null;
 }
 
@@ -505,6 +509,7 @@ export default function FinanceModal({
   onClose,
   onSubmit,
   disabled,
+  isSubmitting,
   initialValues,
 }: FinanceModalProps) {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
@@ -814,15 +819,17 @@ export default function FinanceModal({
           <button
             type="button"
             className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)]"
-            onClick={() => {
+            onClick={async () => {
               if (!isValid) return;
               if (disabled) return;
-              onSubmit(modalType, form);
-              setForm(config.defaultValues);
+              const success = await onSubmit(modalType, form);
+              if (success) {
+                setForm(config.defaultValues);
+              }
             }}
             disabled={disabled || !isValid}
           >
-            Guardar
+            {isSubmitting ? "Guardando..." : "Guardar"}
           </button>
         </div>
       </div>
