@@ -4,6 +4,7 @@ import type {
   FinanceFilters,
   FinanceMovement,
   FinanceStatus,
+  TransferMovement,
 } from "@/lib/finance/types";
 import { getMonthKeyFromDate } from "@/lib/finance/utils";
 
@@ -139,6 +140,96 @@ export function computeMonthProjection(
     expensesProjected,
     projectedNet,
     projectedMargin,
+  };
+}
+
+export function computeCashFlow({
+  movements,
+  expenses,
+  payments,
+  transfers,
+  monthKey,
+  year,
+  account = "all",
+}: {
+  movements: FinanceMovement[];
+  expenses: Expense[];
+  payments: CollaboratorPayment[];
+  transfers: TransferMovement[];
+  monthKey?: string;
+  year?: number;
+  account?: FinanceFilters["account"];
+}) {
+  const matchesPeriod = (value: string | null | undefined) => {
+    if (!value) return false;
+    if (monthKey) return value === monthKey;
+    if (year) return value.startsWith(`${year}-`);
+    return true;
+  };
+
+  const incomePaid = sumBy(movements, (movement) => {
+    if (!matchesPeriod(movement.monthKey)) return 0;
+    if (movement.status === "pending" || movement.status === "cancelled") return 0;
+    if (account !== "all" && movement.accountDestination !== account) return 0;
+    return movement.tax?.total ?? movement.amount;
+  });
+
+  const expensesPaid = sumBy(expenses, (expense) => {
+    const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
+    if (!matchesPeriod(expenseMonthKey)) return 0;
+    if (expense.status === "pending" || expense.status === "cancelled") return 0;
+    if (account !== "all" && expense.cuentaOrigen !== account) return 0;
+    return expense.monto;
+  });
+
+  const paymentsPaid = sumBy(payments, (payment) => {
+    const paymentMonthKey = payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
+    if (!matchesPeriod(paymentMonthKey)) return 0;
+    if (payment.status === "pending" || payment.status === "cancelled") return 0;
+    if (account !== "all" && payment.cuentaOrigen !== account) return 0;
+    return payment.montoFinal;
+  });
+
+  const transferTotals = transfers.reduce(
+    (totals, transfer) => {
+      const transferMonthKey = getMonthKeyFromDate(transfer.fecha);
+      if (!matchesPeriod(transferMonthKey)) return totals;
+      if (transfer.status === "pending" || transfer.status === "cancelled") return totals;
+      if (account === "all") {
+        if (transfer.tipoMovimiento === "INGRESO_CAJA") {
+          totals.in += transfer.monto;
+        }
+        if (transfer.tipoMovimiento === "SALIDA_CAJA") {
+          totals.out += transfer.monto;
+        }
+        return totals;
+      }
+      if (transfer.tipoMovimiento === "TRANSFERENCIA") {
+        if (transfer.cuentaOrigen === account) totals.out += transfer.monto;
+        if (transfer.cuentaDestino === account) totals.in += transfer.monto;
+      }
+      if (transfer.tipoMovimiento === "INGRESO_CAJA" && transfer.cuentaDestino === account) {
+        totals.in += transfer.monto;
+      }
+      if (transfer.tipoMovimiento === "SALIDA_CAJA" && transfer.cuentaOrigen === account) {
+        totals.out += transfer.monto;
+      }
+      return totals;
+    },
+    { in: 0, out: 0 },
+  );
+
+  const cashIn = incomePaid + transferTotals.in;
+  const cashOut = expensesPaid + paymentsPaid + transferTotals.out;
+  return {
+    incomePaid,
+    expensesPaid,
+    paymentsPaid,
+    transferIn: transferTotals.in,
+    transferOut: transferTotals.out,
+    cashIn,
+    cashOut,
+    net: cashIn - cashOut,
   };
 }
 

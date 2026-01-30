@@ -23,6 +23,7 @@ import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
 import {
   calcKpis,
   computeAlerts,
+  computeCashFlow,
   computeMonthProjection,
   computeMonthlySeries,
   computeYearToDateTotals,
@@ -366,6 +367,19 @@ export default function FinanceModulePage() {
     [expenses, filters.account, filters.monthKey, movements, payments],
   );
 
+  const monthlyCashFlow = useMemo(
+    () =>
+      computeCashFlow({
+        movements,
+        expenses,
+        payments,
+        transfers,
+        monthKey: filters.monthKey,
+        account: filters.account,
+      }),
+    [expenses, filters.account, filters.monthKey, movements, payments, transfers],
+  );
+
   const currentDate = useMemo(() => new Date(), []);
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth() + 1;
@@ -399,6 +413,21 @@ export default function FinanceModulePage() {
       filters.account,
     );
   }, [annualYear, currentMonth, currentYear, expenses, filters.account, movements, payments]);
+
+  const annualCashFlow = useMemo(
+    () =>
+      computeCashFlow({
+        movements,
+        expenses,
+        payments,
+        transfers,
+        year: annualYear,
+        account: filters.account,
+      }),
+    [annualYear, expenses, filters.account, movements, payments, transfers],
+  );
+
+  const averageMonthlyCashFlow = annualSeries.length > 0 ? annualCashFlow.net / 12 : 0;
 
   const annualStats = useMemo(() => {
     if (annualSeries.length === 0) {
@@ -463,6 +492,51 @@ export default function FinanceModulePage() {
 
   const actualExpenses = kpis.expensesPaid + projection.paymentsPaid;
   const actualNet = kpis.incomePaid - actualExpenses;
+
+  const heroContent = useMemo(() => {
+    if (isAnnualView) {
+      return {
+        title: `Estado del año – ${annualYear}`,
+        incomeLabel: "Ingresos totales",
+        expensesLabel: "Egresos totales",
+        cashFlowLabel: "Flujo de caja anual",
+        netLabel: "Utilidad anual",
+        marginLabel: "Margen anual",
+        incomePaid: annualStats.totalIncome,
+        expensesPaid: annualStats.totalExpenses,
+        cashFlow: annualCashFlow.net,
+        netIncome: annualStats.net,
+        margin: annualStats.margin,
+      };
+    }
+    return {
+      title: `Estado del mes – ${formatMonthLabel(filters.monthKey)}`,
+      incomeLabel: "Ingresos cobrados",
+      expensesLabel: "Gastos pagados",
+      cashFlowLabel: "Flujo de caja",
+      netLabel: "Utilidad neta",
+      marginLabel: "Margen neto",
+      incomePaid: kpis.incomePaid,
+      expensesPaid: kpis.expensesPaid,
+      cashFlow: monthlyCashFlow.net,
+      netIncome: kpis.netIncome,
+      margin: kpis.margin,
+    };
+  }, [
+    annualCashFlow.net,
+    annualStats.margin,
+    annualStats.net,
+    annualStats.totalExpenses,
+    annualStats.totalIncome,
+    annualYear,
+    filters.monthKey,
+    isAnnualView,
+    kpis.expensesPaid,
+    kpis.incomePaid,
+    kpis.margin,
+    kpis.netIncome,
+    monthlyCashFlow.net,
+  ]);
 
   const alerts = useMemo(() => {
     const bestMonthLabel = isAnnualView && annualStats.bestMonth
@@ -956,11 +1030,17 @@ export default function FinanceModulePage() {
                     </button>
                   </div>
                   <FinanceHeroCard
-                    monthKey={filters.monthKey}
-                    incomePaid={kpis.incomePaid}
-                    expensesPaid={kpis.expensesPaid}
-                    netIncome={kpis.netIncome}
-                    margin={kpis.margin}
+                    title={heroContent.title}
+                    incomeLabel={heroContent.incomeLabel}
+                    expensesLabel={heroContent.expensesLabel}
+                    cashFlowLabel={heroContent.cashFlowLabel}
+                    netLabel={heroContent.netLabel}
+                    marginLabel={heroContent.marginLabel}
+                    incomePaid={heroContent.incomePaid}
+                    expensesPaid={heroContent.expensesPaid}
+                    cashFlow={heroContent.cashFlow}
+                    netIncome={heroContent.netIncome}
+                    margin={heroContent.margin}
                   />
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
@@ -1061,10 +1141,11 @@ export default function FinanceModulePage() {
                       </div>
                     </div>
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                     <FinanceKpiCard title="Ingresos cobrados" value={kpis.incomePaid} tone="blue" />
                     <FinanceKpiCard title="Pendiente por cobrar" value={kpis.incomePending} tone="amber" />
                     <FinanceKpiCard title="Gastos pagados" value={kpis.expensesPaid} tone="rose" />
+                    <FinanceKpiCard title="Flujo de caja" value={monthlyCashFlow.net} tone="slate" />
                     <FinanceKpiCard title="Utilidad neta" value={kpis.netIncome} tone="green" />
                   </div>
                   <div className="grid gap-4 lg:grid-cols-2">
@@ -1131,50 +1212,60 @@ export default function FinanceModulePage() {
                         ) : null}
                       </div>
                       {isAnnualView ? (
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                              Top 5 clientes
-                            </p>
-                            <ul className="mt-3 space-y-2 text-sm">
-                              {topClients.length === 0 ? (
-                                <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400">
-                                  Sin ingresos en el periodo.
-                                </li>
-                              ) : (
-                                topClients.map((client) => (
-                                  <li key={client.name} className="flex items-center justify-between">
-                                    <span className="text-xs text-slate-500">{client.name}</span>
-                                    <span className="text-sm font-semibold text-slate-900">
-                                      {formatCurrency(client.total)}
-                                    </span>
-                                  </li>
-                                ))
-                              )}
-                            </ul>
+                        <>
+                          <div className="grid gap-4 sm:grid-cols-2">
+                            <FinanceKpiCard title="Flujo de caja anual" value={annualCashFlow.net} tone="slate" />
+                            <FinanceKpiCard
+                              title="Promedio flujo mensual"
+                              value={averageMonthlyCashFlow}
+                              tone="blue"
+                            />
                           </div>
-                          <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                              Top 5 categorías de gasto
-                            </p>
-                            <ul className="mt-3 space-y-2 text-sm">
-                              {topExpenseCategories.length === 0 ? (
-                                <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400">
-                                  Sin gastos en el periodo.
-                                </li>
-                              ) : (
-                                topExpenseCategories.map((category) => (
-                                  <li key={category.name} className="flex items-center justify-between">
-                                    <span className="text-xs text-slate-500">{category.name}</span>
-                                    <span className="text-sm font-semibold text-slate-900">
-                                      {formatCurrency(category.total)}
-                                    </span>
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                Top 5 clientes
+                              </p>
+                              <ul className="mt-3 space-y-2 text-sm">
+                                {topClients.length === 0 ? (
+                                  <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400">
+                                    Sin ingresos en el periodo.
                                   </li>
-                                ))
-                              )}
-                            </ul>
+                                ) : (
+                                  topClients.map((client) => (
+                                    <li key={client.name} className="flex items-center justify-between">
+                                      <span className="text-xs text-slate-500">{client.name}</span>
+                                      <span className="text-sm font-semibold text-slate-900">
+                                        {formatCurrency(client.total)}
+                                      </span>
+                                    </li>
+                                  ))
+                                )}
+                              </ul>
+                            </div>
+                            <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                                Top 5 categorías de gasto
+                              </p>
+                              <ul className="mt-3 space-y-2 text-sm">
+                                {topExpenseCategories.length === 0 ? (
+                                  <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400">
+                                    Sin gastos en el periodo.
+                                  </li>
+                                ) : (
+                                  topExpenseCategories.map((category) => (
+                                    <li key={category.name} className="flex items-center justify-between">
+                                      <span className="text-xs text-slate-500">{category.name}</span>
+                                      <span className="text-sm font-semibold text-slate-900">
+                                        {formatCurrency(category.total)}
+                                      </span>
+                                    </li>
+                                  ))
+                                )}
+                              </ul>
+                            </div>
                           </div>
-                        </div>
+                        </>
                       ) : null}
                       <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
