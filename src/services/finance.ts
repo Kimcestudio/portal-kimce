@@ -207,6 +207,48 @@ export async function updateCollaboratorPaymentStatus(id: string, status: Financ
   });
 }
 
+export async function updateExpense(
+  id: string,
+  updates: Partial<Omit<Expense, "id" | "createdAt" | "updatedAt">>,
+) {
+  const nextUpdates = normalizeExpenseUpdates(updates);
+  const cleanedUpdates = Object.fromEntries(
+    Object.entries(nextUpdates).filter(([, value]) => value !== undefined),
+  );
+  await updateDoc(doc(financeRefs.expensesRef, id), {
+    ...cleanedUpdates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function updateCollaboratorPayment(
+  id: string,
+  updates: Partial<Omit<CollaboratorPayment, "id" | "createdAt" | "updatedAt">>,
+) {
+  const nextUpdates = normalizeCollaboratorPaymentUpdates(updates);
+  const cleanedUpdates = Object.fromEntries(
+    Object.entries(nextUpdates).filter(([, value]) => value !== undefined),
+  );
+  await updateDoc(doc(financeRefs.collaboratorPaymentsRef, id), {
+    ...cleanedUpdates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function updateTransfer(
+  id: string,
+  updates: Partial<Omit<TransferMovement, "id" | "createdAt" | "updatedAt">>,
+) {
+  const nextUpdates = normalizeTransferUpdates(updates);
+  const cleanedUpdates = Object.fromEntries(
+    Object.entries(nextUpdates).filter(([, value]) => value !== undefined),
+  );
+  await updateDoc(doc(financeRefs.transfersRef, id), {
+    ...cleanedUpdates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
 export async function updateIncomeMovement(
   id: string,
   updates: Partial<Omit<FinanceMovement, "id" | "type" | "createdAt" | "monthKey">>,
@@ -225,13 +267,25 @@ export async function deleteFinanceMovement(id: string) {
   await deleteDoc(doc(financeRefs.movementsRef, id));
 }
 
+export async function deleteExpense(id: string) {
+  await deleteDoc(doc(financeRefs.expensesRef, id));
+}
+
+export async function deleteCollaboratorPayment(id: string) {
+  await deleteDoc(doc(financeRefs.collaboratorPaymentsRef, id));
+}
+
+export async function deleteTransfer(id: string) {
+  await deleteDoc(doc(financeRefs.transfersRef, id));
+}
+
 function normalizeStatus(value: unknown): FinanceStatus {
   if (value === "pending" || value === "cancelled") {
     return value;
   }
   if (value === "PENDIENTE") return "pending";
   if (value === "CANCELADO") return "cancelled";
-  if (value === "PAGADO" || value === "PAGADA") return "pending";
+  if (value === "PAGADO" || value === "PAGADA") return "cancelled";
   return "pending";
 }
 
@@ -249,6 +303,39 @@ function normalizeMovementUpdates(
     expectedPayDate,
     status: updates.status ? normalizeStatus(updates.status) : undefined,
     monthKey: incomeDate ? getMonthKeyFromDate(incomeDate) ?? undefined : undefined,
+  };
+}
+
+function normalizeExpenseUpdates(updates: Partial<Omit<Expense, "id" | "createdAt" | "updatedAt">>) {
+  const fechaGasto = updates.fechaGasto ? formatDateOnly(updates.fechaGasto) ?? updates.fechaGasto : undefined;
+  return {
+    ...updates,
+    fechaGasto,
+    status: updates.status ? normalizeStatus(updates.status) : undefined,
+    monthKey: fechaGasto ? getMonthKeyFromDate(fechaGasto) ?? undefined : undefined,
+  };
+}
+
+function normalizeCollaboratorPaymentUpdates(
+  updates: Partial<Omit<CollaboratorPayment, "id" | "createdAt" | "updatedAt">>,
+) {
+  const fechaPago = updates.fechaPago ? formatDateOnly(updates.fechaPago) ?? updates.fechaPago : undefined;
+  return {
+    ...updates,
+    fechaPago,
+    status: updates.status ? normalizeStatus(updates.status) : undefined,
+    monthKey: fechaPago ? getMonthKeyFromDate(fechaPago) ?? undefined : undefined,
+  };
+}
+
+function normalizeTransferUpdates(
+  updates: Partial<Omit<TransferMovement, "id" | "createdAt" | "updatedAt">>,
+) {
+  const fecha = updates.fecha ? formatDateOnly(updates.fecha) ?? updates.fecha : undefined;
+  return {
+    ...updates,
+    fecha,
+    status: updates.status ? normalizeStatus(updates.status) : undefined,
   };
 }
 
