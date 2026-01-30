@@ -24,5 +24,30 @@ service cloud.firestore {
       allow read, list: if isSignedIn();
       allow write: if isAdmin();
     }
+
+    match /finance_movements/{docId} {
+      allow read, list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /expenses/{docId} {
+      allow read, list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /transfers/{docId} {
+      allow read, list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /collaboratorPayments/{docId} {
+      allow read, list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /collaborators/{docId} {
+      allow read, list: if isAdmin();
+      allow write: if isAdmin();
+    }
   }
 }
