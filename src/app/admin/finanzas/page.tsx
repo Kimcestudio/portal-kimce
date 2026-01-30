@@ -380,9 +380,13 @@ export default function FinanceModulePage() {
     [expenses, filters.account, filters.monthKey, movements, payments, transfers],
   );
 
-  const currentDate = useMemo(() => new Date(), []);
-  const currentYear = currentDate.getFullYear();
-  const currentMonth = currentDate.getMonth() + 1;
+  const selectedMonthInfo = useMemo(() => {
+    const [yearPart, monthPart] = filters.monthKey.split("-");
+    return {
+      year: Number(yearPart),
+      month: Number(monthPart),
+    };
+  }, [filters.monthKey]);
 
   const monthlySeries = useMemo(
     () => computeMonthlySeries(movements, expenses, payments, filters.monthKey, 12, filters.account),
@@ -403,16 +407,26 @@ export default function FinanceModulePage() {
   );
 
   const ytdTotals = useMemo(() => {
-    const endMonth = annualYear === currentYear ? currentMonth : 12;
+    const year = isAnnualView ? annualYear : selectedMonthInfo.year;
+    const endMonth = isAnnualView ? 12 : selectedMonthInfo.month;
     return computeYearToDateTotals(
       movements,
       expenses,
       payments,
-      annualYear,
-      endMonth,
+      Number.isNaN(year) ? annualYear : year,
+      Number.isNaN(endMonth) ? 12 : endMonth,
       filters.account,
     );
-  }, [annualYear, currentMonth, currentYear, expenses, filters.account, movements, payments]);
+  }, [
+    annualYear,
+    expenses,
+    filters.account,
+    isAnnualView,
+    movements,
+    payments,
+    selectedMonthInfo.month,
+    selectedMonthInfo.year,
+  ]);
 
   const annualCashFlow = useMemo(
     () =>
@@ -426,8 +440,6 @@ export default function FinanceModulePage() {
       }),
     [annualYear, expenses, filters.account, movements, payments, transfers],
   );
-
-  const averageMonthlyCashFlow = annualSeries.length > 0 ? annualCashFlow.net / 12 : 0;
 
   const annualStats = useMemo(() => {
     if (annualSeries.length === 0) {
@@ -466,32 +478,35 @@ export default function FinanceModulePage() {
     }));
   }, [annualSeries]);
 
-  const topClients = useMemo(() => {
-    const map = new Map<string, number>();
-    ytdTotals.movements.forEach((movement) => {
-      const current = map.get(movement.clientName) ?? 0;
-      map.set(movement.clientName, current + (movement.tax?.total ?? movement.amount));
-    });
-    return Array.from(map.entries())
-      .map(([name, total]) => ({ name, total }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
-  }, [ytdTotals.movements]);
-
-  const topExpenseCategories = useMemo(() => {
-    const map = new Map<string, number>();
-    ytdTotals.expenses.forEach((expense) => {
-      const current = map.get(expense.categoria) ?? 0;
-      map.set(expense.categoria, current + expense.monto);
-    });
-    return Array.from(map.entries())
-      .map(([name, total]) => ({ name, total }))
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5);
-  }, [ytdTotals.expenses]);
-
   const actualExpenses = kpis.expensesPaid + projection.paymentsPaid;
   const actualNet = kpis.incomePaid - actualExpenses;
+  const realVsProjectedRows = useMemo(
+    () => [
+      {
+        label: "Ingresos",
+        real: kpis.incomePaid,
+        projected: projection.incomeProjected,
+      },
+      {
+        label: "Egresos",
+        real: actualExpenses,
+        projected: projection.expensesProjected,
+      },
+      {
+        label: "Utilidad",
+        real: actualNet,
+        projected: projection.projectedNet,
+      },
+    ],
+    [
+      actualExpenses,
+      actualNet,
+      kpis.incomePaid,
+      projection.expensesProjected,
+      projection.incomeProjected,
+      projection.projectedNet,
+    ],
+  );
 
   const heroContent = useMemo(() => {
     if (isAnnualView) {
@@ -539,20 +554,15 @@ export default function FinanceModulePage() {
   ]);
 
   const alerts = useMemo(() => {
-    const bestMonthLabel = isAnnualView && annualStats.bestMonth
-      ? formatMonthLabel(annualStats.bestMonth.monthKey)
-      : null;
-    return computeAlerts(
-      {
-        projectedIncome: projection.incomeProjected,
-        projectedExpenses: projection.expensesProjected,
-        projectedNet: projection.projectedNet,
-        projectedMargin: projection.projectedMargin,
-        incomePending: projection.incomePending,
-      },
-      { bestMonthLabel },
-    );
-  }, [annualStats.bestMonth, isAnnualView, projection]);
+    if (isAnnualView) return [];
+    return computeAlerts({
+      projectedIncome: projection.incomeProjected,
+      projectedExpenses: projection.expensesProjected,
+      projectedNet: projection.projectedNet,
+      projectedMargin: projection.projectedMargin,
+      incomePending: projection.incomePending,
+    });
+  }, [isAnnualView, projection]);
 
   const monthSummary = useMemo(() => {
     const monthMovements = movements.filter((movement) => {
@@ -915,7 +925,9 @@ export default function FinanceModulePage() {
               </p>
               <h1 className="text-2xl font-semibold text-slate-900">Finanzas</h1>
               <p className="text-sm text-slate-500">
-                {formatMonthLabel(filters.monthKey)} · Control mensual de ingresos.
+                {isAnnualView
+                  ? `${annualYear} · Resumen anual de finanzas.`
+                  : `${formatMonthLabel(filters.monthKey)} · Control mensual de ingresos.`}
               </p>
               {process.env.NODE_ENV === "development" && db.app.options.projectId ? (
                 <p className="text-xs text-slate-400">
@@ -1042,165 +1054,71 @@ export default function FinanceModulePage() {
                     netIncome={heroContent.netIncome}
                     margin={heroContent.margin}
                   />
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                          Proyección del mes
-                        </p>
-                        <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">
-                          Estimado
-                        </span>
-                      </div>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <div>
-                          <p className="text-xs text-slate-500">Ingresos proyectados</p>
-                          <p className="text-lg font-semibold text-slate-900">
-                            {formatCurrency(projection.incomeProjected)}
+                  {isAnnualView ? (
+                    <>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                        <FinanceKpiCard
+                          title="Ingresos acumulados del año"
+                          value={annualStats.totalIncome}
+                          tone="blue"
+                        />
+                        <FinanceKpiCard
+                          title="Egresos acumulados del año"
+                          value={annualStats.totalExpenses}
+                          tone="rose"
+                        />
+                        <FinanceKpiCard title="Utilidad acumulada" value={annualStats.net} tone="green" />
+                        <div className="rounded-2xl border border-slate-200/60 bg-slate-50/80 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Margen anual
+                          </p>
+                          <p className="mt-2 text-2xl font-semibold text-slate-900">
+                            {annualStats.margin.toFixed(1)}%
                           </p>
                         </div>
-                        <div>
-                          <p className="text-xs text-slate-500">Egresos proyectados</p>
-                          <p className="text-lg font-semibold text-slate-900">
-                            {formatCurrency(projection.expensesProjected)}
+                        <FinanceKpiCard title="Flujo de caja anual" value={annualCashFlow.net} tone="slate" />
+                      </div>
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                            Vista anual · Resumen por mes
                           </p>
+                          <div className="mt-4 overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                              <thead className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                <tr>
+                                  <th className="px-2 py-2">Mes</th>
+                                  <th className="px-2 py-2 text-right">Ingresos</th>
+                                  <th className="px-2 py-2 text-right">Egresos</th>
+                                  <th className="px-2 py-2 text-right">Utilidad</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {annualSeries.map((row) => (
+                                  <tr key={row.monthKey} className="border-t border-slate-100">
+                                    <td className="px-2 py-2 text-xs text-slate-500">
+                                      {formatMonthLabel(row.monthKey)}
+                                    </td>
+                                    <td className="px-2 py-2 text-right">
+                                      {formatCurrency(row.incomeTotal)}
+                                    </td>
+                                    <td className="px-2 py-2 text-right">
+                                      {formatCurrency(row.expensesTotal)}
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-semibold text-slate-900">
+                                      {formatCurrency(row.net)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs text-slate-500">Utilidad proyectada</p>
-                          <p className="text-lg font-semibold text-slate-900">
-                            {formatCurrency(projection.projectedNet)}
+                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                            Gráficos anuales
                           </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-slate-500">Margen proyectado</p>
-                          <p className="text-lg font-semibold text-slate-900">
-                            {projection.projectedMargin.toFixed(1)}%
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                        Real vs Proyectado
-                      </p>
-                      <div className="mt-4 space-y-3 text-sm">
-                        {[
-                          {
-                            label: "Ingresos",
-                            real: kpis.incomePaid,
-                            projected: projection.incomeProjected,
-                          },
-                          {
-                            label: "Egresos",
-                            real: actualExpenses,
-                            projected: projection.expensesProjected,
-                          },
-                          {
-                            label: "Utilidad",
-                            real: actualNet,
-                            projected: projection.projectedNet,
-                          },
-                        ].map((row) => {
-                          const delta = row.projected - row.real;
-                          const percent = row.real !== 0 ? (delta / Math.abs(row.real)) * 100 : 0;
-                          return (
-                            <div key={row.label} className="flex items-center justify-between gap-4">
-                              <div>
-                                <p className="text-xs text-slate-500">{row.label}</p>
-                                <p className="font-semibold text-slate-900">
-                                  {formatCurrency(row.real)} → {formatCurrency(row.projected)}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-xs text-slate-500">Δ</p>
-                                <p className={`font-semibold ${delta >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                                  {formatCurrency(delta)} ({percent.toFixed(1)}%)
-                                </p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                      Acumulado YTD {annualYear}
-                    </p>
-                    <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                      <FinanceKpiCard title="Ingresos acumulados" value={ytdTotals.totalIncome} tone="blue" />
-                      <FinanceKpiCard title="Egresos acumulados" value={ytdTotals.totalExpenses} tone="rose" />
-                      <FinanceKpiCard title="Utilidad acumulada" value={ytdTotals.net} tone="green" />
-                      <div className="rounded-2xl border border-slate-200/60 bg-slate-50/80 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                          Margen acumulado
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold text-slate-900">
-                          {ytdTotals.margin.toFixed(1)}%
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                    <FinanceKpiCard title="Ingresos cobrados" value={kpis.incomePaid} tone="blue" />
-                    <FinanceKpiCard title="Pendiente por cobrar" value={kpis.incomePending} tone="amber" />
-                    <FinanceKpiCard title="Gastos pagados" value={kpis.expensesPaid} tone="rose" />
-                    <FinanceKpiCard title="Flujo de caja" value={monthlyCashFlow.net} tone="slate" />
-                    <FinanceKpiCard title="Utilidad neta" value={kpis.netIncome} tone="green" />
-                  </div>
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                        Resumen mensual (últimos 12)
-                      </p>
-                      <div className="mt-4 overflow-x-auto">
-                        <table className="w-full text-left text-sm">
-                          <thead className="text-xs uppercase tracking-[0.2em] text-slate-400">
-                            <tr>
-                              <th className="px-2 py-2">Mes</th>
-                              <th className="px-2 py-2 text-right">Ingresos</th>
-                              <th className="px-2 py-2 text-right">Egresos</th>
-                              <th className="px-2 py-2 text-right">Utilidad</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {monthlySeries.map((row) => (
-                              <tr key={row.monthKey} className="border-t border-slate-100">
-                                <td className="px-2 py-2 text-xs text-slate-500">
-                                  {formatMonthLabel(row.monthKey)}
-                                </td>
-                                <td className="px-2 py-2 text-right">{formatCurrency(row.incomeTotal)}</td>
-                                <td className="px-2 py-2 text-right">{formatCurrency(row.expensesTotal)}</td>
-                                <td className="px-2 py-2 text-right font-semibold text-slate-900">
-                                  {formatCurrency(row.net)}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                    <div className="space-y-4">
-                      <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                          Vista anual
-                        </p>
-                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                          <FinanceKpiCard title="Total anual" value={annualStats.net} tone="green" />
-                          <FinanceKpiCard title="Promedio mensual" value={annualStats.avgNet} tone="blue" />
-                          <FinanceKpiCard
-                            title="Mejor mes"
-                            value={annualStats.bestMonth ? annualStats.bestMonth.net : 0}
-                            tone="green"
-                          />
-                          <FinanceKpiCard
-                            title="Peor mes"
-                            value={annualStats.worstMonth ? annualStats.worstMonth.net : 0}
-                            tone="rose"
-                          />
-                        </div>
-                        {isAnnualView ? (
-                          <div className="mt-6">
+                          <div className="mt-4">
                             {annualChartData.length === 0 ? (
                               <div className="rounded-xl bg-slate-50 px-3 py-6 text-center text-xs text-slate-400">
                                 Sin datos para el año seleccionado.
@@ -1209,98 +1127,197 @@ export default function FinanceModulePage() {
                               <FinanceMonthlyChart data={annualChartData} />
                             )}
                           </div>
-                        ) : null}
+                        </div>
                       </div>
-                      {isAnnualView ? (
-                        <>
-                          <div className="grid gap-4 sm:grid-cols-2">
-                            <FinanceKpiCard title="Flujo de caja anual" value={annualCashFlow.net} tone="slate" />
-                            <FinanceKpiCard
-                              title="Promedio flujo mensual"
-                              value={averageMonthlyCashFlow}
-                              tone="blue"
-                            />
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                        <FinanceKpiCard title="Ingresos cobrados del mes" value={kpis.incomePaid} tone="blue" />
+                        <FinanceKpiCard
+                          title="Pendiente por cobrar del mes"
+                          value={kpis.incomePending}
+                          tone="amber"
+                        />
+                        <FinanceKpiCard title="Gastos pagados del mes" value={kpis.expensesPaid} tone="rose" />
+                        <FinanceKpiCard title="Utilidad neta del mes" value={kpis.netIncome} tone="green" />
+                        <FinanceKpiCard title="Flujo de caja del mes" value={monthlyCashFlow.net} tone="slate" />
+                      </div>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                              Proyección del mes
+                            </p>
+                            <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-700">
+                              Estimado
+                            </span>
                           </div>
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                Top 5 clientes
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <div>
+                              <p className="text-xs text-slate-500">Ingresos proyectados</p>
+                              <p className="text-lg font-semibold text-slate-900">
+                                {formatCurrency(projection.incomeProjected)}
                               </p>
-                              <ul className="mt-3 space-y-2 text-sm">
-                                {topClients.length === 0 ? (
-                                  <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400">
-                                    Sin ingresos en el periodo.
-                                  </li>
-                                ) : (
-                                  topClients.map((client) => (
-                                    <li key={client.name} className="flex items-center justify-between">
-                                      <span className="text-xs text-slate-500">{client.name}</span>
-                                      <span className="text-sm font-semibold text-slate-900">
-                                        {formatCurrency(client.total)}
-                                      </span>
-                                    </li>
-                                  ))
-                                )}
-                              </ul>
                             </div>
-                            <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                                Top 5 categorías de gasto
+                            <div>
+                              <p className="text-xs text-slate-500">Egresos proyectados</p>
+                              <p className="text-lg font-semibold text-slate-900">
+                                {formatCurrency(projection.expensesProjected)}
                               </p>
-                              <ul className="mt-3 space-y-2 text-sm">
-                                {topExpenseCategories.length === 0 ? (
-                                  <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-400">
-                                    Sin gastos en el periodo.
-                                  </li>
-                                ) : (
-                                  topExpenseCategories.map((category) => (
-                                    <li key={category.name} className="flex items-center justify-between">
-                                      <span className="text-xs text-slate-500">{category.name}</span>
-                                      <span className="text-sm font-semibold text-slate-900">
-                                        {formatCurrency(category.total)}
-                                      </span>
-                                    </li>
-                                  ))
-                                )}
-                              </ul>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-500">Utilidad proyectada</p>
+                              <p className="text-lg font-semibold text-slate-900">
+                                {formatCurrency(projection.projectedNet)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-slate-500">Margen proyectado</p>
+                              <p className="text-lg font-semibold text-slate-900">
+                                {projection.projectedMargin.toFixed(1)}%
+                              </p>
                             </div>
                           </div>
-                        </>
-                      ) : null}
+                        </div>
+                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                            Real vs Proyectado
+                          </p>
+                          <div className="mt-4 space-y-4 text-sm">
+                            {realVsProjectedRows.map((row) => {
+                              const maxValue = Math.max(row.real, row.projected, 1);
+                              const realPercent = (row.real / maxValue) * 100;
+                              const projectedPercent = (row.projected / maxValue) * 100;
+                              return (
+                                <div key={row.label} className="space-y-2">
+                                  <div className="flex items-center justify-between gap-4">
+                                    <p className="text-xs font-semibold text-slate-500">{row.label}</p>
+                                    <p className="text-xs text-slate-500">
+                                      {formatCurrency(row.real)} / {formatCurrency(row.projected)}
+                                    </p>
+                                  </div>
+                                  <div className="space-y-2">
+                                    <div>
+                                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                        <span>Real</span>
+                                        <span>{realPercent.toFixed(0)}%</span>
+                                      </div>
+                                      <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
+                                        <div
+                                          className="h-2 rounded-full bg-indigo-500"
+                                          style={{ width: `${realPercent}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                                        <span>Proyectado</span>
+                                        <span>{projectedPercent.toFixed(0)}%</span>
+                                      </div>
+                                      <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
+                                        <div
+                                          className="h-2 rounded-full bg-slate-400"
+                                          style={{ width: `${projectedPercent}%` }}
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
                       <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                          Insights & alertas
+                          Acumulado YTD {selectedMonthInfo.year}
                         </p>
-                        <ul className="mt-3 space-y-2 text-sm">
-                          {alerts.length === 0 ? (
-                            <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
-                              Sin alertas por ahora.
-                            </li>
-                          ) : (
-                            alerts.map((alert, index) => (
-                              <li
-                                key={`${alert.message}-${index}`}
-                                className={`rounded-xl px-3 py-2 text-xs font-semibold ${
-                                  alert.tone === "danger"
-                                    ? "bg-rose-50 text-rose-700"
-                                    : alert.tone === "warning"
-                                      ? "bg-amber-50 text-amber-700"
-                                      : "bg-sky-50 text-sky-700"
-                                }`}
-                              >
-                                {alert.message}
-                              </li>
-                            ))
-                          )}
-                        </ul>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                          <FinanceKpiCard title="Ingresos acumulados" value={ytdTotals.totalIncome} tone="blue" />
+                          <FinanceKpiCard title="Egresos acumulados" value={ytdTotals.totalExpenses} tone="rose" />
+                          <FinanceKpiCard title="Utilidad acumulada" value={ytdTotals.net} tone="green" />
+                          <div className="rounded-2xl border border-slate-200/60 bg-slate-50/80 p-4">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                              Margen acumulado
+                            </p>
+                            <p className="mt-2 text-2xl font-semibold text-slate-900">
+                              {ytdTotals.margin.toFixed(1)}%
+                            </p>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                  <FinancePendingList
-                    title="Pendientes por cobrar"
-                    items={filteredMovements.filter((movement) => movement.status === "pending")}
-                    emptyLabel="Sin pendientes."
-                  />
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                            Resumen mensual (últimos 12)
+                          </p>
+                          <div className="mt-4 overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                              <thead className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                                <tr>
+                                  <th className="px-2 py-2">Mes</th>
+                                  <th className="px-2 py-2 text-right">Ingresos</th>
+                                  <th className="px-2 py-2 text-right">Egresos</th>
+                                  <th className="px-2 py-2 text-right">Utilidad</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {monthlySeries.map((row) => (
+                                  <tr key={row.monthKey} className="border-t border-slate-100">
+                                    <td className="px-2 py-2 text-xs text-slate-500">
+                                      {formatMonthLabel(row.monthKey)}
+                                    </td>
+                                    <td className="px-2 py-2 text-right">
+                                      {formatCurrency(row.incomeTotal)}
+                                    </td>
+                                    <td className="px-2 py-2 text-right">
+                                      {formatCurrency(row.expensesTotal)}
+                                    </td>
+                                    <td className="px-2 py-2 text-right font-semibold text-slate-900">
+                                      {formatCurrency(row.net)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                            Insights & alertas
+                          </p>
+                          <ul className="mt-3 space-y-2 text-sm">
+                            {alerts.length === 0 ? (
+                              <li className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                                Sin alertas por ahora.
+                              </li>
+                            ) : (
+                              alerts.map((alert, index) => (
+                                <li
+                                  key={`${alert.message}-${index}`}
+                                  className={`rounded-xl px-3 py-2 text-xs font-semibold ${
+                                    alert.tone === "danger"
+                                      ? "bg-rose-50 text-rose-700"
+                                      : alert.tone === "warning"
+                                        ? "bg-amber-50 text-amber-700"
+                                        : "bg-sky-50 text-sky-700"
+                                  }`}
+                                >
+                                  {alert.message}
+                                </li>
+                              ))
+                            )}
+                          </ul>
+                        </div>
+                      </div>
+                      <FinancePendingList
+                        title="Pendientes por cobrar"
+                        items={filteredMovements.filter((movement) => movement.status === "pending")}
+                        emptyLabel="Sin pendientes."
+                      />
+                    </>
+                  )}
                 </>
               ) : null}
 
