@@ -191,6 +191,17 @@ export default function AdminHoursPage() {
     const unsubscribe = onSnapshot(
       hoursRef,
       (snapshot) => {
+        if (process.env.NODE_ENV === "development") {
+          const uidSet = new Set<string>();
+          snapshot.docs.forEach((docSnap) => {
+            const data = docSnap.data() as DocumentData;
+            const parentUserId = docSnap.ref.parent.parent?.id;
+            const userId = data.userId ?? data.uid ?? parentUserId ?? "unknown";
+            uidSet.add(userId);
+          });
+          console.log("[admin/hours] hours docs", snapshot.size);
+          console.log("[admin/hours] hours uids", Array.from(uidSet));
+        }
         const nextRecords = snapshot.docs.map((docSnap) => {
           const data = docSnap.data() as DocumentData;
           const parentUserId = docSnap.ref.parent.parent?.id;
@@ -241,6 +252,12 @@ export default function AdminHoursPage() {
     );
     return () => unsubscribe();
   }, [user?.role]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("[admin/hours] active weekKey", weekKey);
+    }
+  }, [weekKey]);
 
   useEffect(() => {
     if (user?.role !== "admin") return;
@@ -442,6 +459,9 @@ export default function AdminHoursPage() {
                 <p className="text-xs text-slate-500">
                   {item.user.position} · Semana {formatISODate(weekStart)}
                 </p>
+                {item.weekRecords.length === 0 ? (
+                  <p className="text-xs text-slate-400">Sin registros</p>
+                ) : null}
               </div>
               <div className="text-xs text-slate-500">
                 {minutesToHHMM(item.totalMinutes)} ·{" "}
