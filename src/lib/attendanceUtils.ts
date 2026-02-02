@@ -69,6 +69,12 @@ export function formatISODate(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+export function getWeekKey(dateISO: string) {
+  const parsed = new Date(`${dateISO}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return formatISODate(getWeekStartMonday(parsed));
+}
+
 export function formatTime(dateISO: string | null) {
   if (!dateISO) return "--:--";
   const date = new Date(dateISO);

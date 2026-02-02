@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import PageHeader from "@/components/PageHeader";
 import TodayAttendanceCard from "@/components/attendance/TodayAttendanceCard";
 import WeeklySummaryMiniCards from "@/components/attendance/WeeklySummaryMiniCards";
@@ -13,6 +13,7 @@ import Modal from "@/components/attendance/Modal";
 import {
   formatISODate,
   getWeekDates,
+  getWeekKey,
   getWeekStartMonday,
   minutesToHHMM,
   expectedMinutesForDate,
@@ -258,15 +259,42 @@ export default function AttendancePageContent() {
     reloadToday();
   };
 
-  const handleCheckOut = () => {
+  const handleCheckOut = async () => {
     if (status !== "IN_SHIFT") {
       handleInvalid("Debes finalizar descanso antes de salir.");
       return;
     }
     if (!user) return;
-    checkOut(user.uid, new Date());
+    const record = checkOut(user.uid, new Date());
     reloadToday();
     reloadWeek();
+    if (!record) return;
+    try {
+      const weekKey = getWeekKey(record.date);
+      const hoursValue = Math.round((record.totalMinutes / 60) * 10) / 10;
+      const hoursDocId = record.id || `${user.uid}_${record.date}`;
+      await setDoc(
+        doc(db, "users", user.uid, "hours", hoursDocId),
+        {
+          uid: user.uid,
+          date: record.date,
+          weekKey,
+          createdAt: serverTimestamp(),
+          hours: hoursValue,
+          totalMinutes: record.totalMinutes,
+          checkInAt: record.checkInAt ?? null,
+          checkOutAt: record.checkOutAt ?? null,
+          breaks: record.breaks ?? [],
+          status: record.status,
+          notes: record.notes ?? null,
+        },
+        { merge: true }
+      );
+    } catch (error) {
+      const err = error as { code?: string; message?: string };
+      console.error("[attendance] Error saving hours record", err?.code, err?.message, error);
+      setMessage("No se pudo guardar el registro de horas. Verifica tus permisos.");
+    }
   };
 
   const handleSaveNote = () => {
@@ -304,7 +332,7 @@ export default function AttendancePageContent() {
       reason: requestDraft.reason,
     });
     try {
-      const weekKey = formatISODate(getWeekStartMonday(new Date(requestDraft.date)));
+      const weekKey = getWeekKey(requestDraft.date);
       await addDoc(collection(db, "hourRequests"), {
         uid: user.uid,
         weekKey,
@@ -317,7 +345,9 @@ export default function AttendancePageContent() {
         reason: requestDraft.reason,
       });
     } catch (error) {
-      console.error("[attendance] Error creating hour request", error);
+      const err = error as { code?: string; message?: string };
+      console.error("[attendance] Error creating hour request", err?.code, err?.message, error);
+      setMessage("No se pudo enviar la solicitud. Verifica tus permisos.");
     }
     setRequestOpen(false);
     setRequestDraft({ ...requestDraft, reason: "" });

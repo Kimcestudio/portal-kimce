@@ -17,6 +17,7 @@ import {
   formatISODate,
   formatTime,
   getWeekDates,
+  getWeekKey,
   getWeekStartMonday,
   minutesToHHMM,
 } from "@/lib/attendanceUtils";
@@ -72,12 +73,6 @@ const normalizeTimestamp = (value: unknown) => {
   const candidate = value as FirestoreTimestamp;
   if (candidate.toDate) return candidate.toDate().toISOString();
   return null;
-};
-
-const getWeekKey = (dateISO: string) => {
-  const parsed = new Date(`${dateISO}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return formatISODate(getWeekStartMonday(parsed));
 };
 
 const getUserDisplayName = (user: FirestoreUser) =>
@@ -254,12 +249,6 @@ export default function AdminHoursPage() {
   }, [user?.role]);
 
   useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      console.log("[admin/hours] active weekKey", weekKey);
-    }
-  }, [weekKey]);
-
-  useEffect(() => {
     if (user?.role !== "admin") return;
     const unsubscribers = REQUEST_COLLECTIONS.map((collectionName) => {
       const ref = collection(db, collectionName);
@@ -328,6 +317,14 @@ export default function AdminHoursPage() {
     () => records.filter((record) => record.weekKey === weekKey),
     [records, weekKey]
   );
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("[admin/hours] selectedWeekKey", weekKey);
+      console.log("[admin/hours] total docs before filter", records.length);
+      console.log("[admin/hours] docs after weekKey filter", filteredRecords.length);
+    }
+  }, [filteredRecords.length, records.length, weekKey]);
 
   const requests = useMemo(() => {
     const merged = Object.values(requestSources).flat();
