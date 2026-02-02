@@ -49,5 +49,17 @@ service cloud.firestore {
       allow read, list: if isAdmin();
       allow write: if isAdmin();
     }
+
+    match /users/{uid}/hours/{hourId} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+      allow read, list: if isAdmin();
+    }
+
+    match /hourRequests/{requestId} {
+      allow create: if isSignedIn() && request.auth.uid == request.resource.data.uid;
+      allow read, list: if isSignedIn() && request.auth.uid == resource.data.uid;
+      allow update: if isSignedIn() && request.auth.uid == resource.data.uid;
+      allow read, list, update: if isAdmin();
+    }
   }
 }
