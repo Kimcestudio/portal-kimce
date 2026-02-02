@@ -304,7 +304,7 @@ export default function AdminHoursPage() {
               collection: collectionName,
             } satisfies HourRequest;
           })
-            .filter((item): item is HourRequest => Boolean(item));
+            .filter((item): item is NonNullable<typeof item> => item !== null);
           setRequestSources((prev) => ({ ...prev, [collectionName]: nextRequests }));
           setRequestsLoading(false);
         },
