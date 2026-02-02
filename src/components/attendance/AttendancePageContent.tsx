@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { doc, getDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import PageHeader from "@/components/PageHeader";
 import TodayAttendanceCard from "@/components/attendance/TodayAttendanceCard";
 import WeeklySummaryMiniCards from "@/components/attendance/WeeklySummaryMiniCards";
@@ -294,7 +294,7 @@ export default function AttendancePageContent() {
     reloadExtras();
   };
 
-  const handleSubmitRequest = () => {
+  const handleSubmitRequest = async () => {
     if (!user) return;
     createRequest(user.uid, {
       type: requestDraft.type as Request["type"],
@@ -303,6 +303,22 @@ export default function AttendancePageContent() {
       hours: requestDraft.type === "PERMISO_HORAS" ? requestDraft.hours : undefined,
       reason: requestDraft.reason,
     });
+    try {
+      const weekKey = formatISODate(getWeekStartMonday(new Date(requestDraft.date)));
+      await addDoc(collection(db, "hourRequests"), {
+        uid: user.uid,
+        weekKey,
+        status: "pending",
+        createdAt: serverTimestamp(),
+        type: requestDraft.type,
+        date: requestDraft.date,
+        endDate: requestDraft.endDate || null,
+        hours: requestDraft.type === "PERMISO_HORAS" ? requestDraft.hours : null,
+        reason: requestDraft.reason,
+      });
+    } catch (error) {
+      console.error("[attendance] Error creating hour request", error);
+    }
     setRequestOpen(false);
     setRequestDraft({ ...requestDraft, reason: "" });
     reloadExtras();
