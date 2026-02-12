@@ -107,7 +107,8 @@ export default function AdminHoursPage() {
     [scheduleOptions]
   );
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
-  const weekKey = useMemo(() => formatISODate(weekStart), [weekStart]);
+  const weekKey = useMemo(() => getWeekKey(formatISODate(weekStart)), [weekStart]);
+  const weekDateSet = useMemo(() => new Set(weekDates.map((date) => formatISODate(date))), [weekDates]);
 
   useEffect(() => {
     if (user?.role !== "admin") return;
@@ -314,17 +315,12 @@ export default function AdminHoursPage() {
   );
 
   const filteredRecords = useMemo(
-    () => records.filter((record) => record.weekKey === weekKey),
-    [records, weekKey]
+    () =>
+      records.filter(
+        (record) => record.weekKey === weekKey || (record.date && weekDateSet.has(record.date))
+      ),
+    [records, weekDateSet, weekKey]
   );
-
-  useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      console.log("[admin/hours] selectedWeekKey", weekKey);
-      console.log("[admin/hours] total docs before filter", records.length);
-      console.log("[admin/hours] docs after weekKey filter", filteredRecords.length);
-    }
-  }, [filteredRecords.length, records.length, weekKey]);
 
   const requests = useMemo(() => {
     const merged = Object.values(requestSources).flat();
@@ -377,6 +373,18 @@ export default function AdminHoursPage() {
     weekDates,
   ]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("[admin/hours] activeWeekKey", weekKey);
+      console.log("[admin/hours] hours read", records.length);
+      console.log(
+        "[admin/hours] collaborator uids",
+        summaries.map((item) => item.user.uid)
+      );
+      console.log("[admin/hours] docs after week filter", filteredRecords.length);
+    }
+  }, [filteredRecords.length, records.length, summaries, weekKey]);
+
   const detailUser = detailUserId
     ? collaboratorUsers.find((item) => item.uid === detailUserId) ?? null
     : null;
@@ -385,7 +393,7 @@ export default function AdminHoursPage() {
     ? records.filter(
         (record) =>
           record.userId === detailUser.uid &&
-          record.weekKey === weekKey
+          (record.weekKey === weekKey || (record.date && weekDateSet.has(record.date)))
       )
     : [];
 
