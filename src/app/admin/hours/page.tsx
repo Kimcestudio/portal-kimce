@@ -53,9 +53,15 @@ type HourRequest = {
   date?: string;
   endDate?: string;
   collection: string;
+  documentPath: string;
 };
 
-const REQUEST_COLLECTIONS = ["hourRequests", "attendanceRequests", "requests"];
+const REQUEST_SOURCES = [
+  { key: "hourRequests:root", collectionName: "hourRequests", mode: "root" as const },
+  { key: "hourRequests:group", collectionName: "hourRequests", mode: "group" as const },
+  { key: "attendanceRequests:root", collectionName: "attendanceRequests", mode: "root" as const },
+  { key: "requests:root", collectionName: "requests", mode: "root" as const },
+];
 
 const normalizeStatus = (value: unknown): HourRequestStatus => {
   if (typeof value === "string") {
@@ -109,6 +115,7 @@ export default function AdminHoursPage() {
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
   const weekKey = useMemo(() => getWeekKey(formatISODate(weekStart)), [weekStart]);
   const weekDateSet = useMemo(() => new Set(weekDates.map((date) => formatISODate(date))), [weekDates]);
+  const weekEnd = useMemo(() => weekDates[6] ?? weekStart, [weekDates, weekStart]);
 
   useEffect(() => {
     if (user?.role !== "admin") return;
@@ -197,6 +204,10 @@ export default function AdminHoursPage() {
           });
           console.log("[admin/hours] hours docs", snapshot.size);
           console.log("[admin/hours] hours uids", Array.from(uidSet));
+          const firstDoc = snapshot.docs[0]?.data() as DocumentData | undefined;
+          if (firstDoc) {
+            console.log("[admin/hours] hours sample keys", Object.keys(firstDoc));
+          }
         }
         const nextRecords = snapshot.docs.map((docSnap) => {
           const data = docSnap.data() as DocumentData;
@@ -251,16 +262,24 @@ export default function AdminHoursPage() {
 
   useEffect(() => {
     if (user?.role !== "admin") return;
-    const unsubscribers = REQUEST_COLLECTIONS.map((collectionName) => {
-      const ref = collection(db, collectionName);
+    const unsubscribers = REQUEST_SOURCES.map(({ key, collectionName, mode }) => {
+      const ref = mode === "group" ? collectionGroup(db, collectionName) : collection(db, collectionName);
       const q = query(ref);
       return onSnapshot(
         q,
         (snapshot) => {
+          if (process.env.NODE_ENV === "development") {
+            console.log(`[admin/hours] ${key} docs`, snapshot.size);
+            const firstDoc = snapshot.docs[0]?.data() as DocumentData | undefined;
+            if (firstDoc) {
+              console.log(`[admin/hours] ${key} sample keys`, Object.keys(firstDoc));
+            }
+          }
           const nextRequests = snapshot.docs
             .map((docSnap) => {
             const data = docSnap.data() as DocumentData;
-            const uid = data.uid ?? data.userId ?? data.createdBy ?? "unknown";
+            const parentUserId = docSnap.ref.parent.parent?.id;
+            const uid = data.uid ?? data.userId ?? data.createdBy ?? parentUserId ?? "unknown";
             const dateValue =
               (typeof data.date === "string" ? data.date : null) ??
               normalizeTimestamp(data.date) ??
@@ -292,14 +311,15 @@ export default function AdminHoursPage() {
               date: data.date,
               endDate: data.endDate,
               collection: collectionName,
+              documentPath: docSnap.ref.path,
             } satisfies HourRequest;
           })
             .filter(Boolean) as HourRequest[];
-          setRequestSources((prev) => ({ ...prev, [collectionName]: nextRequests }));
+          setRequestSources((prev) => ({ ...prev, [key]: nextRequests }));
           setRequestsLoading(false);
         },
         (error) => {
-          console.error(`[admin/hours] Error loading ${collectionName}`, error);
+          console.error(`[admin/hours] Error loading ${key}`, error);
           setRequestsLoading(false);
         }
       );
@@ -324,7 +344,11 @@ export default function AdminHoursPage() {
 
   const requests = useMemo(() => {
     const merged = Object.values(requestSources).flat();
-    return merged.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const deduped = new Map<string, HourRequest>();
+    merged.forEach((request) => {
+      deduped.set(request.documentPath, request);
+    });
+    return Array.from(deduped.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [requestSources]);
 
   const pendingRequests = useMemo(
@@ -376,14 +400,16 @@ export default function AdminHoursPage() {
   useEffect(() => {
     if (process.env.NODE_ENV === "development") {
       console.log("[admin/hours] activeWeekKey", weekKey);
+      console.log("[admin/hours] weekRange", formatISODate(weekStart), formatISODate(weekEnd));
       console.log("[admin/hours] hours read", records.length);
       console.log(
         "[admin/hours] collaborator uids",
         summaries.map((item) => item.user.uid)
       );
       console.log("[admin/hours] docs after week filter", filteredRecords.length);
+      console.log("[admin/hours] requests read", requests.length);
     }
-  }, [filteredRecords.length, records.length, summaries, weekKey]);
+  }, [filteredRecords.length, records.length, requests.length, summaries, weekEnd, weekKey, weekStart]);
 
   const detailUser = detailUserId
     ? collaboratorUsers.find((item) => item.uid === detailUserId) ?? null
@@ -400,7 +426,7 @@ export default function AdminHoursPage() {
   const handleUpdateRequest = async (request: HourRequest, status: HourRequestStatus) => {
     if (user?.role !== "admin") return;
     try {
-      await updateDoc(doc(db, request.collection, request.id), {
+      await updateDoc(doc(db, request.documentPath), {
         status,
         reviewedBy: user.uid,
         reviewedAt: new Date().toISOString(),
