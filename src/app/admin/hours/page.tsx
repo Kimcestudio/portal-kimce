@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  collectionGroup,
-  doc,
-  onSnapshot,
-  query,
-  updateDoc,
-  type DocumentData,
-} from "firebase/firestore";
+import { collection, collectionGroup, doc, onSnapshot, query, updateDoc, type DocumentData } from "firebase/firestore";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -37,6 +29,15 @@ type FirestoreTimestamp = {
 
 type HourRecord = AdminAttendanceRecord & {
   weekKey: string;
+};
+
+type TimeEntryEvent = {
+  uid: string;
+  dayKey: string;
+  weekKey: string;
+  type: string;
+  ts: string;
+  totalMinutes?: number;
 };
 
 type HourRequestStatus = "pending" | "approved" | "rejected";
@@ -190,7 +191,7 @@ export default function AdminHoursPage() {
 
   useEffect(() => {
     if (user?.role !== "admin") return;
-    const hoursRef = collectionGroup(db, "hours");
+    const hoursRef = collection(db, "timeEntries");
     const unsubscribe = onSnapshot(
       hoursRef,
       (snapshot) => {
@@ -198,8 +199,7 @@ export default function AdminHoursPage() {
           const uidSet = new Set<string>();
           snapshot.docs.forEach((docSnap) => {
             const data = docSnap.data() as DocumentData;
-            const parentUserId = docSnap.ref.parent.parent?.id;
-            const userId = data.userId ?? data.uid ?? parentUserId ?? "unknown";
+            const userId = data.uid ?? data.userId ?? "unknown";
             uidSet.add(userId);
           });
           console.log("[admin/hours] hours docs", snapshot.size);
@@ -209,47 +209,61 @@ export default function AdminHoursPage() {
             console.log("[admin/hours] hours sample keys", Object.keys(firstDoc));
           }
         }
-        const nextRecords = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data() as DocumentData;
-          const parentUserId = docSnap.ref.parent.parent?.id;
-          const userId = data.userId ?? data.uid ?? parentUserId ?? "unknown";
-          const dateValue =
-            (typeof data.date === "string" ? data.date : null) ??
-            (typeof data.day === "string" ? data.day : null) ??
-            normalizeTimestamp(data.date) ??
-            normalizeTimestamp(data.checkInAt) ??
-            normalizeTimestamp(data.createdAt) ??
-            "";
-          const dateISO = dateValue ? dateValue.slice(0, 10) : "";
-          const weekKeyValue = typeof data.weekKey === "string" && data.weekKey.length > 0
-            ? data.weekKey
-            : dateISO
-              ? getWeekKey(dateISO)
-              : "";
-          const totalMinutes = typeof data.totalMinutes === "number"
-            ? data.totalMinutes
-            : typeof data.minutes === "number"
-              ? data.minutes
-              : typeof data.hours === "number"
-                ? Math.round(data.hours * 60)
-                : 0;
+        const events: TimeEntryEvent[] = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data() as DocumentData;
+            const uid = data.uid ?? data.userId;
+            const tsISO = normalizeTimestamp(data.ts) ?? normalizeTimestamp(data.createdAt) ?? "";
+            const dayKey =
+              (typeof data.dayKey === "string" ? data.dayKey : "") ||
+              (tsISO ? tsISO.slice(0, 10) : "");
+            if (!uid || !dayKey || !tsISO) return null;
+            return {
+              uid,
+              dayKey,
+              weekKey: typeof data.weekKey === "string" && data.weekKey.length > 0 ? data.weekKey : getWeekKey(dayKey),
+              type: typeof data.type === "string" ? data.type : "manual",
+              ts: tsISO,
+              totalMinutes: typeof data.totalMinutes === "number" ? data.totalMinutes : undefined,
+            } satisfies TimeEntryEvent;
+          })
+          .filter(Boolean) as TimeEntryEvent[];
+
+        const grouped = new Map<string, TimeEntryEvent[]>();
+        events.forEach((event) => {
+          const key = `${event.uid}_${event.dayKey}`;
+          const current = grouped.get(key) ?? [];
+          current.push(event);
+          grouped.set(key, current);
+        });
+
+        const nextRecords = Array.from(grouped.entries()).map(([key, dayEvents]) => {
+          const checkInEvent = dayEvents
+            .filter((event) => event.type === "clock_in")
+            .sort((a, b) => a.ts.localeCompare(b.ts))[0];
+          const checkOutEvent = dayEvents
+            .filter((event) => event.type === "clock_out")
+            .sort((a, b) => b.ts.localeCompare(a.ts))[0];
+          const userId = dayEvents[0]?.uid ?? "unknown";
+          const dateISO = dayEvents[0]?.dayKey ?? "";
+          const weekKeyValue = dayEvents[0]?.weekKey ?? (dateISO ? getWeekKey(dateISO) : "");
+          const derivedMinutes =
+            checkInEvent && checkOutEvent
+              ? Math.max(0, Math.round((new Date(checkOutEvent.ts).getTime() - new Date(checkInEvent.ts).getTime()) / 60000))
+              : 0;
+          const totalMinutes = checkOutEvent?.totalMinutes ?? derivedMinutes;
           return {
-            id: docSnap.id,
+            id: key,
             userId,
             date: dateISO,
-            checkInAt: normalizeTimestamp(data.checkInAt),
-            checkOutAt: normalizeTimestamp(data.checkOutAt),
-            breaks: Array.isArray(data.breaks)
-              ? data.breaks.map((item: DocumentData) => ({
-                  startAt: normalizeTimestamp(item.startAt) ?? "",
-                  endAt: normalizeTimestamp(item.endAt),
-                }))
-              : [],
-            notes: data.notes ?? null,
+            checkInAt: checkInEvent?.ts ?? null,
+            checkOutAt: checkOutEvent?.ts ?? null,
+            breaks: [],
+            notes: null,
             totalMinutes,
-            status: (data.status as AdminAttendanceRecord["status"]) ?? (data.checkOutAt ? "CLOSED" : "OPEN"),
+            status: checkOutEvent ? "CLOSED" : "OPEN",
             weekKey: weekKeyValue,
-          };
+          } satisfies HourRecord;
         });
         setRecords(nextRecords);
       },
