@@ -328,6 +328,7 @@ export default function AdminHoursPage() {
             ) {
               return null;
             }
+            const isExtraActivity = collectionName === "extraActivities";
             return {
               id: docSnap.id,
               uid,
@@ -621,7 +622,7 @@ export default function AdminHoursPage() {
               >
                 <div>
                   <p className="font-semibold text-slate-900">
-                    {request.type ?? "Solicitud de horas"}
+                    {request.type ?? (request.source === "extraActivity" ? "Actividad extra" : "Solicitud de horas") }
                   </p>
                   <p className="text-xs text-slate-500">
                     {request.date ?? request.weekKey}
