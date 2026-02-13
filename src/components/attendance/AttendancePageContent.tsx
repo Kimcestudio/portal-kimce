@@ -60,6 +60,34 @@ const emptyCorrection: CorrectionDraft = {
 };
 
 const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+const LOCAL_SYNC_KEY_PREFIX = "attendance_time_entries_synced";
+
+type TimeEntryType = "clock_in" | "clock_out" | "manual";
+
+async function upsertTimeEntry(params: {
+  uid: string;
+  type: TimeEntryType;
+  tsISO: string;
+  totalMinutes?: number;
+}) {
+  const dayKey = params.tsISO.slice(0, 10);
+  const weekKey = getWeekKey(dayKey);
+  const timeEntryId = `${params.uid}_${dayKey}_${params.type}`;
+  await setDoc(
+    doc(db, "timeEntries", timeEntryId),
+    {
+      uid: params.uid,
+      type: params.type,
+      ts: params.tsISO,
+      dayKey,
+      weekKey,
+      totalMinutes: typeof params.totalMinutes === "number" ? params.totalMinutes : null,
+      updatedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
+}
 
 const formatGoalHours = (minutes: number) => {
   const hours = minutes / 60;
@@ -164,6 +192,38 @@ export default function AttendancePageContent() {
     };
   }, [user?.uid, user?.workScheduleId]);
 
+  useEffect(() => {
+    if (!user?.uid) return;
+    const syncKey = `${LOCAL_SYNC_KEY_PREFIX}:${user.uid}`;
+    if (typeof window === "undefined") return;
+    if (window.localStorage.getItem(syncKey) === "true") return;
+    const syncLocalEntries = async () => {
+      try {
+        const storedRecords = listAllRecords(user.uid);
+        for (const record of storedRecords) {
+          if (record.checkInAt) {
+            await upsertTimeEntry({ uid: user.uid, type: "clock_in", tsISO: record.checkInAt });
+          }
+          if (record.checkOutAt) {
+            await upsertTimeEntry({
+              uid: user.uid,
+              type: "clock_out",
+              tsISO: record.checkOutAt,
+              totalMinutes: record.totalMinutes,
+            });
+          }
+        }
+        window.localStorage.setItem(syncKey, "true");
+        if (process.env.NODE_ENV === "development") {
+          console.log("[attendance] local records synced to timeEntries", storedRecords.length);
+        }
+      } catch (error) {
+        console.error("[attendance] Error syncing local attendance to timeEntries", error);
+      }
+    };
+    void syncLocalEntries();
+  }, [user?.uid]);
+
   const reloadToday = () => {
     if (!user) return;
     const todayISO = formatISODate(new Date());
@@ -228,13 +288,20 @@ export default function AttendancePageContent() {
     setTimeout(() => setMessage(null), 2500);
   };
 
-  const handleCheckIn = () => {
+  const handleCheckIn = async () => {
     if (status !== "OFF") {
       handleInvalid("Ya existe un registro abierto hoy.");
       return;
     }
     if (!user) return;
-    createCheckIn(user.uid, new Date());
+    const record = createCheckIn(user.uid, new Date());
+    if (record?.checkInAt) {
+      try {
+        await upsertTimeEntry({ uid: user.uid, type: "clock_in", tsISO: record.checkInAt });
+      } catch (error) {
+        console.error("[attendance] Error saving clock-in in timeEntries", error);
+      }
+    }
     reloadToday();
     reloadWeek();
   };
@@ -290,6 +357,14 @@ export default function AttendancePageContent() {
         },
         { merge: true }
       );
+      if (record.checkOutAt) {
+        await upsertTimeEntry({
+          uid: user.uid,
+          type: "clock_out",
+          tsISO: record.checkOutAt,
+          totalMinutes: record.totalMinutes,
+        });
+      }
     } catch (error) {
       const err = error as { code?: string; message?: string };
       console.error("[attendance] Error saving hours record", err?.code, err?.message, error);
