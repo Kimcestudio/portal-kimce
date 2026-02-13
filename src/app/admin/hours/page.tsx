@@ -1,15 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  collectionGroup,
-  doc,
-  onSnapshot,
-  query,
-  updateDoc,
-  type DocumentData,
-} from "firebase/firestore";
+import { collection, collectionGroup, doc, onSnapshot, query, updateDoc, type DocumentData } from "firebase/firestore";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -28,6 +20,8 @@ import type { AdminAttendanceRecord, UserProfile, WorkSchedule } from "@/service
 type FirestoreUser = UserProfile & {
   name?: string;
   fullName?: string;
+  avatarUrl?: string;
+  profilePhoto?: string;
 };
 
 type FirestoreTimestamp = {
@@ -37,6 +31,15 @@ type FirestoreTimestamp = {
 
 type HourRecord = AdminAttendanceRecord & {
   weekKey: string;
+};
+
+type TimeEntryEvent = {
+  uid: string;
+  dayKey: string;
+  weekKey: string;
+  type: string;
+  ts: string;
+  totalMinutes?: number;
 };
 
 type HourRequestStatus = "pending" | "approved" | "rejected";
@@ -53,9 +56,18 @@ type HourRequest = {
   date?: string;
   endDate?: string;
   collection: string;
+  documentPath: string;
+  source: "hourRequest" | "extraActivity";
 };
 
-const REQUEST_COLLECTIONS = ["hourRequests", "attendanceRequests", "requests"];
+const REQUEST_SOURCES = [
+  { key: "hourRequests:root", collectionName: "hourRequests", mode: "root" as const },
+  { key: "hourRequests:group", collectionName: "hourRequests", mode: "group" as const },
+  { key: "attendanceRequests:root", collectionName: "attendanceRequests", mode: "root" as const },
+  { key: "requests:root", collectionName: "requests", mode: "root" as const },
+  { key: "extraActivities:root", collectionName: "extraActivities", mode: "root" as const },
+  { key: "extraActivities:group", collectionName: "extraActivities", mode: "group" as const },
+];
 
 const normalizeStatus = (value: unknown): HourRequestStatus => {
   if (typeof value === "string") {
@@ -77,6 +89,9 @@ const normalizeTimestamp = (value: unknown) => {
 
 const getUserDisplayName = (user: FirestoreUser) =>
   user.displayName || user.fullName || user.name || user.email || "Colaborador";
+
+const getUserPhoto = (user: FirestoreUser | null) =>
+  user?.photoURL || user?.avatarUrl || user?.profilePhoto || "/avatar-placeholder.png";
 
 function computeBreakMinutes(record: AdminAttendanceRecord | null) {
   if (!record) return 0;
@@ -107,7 +122,9 @@ export default function AdminHoursPage() {
     [scheduleOptions]
   );
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
-  const weekKey = useMemo(() => formatISODate(weekStart), [weekStart]);
+  const weekKey = useMemo(() => getWeekKey(formatISODate(weekStart)), [weekStart]);
+  const weekDateSet = useMemo(() => new Set(weekDates.map((date) => formatISODate(date))), [weekDates]);
+  const weekEnd = useMemo(() => weekDates[6] ?? weekStart, [weekDates, weekStart]);
 
   useEffect(() => {
     if (user?.role !== "admin") return;
@@ -124,6 +141,8 @@ export default function AdminHoursPage() {
             name: data.name,
             fullName: data.fullName,
             photoURL: data.photoURL ?? "",
+            avatarUrl: data.avatarUrl,
+            profilePhoto: data.profilePhoto,
             role: (data.role as UserProfile["role"]) ?? "collab",
             position: data.position ?? "",
             workScheduleId: data.workScheduleId,
@@ -182,7 +201,7 @@ export default function AdminHoursPage() {
 
   useEffect(() => {
     if (user?.role !== "admin") return;
-    const hoursRef = collectionGroup(db, "hours");
+    const hoursRef = collection(db, "timeEntries");
     const unsubscribe = onSnapshot(
       hoursRef,
       (snapshot) => {
@@ -190,54 +209,71 @@ export default function AdminHoursPage() {
           const uidSet = new Set<string>();
           snapshot.docs.forEach((docSnap) => {
             const data = docSnap.data() as DocumentData;
-            const parentUserId = docSnap.ref.parent.parent?.id;
-            const userId = data.userId ?? data.uid ?? parentUserId ?? "unknown";
+            const userId = data.uid ?? data.userId ?? "unknown";
             uidSet.add(userId);
           });
           console.log("[admin/hours] hours docs", snapshot.size);
           console.log("[admin/hours] hours uids", Array.from(uidSet));
+          const firstDoc = snapshot.docs[0]?.data() as DocumentData | undefined;
+          if (firstDoc) {
+            console.log("[admin/hours] hours sample keys", Object.keys(firstDoc));
+          }
         }
-        const nextRecords = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data() as DocumentData;
-          const parentUserId = docSnap.ref.parent.parent?.id;
-          const userId = data.userId ?? data.uid ?? parentUserId ?? "unknown";
-          const dateValue =
-            (typeof data.date === "string" ? data.date : null) ??
-            (typeof data.day === "string" ? data.day : null) ??
-            normalizeTimestamp(data.date) ??
-            normalizeTimestamp(data.checkInAt) ??
-            normalizeTimestamp(data.createdAt) ??
-            "";
-          const dateISO = dateValue ? dateValue.slice(0, 10) : "";
-          const weekKeyValue = typeof data.weekKey === "string" && data.weekKey.length > 0
-            ? data.weekKey
-            : dateISO
-              ? getWeekKey(dateISO)
-              : "";
-          const totalMinutes = typeof data.totalMinutes === "number"
-            ? data.totalMinutes
-            : typeof data.minutes === "number"
-              ? data.minutes
-              : typeof data.hours === "number"
-                ? Math.round(data.hours * 60)
-                : 0;
+        const events: TimeEntryEvent[] = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data() as DocumentData;
+            const uid = data.uid ?? data.userId;
+            const tsISO = normalizeTimestamp(data.ts) ?? normalizeTimestamp(data.createdAt) ?? "";
+            const dayKey =
+              (typeof data.dayKey === "string" ? data.dayKey : "") ||
+              (tsISO ? tsISO.slice(0, 10) : "");
+            if (!uid || !dayKey || !tsISO) return null;
+            return {
+              uid,
+              dayKey,
+              weekKey: typeof data.weekKey === "string" && data.weekKey.length > 0 ? data.weekKey : getWeekKey(dayKey),
+              type: typeof data.type === "string" ? data.type : "manual",
+              ts: tsISO,
+              totalMinutes: typeof data.totalMinutes === "number" ? data.totalMinutes : undefined,
+            } satisfies TimeEntryEvent;
+          })
+          .filter(Boolean) as TimeEntryEvent[];
+
+        const grouped = new Map<string, TimeEntryEvent[]>();
+        events.forEach((event) => {
+          const key = `${event.uid}_${event.dayKey}`;
+          const current = grouped.get(key) ?? [];
+          current.push(event);
+          grouped.set(key, current);
+        });
+
+        const nextRecords = Array.from(grouped.entries()).map(([key, dayEvents]) => {
+          const checkInEvent = dayEvents
+            .filter((event) => event.type === "clock_in")
+            .sort((a, b) => a.ts.localeCompare(b.ts))[0];
+          const checkOutEvent = dayEvents
+            .filter((event) => event.type === "clock_out")
+            .sort((a, b) => b.ts.localeCompare(a.ts))[0];
+          const userId = dayEvents[0]?.uid ?? "unknown";
+          const dateISO = dayEvents[0]?.dayKey ?? "";
+          const weekKeyValue = dayEvents[0]?.weekKey ?? (dateISO ? getWeekKey(dateISO) : "");
+          const derivedMinutes =
+            checkInEvent && checkOutEvent
+              ? Math.max(0, Math.round((new Date(checkOutEvent.ts).getTime() - new Date(checkInEvent.ts).getTime()) / 60000))
+              : 0;
+          const totalMinutes = checkOutEvent?.totalMinutes ?? derivedMinutes;
           return {
-            id: docSnap.id,
+            id: key,
             userId,
             date: dateISO,
-            checkInAt: normalizeTimestamp(data.checkInAt),
-            checkOutAt: normalizeTimestamp(data.checkOutAt),
-            breaks: Array.isArray(data.breaks)
-              ? data.breaks.map((item: DocumentData) => ({
-                  startAt: normalizeTimestamp(item.startAt) ?? "",
-                  endAt: normalizeTimestamp(item.endAt),
-                }))
-              : [],
-            notes: data.notes ?? null,
+            checkInAt: checkInEvent?.ts ?? null,
+            checkOutAt: checkOutEvent?.ts ?? null,
+            breaks: [],
+            notes: null,
             totalMinutes,
-            status: (data.status as AdminAttendanceRecord["status"]) ?? (data.checkOutAt ? "CLOSED" : "OPEN"),
+            status: checkOutEvent ? "CLOSED" : "OPEN",
             weekKey: weekKeyValue,
-          };
+          } satisfies HourRecord;
         });
         setRecords(nextRecords);
       },
@@ -250,16 +286,24 @@ export default function AdminHoursPage() {
 
   useEffect(() => {
     if (user?.role !== "admin") return;
-    const unsubscribers = REQUEST_COLLECTIONS.map((collectionName) => {
-      const ref = collection(db, collectionName);
+    const unsubscribers = REQUEST_SOURCES.map(({ key, collectionName, mode }) => {
+      const ref = mode === "group" ? collectionGroup(db, collectionName) : collection(db, collectionName);
       const q = query(ref);
       return onSnapshot(
         q,
         (snapshot) => {
+          if (process.env.NODE_ENV === "development") {
+            console.log(`[admin/hours] ${key} docs`, snapshot.size);
+            const firstDoc = snapshot.docs[0]?.data() as DocumentData | undefined;
+            if (firstDoc) {
+              console.log(`[admin/hours] ${key} sample keys`, Object.keys(firstDoc));
+            }
+          }
           const nextRequests = snapshot.docs
             .map((docSnap) => {
             const data = docSnap.data() as DocumentData;
-            const uid = data.uid ?? data.userId ?? data.createdBy ?? "unknown";
+            const parentUserId = docSnap.ref.parent.parent?.id;
+            const uid = data.uid ?? data.userId ?? data.createdBy ?? parentUserId ?? "unknown";
             const dateValue =
               (typeof data.date === "string" ? data.date : null) ??
               normalizeTimestamp(data.date) ??
@@ -279,26 +323,33 @@ export default function AdminHoursPage() {
             ) {
               return null;
             }
+            const isExtraActivity = collectionName === "extraActivities";
             return {
               id: docSnap.id,
               uid,
               weekKey: weekKeyValue,
               status: normalizeStatus(data.status ?? data.state),
               createdAt: normalizeTimestamp(data.createdAt) ?? new Date().toISOString(),
-              type: data.type ?? data.requestType,
-              reason: data.reason ?? data.motivo,
-              hours: typeof data.hours === "number" ? data.hours : undefined,
+              type: isExtraActivity ? `Extra · ${data.type ?? "Actividad"}` : data.type ?? data.requestType,
+              reason: data.reason ?? data.motivo ?? data.note,
+              hours: typeof data.hours === "number"
+                ? data.hours
+                : typeof data.minutes === "number"
+                  ? Math.round((data.minutes / 60) * 10) / 10
+                  : undefined,
               date: data.date,
               endDate: data.endDate,
               collection: collectionName,
+              documentPath: docSnap.ref.path,
+              source: isExtraActivity ? "extraActivity" : "hourRequest",
             } satisfies HourRequest;
           })
             .filter(Boolean) as HourRequest[];
-          setRequestSources((prev) => ({ ...prev, [collectionName]: nextRequests }));
+          setRequestSources((prev) => ({ ...prev, [key]: nextRequests }));
           setRequestsLoading(false);
         },
         (error) => {
-          console.error(`[admin/hours] Error loading ${collectionName}`, error);
+          console.error(`[admin/hours] Error loading ${key}`, error);
           setRequestsLoading(false);
         }
       );
@@ -314,32 +365,36 @@ export default function AdminHoursPage() {
   );
 
   const filteredRecords = useMemo(
-    () => records.filter((record) => record.weekKey === weekKey),
-    [records, weekKey]
+    () =>
+      records.filter(
+        (record) => record.weekKey === weekKey || (record.date && weekDateSet.has(record.date))
+      ),
+    [records, weekDateSet, weekKey]
   );
-
-  useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      console.log("[admin/hours] selectedWeekKey", weekKey);
-      console.log("[admin/hours] total docs before filter", records.length);
-      console.log("[admin/hours] docs after weekKey filter", filteredRecords.length);
-    }
-  }, [filteredRecords.length, records.length, weekKey]);
 
   const requests = useMemo(() => {
     const merged = Object.values(requestSources).flat();
-    return merged.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const deduped = new Map<string, HourRequest>();
+    merged.forEach((request) => {
+      deduped.set(request.documentPath, request);
+    });
+    return Array.from(deduped.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [requestSources]);
 
-  const pendingRequests = useMemo(
-    () => requests.filter((item) => item.status === "pending"),
-    [requests]
-  );
-
   const filteredRequests = useMemo(() => {
-    if (requestFilter === "all") return requests;
-    return requests.filter((item) => item.status === requestFilter);
-  }, [requestFilter, requests]);
+    return requests.filter((item) => {
+      const matchesStatus = requestFilter === "all" || item.status === requestFilter;
+      const dateISO = typeof item.date === "string" ? item.date.slice(0, 10) : "";
+      const matchesWeek = item.weekKey === weekKey || (dateISO && weekDateSet.has(dateISO));
+      const matchesUser = selectedUserId === "all" || item.uid === selectedUserId;
+      return matchesStatus && matchesWeek && matchesUser;
+    });
+  }, [requestFilter, requests, selectedUserId, weekDateSet, weekKey]);
+
+  const pendingRequests = useMemo(
+    () => filteredRequests.filter((item) => item.status === "pending"),
+    [filteredRequests]
+  );
 
   const summaries = useMemo(() => {
     const scopedUsers = selectedUserId === "all"
@@ -377,6 +432,20 @@ export default function AdminHoursPage() {
     weekDates,
   ]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("[admin/hours] activeWeekKey", weekKey);
+      console.log("[admin/hours] weekRange", formatISODate(weekStart), formatISODate(weekEnd));
+      console.log("[admin/hours] hours read", records.length);
+      console.log(
+        "[admin/hours] collaborator uids",
+        summaries.map((item) => item.user.uid)
+      );
+      console.log("[admin/hours] docs after week filter", filteredRecords.length);
+      console.log("[admin/hours] requests read", requests.length);
+    }
+  }, [filteredRecords.length, records.length, requests.length, summaries, weekEnd, weekKey, weekStart]);
+
   const detailUser = detailUserId
     ? collaboratorUsers.find((item) => item.uid === detailUserId) ?? null
     : null;
@@ -385,14 +454,14 @@ export default function AdminHoursPage() {
     ? records.filter(
         (record) =>
           record.userId === detailUser.uid &&
-          record.weekKey === weekKey
+          (record.weekKey === weekKey || (record.date && weekDateSet.has(record.date)))
       )
     : [];
 
   const handleUpdateRequest = async (request: HourRequest, status: HourRequestStatus) => {
     if (user?.role !== "admin") return;
     try {
-      await updateDoc(doc(db, request.collection, request.id), {
+      await updateDoc(doc(db, request.documentPath), {
         status,
         reviewedBy: user.uid,
         reviewedAt: new Date().toISOString(),
@@ -452,7 +521,14 @@ export default function AdminHoursPage() {
               onClick={() => setDetailUserId(item.user.uid)}
             >
               <div>
-                <p className="font-semibold text-slate-900">{getUserDisplayName(item.user)}</p>
+                <div className="flex items-center gap-2">
+                  <img
+                    src={getUserPhoto(item.user)}
+                    alt={getUserDisplayName(item.user)}
+                    className="h-8 w-8 rounded-full object-cover"
+                  />
+                  <p className="font-semibold text-slate-900">{getUserDisplayName(item.user)}</p>
+                </div>
                 <p className="text-xs text-slate-500">
                   {item.user.position} · Semana {formatISODate(weekStart)}
                 </p>
@@ -516,7 +592,7 @@ export default function AdminHoursPage() {
         </div>
         <div className="mt-4 space-y-3">
           {filteredRequests.map((request) => {
-            const createdBy = collaboratorUsers.find((item) => item.uid === request.uid);
+            const createdBy = collaboratorUsers.find((item) => item.uid === request.uid) ?? null;
             const statusLabel =
               request.status === "pending"
                 ? "Pendiente"
@@ -525,12 +601,12 @@ export default function AdminHoursPage() {
                 : "Rechazada";
             return (
               <div
-                key={`${request.collection}-${request.id}`}
+                key={request.documentPath}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
               >
                 <div>
                   <p className="font-semibold text-slate-900">
-                    {request.type ?? "Solicitud de horas"}
+                    {request.type ?? (request.source === "extraActivity" ? "Actividad extra" : "Solicitud de horas") }
                   </p>
                   <p className="text-xs text-slate-500">
                     {request.date ?? request.weekKey}
@@ -538,18 +614,24 @@ export default function AdminHoursPage() {
                     {request.hours ? `${request.hours}h` : "Jornada completa"} ·{" "}
                     {request.reason ?? "Sin motivo"}
                   </p>
-                  <p className="text-xs text-slate-400">
-                    {getUserDisplayName(createdBy ?? {
-                      uid: request.uid,
-                      email: "",
-                      displayName: "",
-                      photoURL: "",
-                      role: "collab",
-                      position: "",
-                      active: true,
-                    })}{" "}
-                    · {new Date(request.createdAt).toLocaleDateString("es-ES")}
-                  </p>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+                    <img
+                      src={getUserPhoto(createdBy)}
+                      alt={createdBy ? getUserDisplayName(createdBy) : request.uid}
+                      className="h-8 w-8 rounded-full object-cover"
+                    />
+                    <span>
+                      {getUserDisplayName(createdBy ?? {
+                        uid: request.uid,
+                        email: "",
+                        displayName: "",
+                        photoURL: "",
+                        role: "collab",
+                        position: "",
+                        active: true,
+                      })} · {new Date(request.createdAt).toLocaleDateString("es-ES")}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span
@@ -593,9 +675,14 @@ export default function AdminHoursPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Detalle semanal</h3>
-              <p className="text-xs text-slate-500">
-                {getUserDisplayName(detailUser)} · {detailUser.position}
-              </p>
+              <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                <img
+                  src={getUserPhoto(detailUser)}
+                  alt={getUserDisplayName(detailUser)}
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+                <span>{getUserDisplayName(detailUser)} · {detailUser.position}</span>
+              </div>
             </div>
             <button
               className="rounded-full border border-slate-200/60 px-3 py-1 text-xs font-semibold text-slate-500"
