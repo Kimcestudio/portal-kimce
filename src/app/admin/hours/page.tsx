@@ -592,7 +592,7 @@ export default function AdminHoursPage() {
         </div>
         <div className="mt-4 space-y-3">
           {filteredRequests.map((request) => {
-            const createdBy = collaboratorUsers.find((item) => item.uid === request.uid);
+            const createdBy = collaboratorUsers.find((item) => item.uid === request.uid) ?? null;
             const statusLabel =
               request.status === "pending"
                 ? "Pendiente"
