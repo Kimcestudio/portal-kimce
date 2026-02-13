@@ -91,7 +91,14 @@ const getUserDisplayName = (user: FirestoreUser) =>
   user.displayName || user.fullName || user.name || user.email || "Colaborador";
 
 const getUserPhoto = (user: FirestoreUser | null) =>
-  user?.photoURL || user?.avatarUrl || user?.profilePhoto || "/avatar-placeholder.png";
+  user?.photoURL || user?.avatarUrl || user?.profilePhoto || "";
+
+const getInitials = (user: FirestoreUser | null, fallback = "C") => {
+  const name = user ? getUserDisplayName(user) : "";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return fallback;
+  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+};
 
 function computeBreakMinutes(record: AdminAttendanceRecord | null) {
   if (!record) return 0;
@@ -446,6 +453,18 @@ export default function AdminHoursPage() {
     }
   }, [filteredRecords.length, records.length, requests.length, summaries, weekEnd, weekKey, weekStart]);
 
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      const hourRequestsCount = (requestSources["hourRequests:root"]?.length ?? 0) +
+        (requestSources["hourRequests:group"]?.length ?? 0);
+      const extraActivitiesCount = (requestSources["extraActivities:root"]?.length ?? 0) +
+        (requestSources["extraActivities:group"]?.length ?? 0);
+      console.log("[admin/hours] users count", users.length);
+      console.log("[admin/hours] hourRequests count", hourRequestsCount);
+      console.log("[admin/hours] extraActivities count", extraActivitiesCount);
+    }
+  }, [requestSources, users.length]);
+
   const detailUser = detailUserId
     ? collaboratorUsers.find((item) => item.uid === detailUserId) ?? null
     : null;
@@ -522,11 +541,17 @@ export default function AdminHoursPage() {
             >
               <div>
                 <div className="flex items-center gap-2">
-                  <img
-                    src={getUserPhoto(item.user)}
-                    alt={getUserDisplayName(item.user)}
-                    className="h-8 w-8 rounded-full object-cover"
-                  />
+                  {getUserPhoto(item.user) ? (
+                    <img
+                      src={getUserPhoto(item.user)}
+                      alt={getUserDisplayName(item.user)}
+                      className="h-8 w-8 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
+                      {getInitials(item.user)}
+                    </div>
+                  )}
                   <p className="font-semibold text-slate-900">{getUserDisplayName(item.user)}</p>
                 </div>
                 <p className="text-xs text-slate-500">
@@ -615,11 +640,17 @@ export default function AdminHoursPage() {
                     {request.reason ?? "Sin motivo"}
                   </p>
                   <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
-                    <img
-                      src={getUserPhoto(createdBy)}
-                      alt={createdBy ? getUserDisplayName(createdBy) : request.uid}
-                      className="h-8 w-8 rounded-full object-cover"
-                    />
+                    {getUserPhoto(createdBy) ? (
+                      <img
+                        src={getUserPhoto(createdBy)}
+                        alt={createdBy ? getUserDisplayName(createdBy) : request.uid}
+                        className="h-8 w-8 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
+                        {getInitials(createdBy, "U")}
+                      </div>
+                    )}
                     <span>
                       {getUserDisplayName(createdBy ?? {
                         uid: request.uid,
@@ -676,11 +707,17 @@ export default function AdminHoursPage() {
             <div>
               <h3 className="text-base font-semibold text-slate-900">Detalle semanal</h3>
               <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                <img
-                  src={getUserPhoto(detailUser)}
-                  alt={getUserDisplayName(detailUser)}
-                  className="h-8 w-8 rounded-full object-cover"
-                />
+                {getUserPhoto(detailUser) ? (
+                  <img
+                    src={getUserPhoto(detailUser)}
+                    alt={getUserDisplayName(detailUser)}
+                    className="h-8 w-8 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
+                    {getInitials(detailUser)}
+                  </div>
+                )}
                 <span>{getUserDisplayName(detailUser)} · {detailUser.position}</span>
               </div>
             </div>

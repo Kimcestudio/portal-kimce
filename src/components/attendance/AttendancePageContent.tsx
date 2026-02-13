@@ -430,7 +430,7 @@ export default function AttendancePageContent() {
     reloadToday();
   };
 
-  const handleSubmitExtra = () => {
+  const handleSubmitExtra = async () => {
     if (!user) return;
     createExtraActivity(user.uid, {
       date: extraDraft.date,
@@ -439,6 +439,36 @@ export default function AttendancePageContent() {
       project: extraDraft.project || undefined,
       note: extraDraft.note || undefined,
     });
+    const payload = {
+      uid: user.uid,
+      weekKey: getWeekKey(extraDraft.date),
+      status: "pending",
+      createdAt: serverTimestamp(),
+      type: extraDraft.type,
+      date: extraDraft.date,
+      minutes: extraDraft.minutes,
+      hours: Math.round((extraDraft.minutes / 60) * 10) / 10,
+      project: extraDraft.project || null,
+      note: extraDraft.note || null,
+      reason: extraDraft.note || null,
+    };
+    try {
+      const docRef = await addDoc(collection(db, "extraActivities"), payload);
+      if (process.env.NODE_ENV === "development") {
+        console.log("[attendance] extraActivities saved", { uid: user.uid, payload, id: docRef.id });
+      }
+    } catch (error) {
+      const err = error as { code?: string; message?: string };
+      console.error("[attendance] Error creating extra activity", {
+        collection: "extraActivities",
+        uid: user.uid,
+        payload,
+        code: err?.code,
+        message: err?.message,
+      });
+      setMessage(`No se pudo registrar actividad extra (${err?.code ?? "unknown"}).`);
+      return;
+    }
     setExtraOpen(false);
     setExtraDraft({ ...extraDraft, project: "", note: "" });
     reloadExtras();
