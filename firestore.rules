@@ -62,14 +62,6 @@ service cloud.firestore {
       allow read, list, update: if isAdmin();
     }
 
-    match /extraActivities/{activityId} {
-      allow create: if isSignedIn() && request.auth.uid == request.resource.data.uid;
-      allow read, list: if isSignedIn() && request.auth.uid == resource.data.uid;
-      allow update: if isSignedIn() && request.auth.uid == resource.data.uid;
-      allow read, list, update: if isAdmin();
-    }
-
-
     match /timeEntries/{docId} {
       allow read, list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
       allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;

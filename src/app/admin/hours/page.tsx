@@ -57,7 +57,7 @@ type HourRequest = {
   endDate?: string;
   collection: string;
   documentPath: string;
-  source: "hourRequest" | "extraActivity";
+  source: "hourRequest";
 };
 
 const REQUEST_SOURCES = [
@@ -65,8 +65,6 @@ const REQUEST_SOURCES = [
   { key: "hourRequests:group", collectionName: "hourRequests", mode: "group" as const },
   { key: "attendanceRequests:root", collectionName: "attendanceRequests", mode: "root" as const },
   { key: "requests:root", collectionName: "requests", mode: "root" as const },
-  { key: "extraActivities:root", collectionName: "extraActivities", mode: "root" as const },
-  { key: "extraActivities:group", collectionName: "extraActivities", mode: "group" as const },
 ];
 
 const normalizeStatus = (value: unknown): HourRequestStatus => {
@@ -337,18 +335,14 @@ export default function AdminHoursPage() {
               weekKey: weekKeyValue,
               status: normalizeStatus(data.status ?? data.state),
               createdAt: normalizeTimestamp(data.createdAt) ?? new Date().toISOString(),
-              type: isExtraActivity ? `Extra · ${data.type ?? "Actividad"}` : data.type ?? data.requestType,
+              type: data.type ?? data.requestType,
               reason: data.reason ?? data.motivo ?? data.note,
-              hours: typeof data.hours === "number"
-                ? data.hours
-                : typeof data.minutes === "number"
-                  ? Math.round((data.minutes / 60) * 10) / 10
-                  : undefined,
+              hours: typeof data.hours === "number" ? data.hours : undefined,
               date: data.date,
               endDate: data.endDate,
               collection: collectionName,
               documentPath: docSnap.ref.path,
-              source: isExtraActivity ? "extraActivity" : "hourRequest",
+              source: "hourRequest",
             } satisfies HourRequest;
           })
             .filter(Boolean) as HourRequest[];
@@ -457,11 +451,8 @@ export default function AdminHoursPage() {
     if (process.env.NODE_ENV === "development") {
       const hourRequestsCount = (requestSources["hourRequests:root"]?.length ?? 0) +
         (requestSources["hourRequests:group"]?.length ?? 0);
-      const extraActivitiesCount = (requestSources["extraActivities:root"]?.length ?? 0) +
-        (requestSources["extraActivities:group"]?.length ?? 0);
       console.log("[admin/hours] users count", users.length);
       console.log("[admin/hours] hourRequests count", hourRequestsCount);
-      console.log("[admin/hours] extraActivities count", extraActivitiesCount);
     }
   }, [requestSources, users.length]);
 
