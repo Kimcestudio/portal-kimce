@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { addDoc, collection, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import PageHeader from "@/components/PageHeader";
 import TodayAttendanceCard from "@/components/attendance/TodayAttendanceCard";
 import WeeklySummaryMiniCards from "@/components/attendance/WeeklySummaryMiniCards";
@@ -141,6 +141,8 @@ export default function AttendancePageContent() {
   });
   const [correctionDraft, setCorrectionDraft] = useState<CorrectionDraft>(emptyCorrection);
   const [schedule, setSchedule] = useState<WorkSchedule>(DEFAULT_WORK_SCHEDULES[0]);
+  const [pendingHourRequestsCount, setPendingHourRequestsCount] = useState(0);
+  const [pendingExtraActivitiesCount, setPendingExtraActivitiesCount] = useState(0);
 
   const weekStart = useMemo(() => {
     const base = new Date();
@@ -222,6 +224,51 @@ export default function AttendancePageContent() {
       }
     };
     void syncLocalEntries();
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const hourRequestsRef = query(collection(db, "hourRequests"), where("uid", "==", user.uid));
+    const extraActivitiesRef = query(collection(db, "extraActivities"), where("uid", "==", user.uid));
+
+    const unsubscribeHourRequests = onSnapshot(
+      hourRequestsRef,
+      (snapshot) => {
+        const count = snapshot.docs.filter((docSnap) => {
+          const data = docSnap.data() as { status?: string };
+          return (data.status ?? "").toLowerCase() === "pending";
+        }).length;
+        setPendingHourRequestsCount(count);
+        if (process.env.NODE_ENV === "development") {
+          console.log("[requests] pending hourRequests:", count);
+        }
+      },
+      (error) => {
+        console.error("[attendance] Error loading hourRequests pending count", error);
+      }
+    );
+
+    const unsubscribeExtraActivities = onSnapshot(
+      extraActivitiesRef,
+      (snapshot) => {
+        const count = snapshot.docs.filter((docSnap) => {
+          const data = docSnap.data() as { status?: string };
+          return (data.status ?? "").toLowerCase() === "pending";
+        }).length;
+        setPendingExtraActivitiesCount(count);
+        if (process.env.NODE_ENV === "development") {
+          console.log("[requests] pending extraActivities:", count);
+        }
+      },
+      (error) => {
+        console.error("[attendance] Error loading extraActivities pending count", error);
+      }
+    );
+
+    return () => {
+      unsubscribeHourRequests();
+      unsubscribeExtraActivities();
+    };
   }, [user?.uid]);
 
   const reloadToday = () => {
@@ -523,6 +570,7 @@ export default function AttendancePageContent() {
           onFilterChange={setFilter}
           onOpenExtra={() => setExtraOpen(true)}
           onOpenRequest={() => setRequestOpen(true)}
+          pendingCount={pendingHourRequestsCount + pendingExtraActivitiesCount}
         />
       </div>
 

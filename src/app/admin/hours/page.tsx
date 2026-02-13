@@ -20,6 +20,8 @@ import type { AdminAttendanceRecord, UserProfile, WorkSchedule } from "@/service
 type FirestoreUser = UserProfile & {
   name?: string;
   fullName?: string;
+  avatarUrl?: string;
+  profilePhoto?: string;
 };
 
 type FirestoreTimestamp = {
@@ -55,6 +57,7 @@ type HourRequest = {
   endDate?: string;
   collection: string;
   documentPath: string;
+  source: "hourRequest" | "extraActivity";
 };
 
 const REQUEST_SOURCES = [
@@ -62,6 +65,8 @@ const REQUEST_SOURCES = [
   { key: "hourRequests:group", collectionName: "hourRequests", mode: "group" as const },
   { key: "attendanceRequests:root", collectionName: "attendanceRequests", mode: "root" as const },
   { key: "requests:root", collectionName: "requests", mode: "root" as const },
+  { key: "extraActivities:root", collectionName: "extraActivities", mode: "root" as const },
+  { key: "extraActivities:group", collectionName: "extraActivities", mode: "group" as const },
 ];
 
 const normalizeStatus = (value: unknown): HourRequestStatus => {
@@ -84,6 +89,9 @@ const normalizeTimestamp = (value: unknown) => {
 
 const getUserDisplayName = (user: FirestoreUser) =>
   user.displayName || user.fullName || user.name || user.email || "Colaborador";
+
+const getUserPhoto = (user: FirestoreUser | null) =>
+  user?.photoURL || user?.avatarUrl || user?.profilePhoto || "/avatar-placeholder.png";
 
 function computeBreakMinutes(record: AdminAttendanceRecord | null) {
   if (!record) return 0;
@@ -133,6 +141,8 @@ export default function AdminHoursPage() {
             name: data.name,
             fullName: data.fullName,
             photoURL: data.photoURL ?? "",
+            avatarUrl: data.avatarUrl,
+            profilePhoto: data.profilePhoto,
             role: (data.role as UserProfile["role"]) ?? "collab",
             position: data.position ?? "",
             workScheduleId: data.workScheduleId,
@@ -313,19 +323,25 @@ export default function AdminHoursPage() {
             ) {
               return null;
             }
+            const isExtraActivity = collectionName === "extraActivities";
             return {
               id: docSnap.id,
               uid,
               weekKey: weekKeyValue,
               status: normalizeStatus(data.status ?? data.state),
               createdAt: normalizeTimestamp(data.createdAt) ?? new Date().toISOString(),
-              type: data.type ?? data.requestType,
-              reason: data.reason ?? data.motivo,
-              hours: typeof data.hours === "number" ? data.hours : undefined,
+              type: isExtraActivity ? `Extra · ${data.type ?? "Actividad"}` : data.type ?? data.requestType,
+              reason: data.reason ?? data.motivo ?? data.note,
+              hours: typeof data.hours === "number"
+                ? data.hours
+                : typeof data.minutes === "number"
+                  ? Math.round((data.minutes / 60) * 10) / 10
+                  : undefined,
               date: data.date,
               endDate: data.endDate,
               collection: collectionName,
               documentPath: docSnap.ref.path,
+              source: isExtraActivity ? "extraActivity" : "hourRequest",
             } satisfies HourRequest;
           })
             .filter(Boolean) as HourRequest[];
@@ -365,15 +381,20 @@ export default function AdminHoursPage() {
     return Array.from(deduped.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [requestSources]);
 
-  const pendingRequests = useMemo(
-    () => requests.filter((item) => item.status === "pending"),
-    [requests]
-  );
-
   const filteredRequests = useMemo(() => {
-    if (requestFilter === "all") return requests;
-    return requests.filter((item) => item.status === requestFilter);
-  }, [requestFilter, requests]);
+    return requests.filter((item) => {
+      const matchesStatus = requestFilter === "all" || item.status === requestFilter;
+      const dateISO = typeof item.date === "string" ? item.date.slice(0, 10) : "";
+      const matchesWeek = item.weekKey === weekKey || (dateISO && weekDateSet.has(dateISO));
+      const matchesUser = selectedUserId === "all" || item.uid === selectedUserId;
+      return matchesStatus && matchesWeek && matchesUser;
+    });
+  }, [requestFilter, requests, selectedUserId, weekDateSet, weekKey]);
+
+  const pendingRequests = useMemo(
+    () => filteredRequests.filter((item) => item.status === "pending"),
+    [filteredRequests]
+  );
 
   const summaries = useMemo(() => {
     const scopedUsers = selectedUserId === "all"
@@ -500,7 +521,14 @@ export default function AdminHoursPage() {
               onClick={() => setDetailUserId(item.user.uid)}
             >
               <div>
-                <p className="font-semibold text-slate-900">{getUserDisplayName(item.user)}</p>
+                <div className="flex items-center gap-2">
+                  <img
+                    src={getUserPhoto(item.user)}
+                    alt={getUserDisplayName(item.user)}
+                    className="h-8 w-8 rounded-full object-cover"
+                  />
+                  <p className="font-semibold text-slate-900">{getUserDisplayName(item.user)}</p>
+                </div>
                 <p className="text-xs text-slate-500">
                   {item.user.position} · Semana {formatISODate(weekStart)}
                 </p>
@@ -573,12 +601,12 @@ export default function AdminHoursPage() {
                 : "Rechazada";
             return (
               <div
-                key={`${request.collection}-${request.id}`}
+                key={request.documentPath}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
               >
                 <div>
                   <p className="font-semibold text-slate-900">
-                    {request.type ?? "Solicitud de horas"}
+                    {request.type ?? (request.source === "extraActivity" ? "Actividad extra" : "Solicitud de horas") }
                   </p>
                   <p className="text-xs text-slate-500">
                     {request.date ?? request.weekKey}
@@ -586,18 +614,24 @@ export default function AdminHoursPage() {
                     {request.hours ? `${request.hours}h` : "Jornada completa"} ·{" "}
                     {request.reason ?? "Sin motivo"}
                   </p>
-                  <p className="text-xs text-slate-400">
-                    {getUserDisplayName(createdBy ?? {
-                      uid: request.uid,
-                      email: "",
-                      displayName: "",
-                      photoURL: "",
-                      role: "collab",
-                      position: "",
-                      active: true,
-                    })}{" "}
-                    · {new Date(request.createdAt).toLocaleDateString("es-ES")}
-                  </p>
+                  <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+                    <img
+                      src={getUserPhoto(createdBy)}
+                      alt={createdBy ? getUserDisplayName(createdBy) : request.uid}
+                      className="h-8 w-8 rounded-full object-cover"
+                    />
+                    <span>
+                      {getUserDisplayName(createdBy ?? {
+                        uid: request.uid,
+                        email: "",
+                        displayName: "",
+                        photoURL: "",
+                        role: "collab",
+                        position: "",
+                        active: true,
+                      })} · {new Date(request.createdAt).toLocaleDateString("es-ES")}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   <span
@@ -641,9 +675,14 @@ export default function AdminHoursPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Detalle semanal</h3>
-              <p className="text-xs text-slate-500">
-                {getUserDisplayName(detailUser)} · {detailUser.position}
-              </p>
+              <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                <img
+                  src={getUserPhoto(detailUser)}
+                  alt={getUserDisplayName(detailUser)}
+                  className="h-8 w-8 rounded-full object-cover"
+                />
+                <span>{getUserDisplayName(detailUser)} · {detailUser.position}</span>
+              </div>
             </div>
             <button
               className="rounded-full border border-slate-200/60 px-3 py-1 text-xs font-semibold text-slate-500"

@@ -10,6 +10,7 @@ interface ExtrasPermitsTabProps {
   onFilterChange: (value: "ALL" | "PENDING" | "APPROVED" | "REJECTED") => void;
   onOpenExtra: () => void;
   onOpenRequest: () => void;
+  pendingCount?: number;
 }
 
 function mapStatus(status: "PENDING" | "APPROVED" | "REJECTED") {
@@ -36,6 +37,7 @@ export default function ExtrasPermitsTab({
   onFilterChange,
   onOpenExtra,
   onOpenRequest,
+  pendingCount,
 }: ExtrasPermitsTabProps) {
   const unified = [
     ...extras.map((item) => ({
@@ -72,7 +74,8 @@ export default function ExtrasPermitsTab({
 
   const filtered =
     filter === "ALL" ? unified : unified.filter((item) => item.status === filter);
-  const pendingCount = unified.filter((item) => item.status === "PENDING").length;
+  const computedPendingCount = unified.filter((item) => item.status === "PENDING").length;
+  const totalPendingCount = pendingCount ?? computedPendingCount;
 
   return (
     <div className="space-y-4">
@@ -112,8 +115,8 @@ export default function ExtrasPermitsTab({
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white/80 px-4 py-2 text-xs text-muted shadow-soft">
         <span>
-          {pendingCount > 0
-            ? `Tienes ${pendingCount} solicitudes pendientes.`
+          {totalPendingCount > 0
+            ? `Tienes ${totalPendingCount} solicitudes pendientes.`
             : "No tienes solicitudes pendientes por revisar."}
         </span>
       </div>
