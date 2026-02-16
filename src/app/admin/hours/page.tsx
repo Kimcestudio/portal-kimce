@@ -334,6 +334,7 @@ export default function AdminHoursPage() {
             ) {
               return null;
             }
+            const isExtraActivity = collectionName === "extraActivities";
             return {
               id: docSnap.id,
               uid,
