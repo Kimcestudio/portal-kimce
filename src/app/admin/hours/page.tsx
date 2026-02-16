@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { collection, collectionGroup, doc, onSnapshot, query, updateDoc, type DocumentData } from "firebase/firestore";
+import { collection, collectionGroup, doc, getDocs, limit, onSnapshot, orderBy, query, startAfter, updateDoc, where, type DocumentData, type QueryDocumentSnapshot } from "firebase/firestore";
 import PageHeader from "@/components/PageHeader";
+import UserAvatar from "@/components/common/UserAvatar";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   expectedMinutesForDate,
@@ -90,21 +91,16 @@ const normalizeTimestamp = (value: unknown) => {
 const getUserDisplayName = (user: FirestoreUser) =>
   user.displayName || user.fullName || user.name || user.email || "Colaborador";
 
-const getUserPhoto = (user: FirestoreUser | null) =>
-  user?.photoURL || user?.avatarUrl || user?.profilePhoto || "";
+const PERMIT_TYPES = new Set(["DIA_LIBRE", "PERMISO_HORAS", "VACACIONES", "MEDICO", "HOURS", "PERMISO"]);
 
-const getInitials = (user: FirestoreUser | null, fallback = "C") => {
-  const name = user ? getUserDisplayName(user) : "";
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return fallback;
-  return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+const getRequestCategory = (request: HourRequest): "permit" | "extra" => {
+  if (request.type === "EXTRA_ACTIVIDAD" || request.source === "extraActivity") return "extra";
+  if (request.type && PERMIT_TYPES.has(request.type)) return "permit";
+  return "permit";
 };
 
-const getRequestTitle = (request: HourRequest) => {
-  if (request.source === "extraActivity" || request.type === "EXTRA_ACTIVIDAD") return "Actividad extra";
-  if (request.type) return request.type;
-  return "Solicitud de horas";
-};
+const getRequestTitle = (request: HourRequest) =>
+  getRequestCategory(request) === "extra" ? "Actividad extra" : "Libre / Permiso";
 
 function computeBreakMinutes(record: AdminAttendanceRecord | null) {
   if (!record) return 0;
@@ -125,9 +121,15 @@ export default function AdminHoursPage() {
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
   const [records, setRecords] = useState<HourRecord[]>([]);
   const [requestSources, setRequestSources] = useState<Record<string, HourRequest[]>>({});
-  const [requestFilter, setRequestFilter] = useState<HourRequestStatus | "all">("all");
+  const [permitFilter, setPermitFilter] = useState<HourRequestStatus | "all">("all");
+  const [extraFilter, setExtraFilter] = useState<HourRequestStatus | "all">("all");
   const [loading, setLoading] = useState(true);
   const [requestsLoading, setRequestsLoading] = useState(true);
+  const [historyItems, setHistoryItems] = useState<HourRequest[]>([]);
+  const [historyCursorHourRequests, setHistoryCursorHourRequests] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [historyCursorExtraActivities, setHistoryCursorExtraActivities] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
+  const [historyHasMore, setHistoryHasMore] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const scheduleOptions = workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES;
   const scheduleById = useMemo(
@@ -394,20 +396,34 @@ export default function AdminHoursPage() {
     return Array.from(deduped.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [requestSources]);
 
-  const filteredRequests = useMemo(() => {
+  const weeklyRequests = useMemo(() => {
     return requests.filter((item) => {
-      const matchesStatus = requestFilter === "all" || item.status === requestFilter;
       const dateISO = typeof item.date === "string" ? item.date.slice(0, 10) : "";
       const matchesWeek = item.weekKey === weekKey || (dateISO && weekDateSet.has(dateISO));
       const matchesUser = selectedUserId === "all" || item.uid === selectedUserId;
-      return matchesStatus && matchesWeek && matchesUser;
+      return matchesWeek && matchesUser;
     });
-  }, [requestFilter, requests, selectedUserId, weekDateSet, weekKey]);
+  }, [requests, selectedUserId, weekDateSet, weekKey]);
 
-  const pendingRequests = useMemo(
-    () => filteredRequests.filter((item) => item.status === "pending"),
-    [filteredRequests]
+  const permitRequests = useMemo(
+    () => weeklyRequests.filter((item) => getRequestCategory(item) === "permit"),
+    [weeklyRequests]
   );
+
+  const extraRequests = useMemo(
+    () => weeklyRequests.filter((item) => getRequestCategory(item) === "extra"),
+    [weeklyRequests]
+  );
+
+  const filteredPermitRequests = useMemo(() => {
+    if (permitFilter === "all") return permitRequests;
+    return permitRequests.filter((item) => item.status === permitFilter);
+  }, [permitFilter, permitRequests]);
+
+  const filteredExtraRequests = useMemo(() => {
+    if (extraFilter === "all") return extraRequests;
+    return extraRequests.filter((item) => item.status === extraFilter);
+  }, [extraFilter, extraRequests]);
 
   const summaries = useMemo(() => {
     const scopedUsers = selectedUserId === "all"
@@ -456,8 +472,11 @@ export default function AdminHoursPage() {
       );
       console.log("[admin/hours] docs after week filter", filteredRecords.length);
       console.log("[admin/hours] requests read", requests.length);
+      console.log("[admin/hours] count Libre/Permiso", permitRequests.length);
+      console.log("[admin/hours] count Extra", extraRequests.length);
+      console.log("[admin/hours] count historial", historyItems.length);
     }
-  }, [filteredRecords.length, records.length, requests.length, summaries, weekEnd, weekKey, weekStart]);
+  }, [extraRequests.length, filteredRecords.length, historyItems.length, permitRequests.length, records.length, requests.length, summaries, weekEnd, weekKey, weekStart]);
 
   useEffect(() => {
     if (process.env.NODE_ENV === "development") {
@@ -482,6 +501,89 @@ export default function AdminHoursPage() {
           (record.weekKey === weekKey || (record.date && weekDateSet.has(record.date)))
       )
     : [];
+
+
+  const mapDocToRequest = (collectionName: string, docSnap: QueryDocumentSnapshot<DocumentData>) => {
+    const data = docSnap.data() as DocumentData;
+    const parentUserId = docSnap.ref.parent.parent?.id;
+    const uid = data.uid ?? data.userId ?? data.createdBy ?? parentUserId ?? "unknown";
+    const dateValue =
+      (typeof data.date === "string" ? data.date : null) ??
+      normalizeTimestamp(data.date) ??
+      normalizeTimestamp(data.createdAt) ??
+      "";
+    const dateISO = dateValue ? dateValue.slice(0, 10) : "";
+    const weekKeyValue = typeof data.weekKey === "string" && data.weekKey.length > 0
+      ? data.weekKey
+      : dateISO
+        ? getWeekKey(dateISO)
+        : "";
+    return {
+      id: docSnap.id,
+      uid,
+      weekKey: weekKeyValue,
+      status: normalizeStatus(data.status ?? data.state),
+      createdAt: normalizeTimestamp(data.createdAt) ?? new Date().toISOString(),
+      type: data.type ?? data.requestType,
+      reason: data.reason ?? data.motivo ?? data.note,
+      hours: typeof data.hours === "number"
+        ? data.hours
+        : typeof data.minutes === "number"
+          ? Math.round((data.minutes / 60) * 10) / 10
+          : undefined,
+      date: data.date,
+      endDate: data.endDate,
+      collection: collectionName,
+      documentPath: docSnap.ref.path,
+      source: collectionName === "extraActivities" ? "extraActivity" : "hourRequest",
+    } satisfies HourRequest;
+  };
+
+  const loadMoreHistory = async (reset = false) => {
+    if (user?.role !== "admin") return;
+    if (historyLoading) return;
+    setHistoryLoading(true);
+    try {
+      const hourBase = selectedUserId === "all"
+        ? query(collection(db, "hourRequests"), orderBy("createdAt", "desc"), limit(20))
+        : query(collection(db, "hourRequests"), where("uid", "==", selectedUserId), orderBy("createdAt", "desc"), limit(20));
+      const extraBase = selectedUserId === "all"
+        ? query(collection(db, "extraActivities"), orderBy("createdAt", "desc"), limit(20))
+        : query(collection(db, "extraActivities"), where("uid", "==", selectedUserId), orderBy("createdAt", "desc"), limit(20));
+
+      const hourQuery = reset || !historyCursorHourRequests
+        ? hourBase
+        : query(collection(db, "hourRequests"), ...(selectedUserId === "all" ? [] : [where("uid", "==", selectedUserId)]), orderBy("createdAt", "desc"), startAfter(historyCursorHourRequests), limit(20));
+      const extraQuery = reset || !historyCursorExtraActivities
+        ? extraBase
+        : query(collection(db, "extraActivities"), ...(selectedUserId === "all" ? [] : [where("uid", "==", selectedUserId)]), orderBy("createdAt", "desc"), startAfter(historyCursorExtraActivities), limit(20));
+
+      const [hourSnapshot, extraSnapshot] = await Promise.all([getDocs(hourQuery), getDocs(extraQuery)]);
+      const merged = [
+        ...hourSnapshot.docs.map((docSnap) => mapDocToRequest("hourRequests", docSnap)),
+        ...extraSnapshot.docs.map((docSnap) => mapDocToRequest("extraActivities", docSnap)),
+      ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+      setHistoryItems((prev) => {
+        const base = reset ? [] : prev;
+        const deduped = new Map<string, HourRequest>();
+        [...base, ...merged].forEach((item) => deduped.set(item.documentPath, item));
+        return Array.from(deduped.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      });
+
+      setHistoryCursorHourRequests(hourSnapshot.docs[hourSnapshot.docs.length - 1] ?? (reset ? null : historyCursorHourRequests));
+      setHistoryCursorExtraActivities(extraSnapshot.docs[extraSnapshot.docs.length - 1] ?? (reset ? null : historyCursorExtraActivities));
+      setHistoryHasMore(hourSnapshot.docs.length === 20 || extraSnapshot.docs.length === 20);
+    } catch (error) {
+      console.error("[admin/hours] Error loading history", error);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadMoreHistory(true);
+  }, [selectedUserId, user?.role]);
 
   const handleUpdateRequest = async (request: HourRequest, status: HourRequestStatus) => {
     if (user?.role !== "admin") return;
@@ -547,17 +649,12 @@ export default function AdminHoursPage() {
             >
               <div>
                 <div className="flex items-center gap-2">
-                  {getUserPhoto(item.user) ? (
-                    <img
-                      src={getUserPhoto(item.user)}
-                      alt={getUserDisplayName(item.user)}
-                      className="h-8 w-8 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
-                      {getInitials(item.user)}
-                    </div>
-                  )}
+                  <UserAvatar
+                    name={getUserDisplayName(item.user)}
+                    photoURL={item.user.photoURL}
+                    avatarUrl={item.user.avatarUrl}
+                    profilePhoto={item.user.profilePhoto}
+                  />
                   <p className="font-semibold text-slate-900">{getUserDisplayName(item.user)}</p>
                 </div>
                 <p className="text-xs text-slate-500">
@@ -591,38 +688,146 @@ export default function AdminHoursPage() {
           ) : null}
         </div>
       </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        {[
+          {
+            title: "Libre / Permiso",
+            list: filteredPermitRequests,
+            total: permitRequests.length,
+            pending: permitRequests.filter((item) => item.status === "pending").length,
+            filter: permitFilter,
+            setFilter: setPermitFilter,
+          },
+          {
+            title: "Actividades extra",
+            list: filteredExtraRequests,
+            total: extraRequests.length,
+            pending: extraRequests.filter((item) => item.status === "pending").length,
+            filter: extraFilter,
+            setFilter: setExtraFilter,
+          },
+        ].map((section) => (
+          <div key={section.title} className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-semibold text-slate-900">{section.title}</h3>
+                <p className="text-xs text-slate-500">
+                  {section.pending} pendientes · {section.total} en semana {weekKey}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { label: "Todas", value: "all" },
+                  { label: "Pendientes", value: "pending" },
+                  { label: "Aprobadas", value: "approved" },
+                  { label: "Rechazadas", value: "rejected" },
+                ].map((item) => (
+                  <button
+                    key={`${section.title}-${item.value}`}
+                    type="button"
+                    onClick={() => section.setFilter(item.value as HourRequestStatus | "all")}
+                    className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                      section.filter === item.value
+                        ? "bg-indigo-600 text-white shadow-[0_8px_18px_rgba(79,70,229,0.35)]"
+                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-4 space-y-3">
+              {section.list.map((request) => {
+                const createdBy = collaboratorUsers.find((item) => item.uid === request.uid) ?? null;
+                const statusLabel =
+                  request.status === "pending"
+                    ? "Pendiente"
+                    : request.status === "approved"
+                    ? "Aprobada"
+                    : "Rechazada";
+                return (
+                  <div
+                    key={request.documentPath}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
+                  >
+                    <div>
+                      <p className="font-semibold text-slate-900">{getRequestTitle(request)}</p>
+                      <p className="text-xs text-slate-500">
+                        {request.date ?? request.weekKey}
+                        {request.endDate ? ` - ${request.endDate}` : ""} · {" "}
+                        {request.hours ? `${request.hours}h` : "Jornada completa"} · {" "}
+                        {request.reason ?? "Sin motivo"}
+                      </p>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+                        <UserAvatar
+                          name={createdBy ? getUserDisplayName(createdBy) : "Usuario desconocido"}
+                          photoURL={createdBy?.photoURL}
+                          avatarUrl={createdBy?.avatarUrl}
+                          profilePhoto={createdBy?.profilePhoto}
+                        />
+                        <span>
+                          {getUserDisplayName(createdBy ?? {
+                            uid: request.uid,
+                            email: "",
+                            displayName: "",
+                            photoURL: "",
+                            role: "collab",
+                            position: "",
+                            active: true,
+                          })} · {new Date(request.createdAt).toLocaleDateString("es-ES")}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          request.status === "pending"
+                            ? "bg-amber-100 text-amber-700"
+                            : request.status === "approved"
+                            ? "bg-green-100 text-green-700"
+                            : "bg-rose-100 text-rose-700"
+                        }`}
+                      >
+                        {statusLabel}
+                      </span>
+                      <button
+                        className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 transition hover:-translate-y-0.5"
+                        onClick={() => handleUpdateRequest(request, "approved")}
+                        type="button"
+                      >
+                        Aprobar
+                      </button>
+                      <button
+                        className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5"
+                        onClick={() => handleUpdateRequest(request, "rejected")}
+                        type="button"
+                      >
+                        Rechazar
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {section.list.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                  {requestsLoading ? "Cargando solicitudes..." : "No hay solicitudes para este filtro."}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-base font-semibold text-slate-900">Solicitudes de horas</h3>
-            <p className="text-xs text-slate-500">
-              {pendingRequests.length} pendientes · Semana {weekKey}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { label: "Todas", value: "all" },
-              { label: "Pendientes", value: "pending" },
-              { label: "Aprobadas", value: "approved" },
-              { label: "Rechazadas", value: "rejected" },
-            ].map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => setRequestFilter(item.value as HourRequestStatus | "all")}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  requestFilter === item.value
-                    ? "bg-indigo-600 text-white shadow-[0_8px_18px_rgba(79,70,229,0.35)]"
-                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+            <h3 className="text-base font-semibold text-slate-900">Historial (Siempre)</h3>
+            <p className="text-xs text-slate-500">{historyItems.length} registros</p>
           </div>
         </div>
         <div className="mt-4 space-y-3">
-          {filteredRequests.map((request) => {
+          {historyItems.map((request) => {
             const createdBy = collaboratorUsers.find((item) => item.uid === request.uid) ?? null;
             const statusLabel =
               request.status === "pending"
@@ -632,31 +837,21 @@ export default function AdminHoursPage() {
                 : "Rechazada";
             return (
               <div
-                key={request.documentPath}
+                key={`history-${request.documentPath}`}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
               >
                 <div>
-                  <p className="font-semibold text-slate-900">
-                    {getRequestTitle(request)}
-                  </p>
+                  <p className="font-semibold text-slate-900">{request.type ?? "Solicitud"}</p>
                   <p className="text-xs text-slate-500">
-                    {request.date ?? request.weekKey}
-                    {request.endDate ? ` - ${request.endDate}` : ""} ·{" "}
-                    {request.hours ? `${request.hours}h` : "Jornada completa"} ·{" "}
-                    {request.reason ?? "Sin motivo"}
+                    {request.date ?? request.weekKey} · {request.reason ?? "Sin motivo"}
                   </p>
                   <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
-                    {getUserPhoto(createdBy) ? (
-                      <img
-                        src={getUserPhoto(createdBy)}
-                        alt={createdBy ? getUserDisplayName(createdBy) : request.uid}
-                        className="h-8 w-8 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
-                        {getInitials(createdBy, "U")}
-                      </div>
-                    )}
+                    <UserAvatar
+                      name={createdBy ? getUserDisplayName(createdBy) : "Usuario desconocido"}
+                      photoURL={createdBy?.photoURL}
+                      avatarUrl={createdBy?.avatarUrl}
+                      profilePhoto={createdBy?.profilePhoto}
+                    />
                     <span>
                       {getUserDisplayName(createdBy ?? {
                         uid: request.uid,
@@ -671,6 +866,9 @@ export default function AdminHoursPage() {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                    {getRequestCategory(request) === "extra" ? "Extra" : "Libre/Permiso"}
+                  </span>
                   <span
                     className={`rounded-full px-3 py-1 text-xs font-semibold ${
                       request.status === "pending"
@@ -682,28 +880,39 @@ export default function AdminHoursPage() {
                   >
                     {statusLabel}
                   </span>
-                  <button
-                    className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 transition hover:-translate-y-0.5"
-                    onClick={() => handleUpdateRequest(request, "approved")}
-                    type="button"
-                  >
-                    Aprobar
-                  </button>
-                  <button
-                    className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5"
-                    onClick={() => handleUpdateRequest(request, "rejected")}
-                    type="button"
-                  >
-                    Rechazar
-                  </button>
+                  {request.status === "pending" ? (
+                    <>
+                      <button
+                        className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 transition hover:-translate-y-0.5"
+                        onClick={() => handleUpdateRequest(request, "approved")}
+                        type="button"
+                      >
+                        Aprobar
+                      </button>
+                      <button
+                        className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5"
+                        onClick={() => handleUpdateRequest(request, "rejected")}
+                        type="button"
+                      >
+                        Rechazar
+                      </button>
+                    </>
+                  ) : null}
                 </div>
               </div>
             );
           })}
-          {filteredRequests.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              {requestsLoading ? "Cargando solicitudes..." : "No hay solicitudes para este filtro."}
-            </p>
+          {historyItems.length === 0 ? (
+            <p className="text-sm text-slate-500">{historyLoading ? "Cargando historial..." : "Sin historial."}</p>
+          ) : null}
+          {historyHasMore ? (
+            <button
+              type="button"
+              onClick={() => void loadMoreHistory(false)}
+              className="rounded-full border border-slate-200/60 px-4 py-2 text-xs font-semibold text-slate-600"
+            >
+              {historyLoading ? "Cargando..." : "Ver más"}
+            </button>
           ) : null}
         </div>
       </div>
@@ -713,17 +922,12 @@ export default function AdminHoursPage() {
             <div>
               <h3 className="text-base font-semibold text-slate-900">Detalle semanal</h3>
               <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                {getUserPhoto(detailUser) ? (
-                  <img
-                    src={getUserPhoto(detailUser)}
-                    alt={getUserDisplayName(detailUser)}
-                    className="h-8 w-8 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
-                    {getInitials(detailUser)}
-                  </div>
-                )}
+                <UserAvatar
+                  name={getUserDisplayName(detailUser)}
+                  photoURL={detailUser.photoURL}
+                  avatarUrl={detailUser.avatarUrl}
+                  profilePhoto={detailUser.profilePhoto}
+                />
                 <span>{getUserDisplayName(detailUser)} · {detailUser.position}</span>
               </div>
             </div>
