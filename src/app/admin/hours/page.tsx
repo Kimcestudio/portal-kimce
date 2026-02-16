@@ -91,11 +91,16 @@ const normalizeTimestamp = (value: unknown) => {
 const getUserDisplayName = (user: FirestoreUser) =>
   user.displayName || user.fullName || user.name || user.email || "Colaborador";
 
+const EXTRA_ACTIVITY_TYPE = "EXTRA_ACTIVIDAD";
 const PERMIT_TYPES = new Set(["DIA_LIBRE", "PERMISO_HORAS", "VACACIONES", "MEDICO", "HOURS", "PERMISO"]);
 
+const normalizeRequestType = (type: string | undefined) =>
+  typeof type === "string" ? type.toUpperCase() : "";
+
 const getRequestCategory = (request: HourRequest): "permit" | "extra" => {
-  if (request.type === "EXTRA_ACTIVIDAD" || request.source === "extraActivity") return "extra";
-  if (request.type && PERMIT_TYPES.has(request.type)) return "permit";
+  const normalizedType = normalizeRequestType(request.type);
+  if (normalizedType === EXTRA_ACTIVITY_TYPE) return "extra";
+  if (PERMIT_TYPES.has(normalizedType)) return "permit";
   return "permit";
 };
 
@@ -463,6 +468,7 @@ export default function AdminHoursPage() {
 
   useEffect(() => {
     if (process.env.NODE_ENV === "development") {
+      const uniqueTypes = Array.from(new Set(requests.map((item) => item.type).filter(Boolean)));
       console.log("[admin/hours] activeWeekKey", weekKey);
       console.log("[admin/hours] weekRange", formatISODate(weekStart), formatISODate(weekEnd));
       console.log("[admin/hours] hours read", records.length);
@@ -475,6 +481,10 @@ export default function AdminHoursPage() {
       console.log("[admin/hours] count Libre/Permiso", permitRequests.length);
       console.log("[admin/hours] count Extra", extraRequests.length);
       console.log("[admin/hours] count historial", historyItems.length);
+      console.log("[admin] hourRequests total:", requests.length);
+      console.log("[admin] unique types:", uniqueTypes);
+      console.log("[admin] freePermission:", permitRequests.length);
+      console.log("[admin] extras:", extraRequests.length);
     }
   }, [extraRequests.length, filteredRecords.length, historyItems.length, permitRequests.length, records.length, requests.length, summaries, weekEnd, weekKey, weekStart]);
 
@@ -811,7 +821,7 @@ export default function AdminHoursPage() {
               })}
               {section.list.length === 0 ? (
                 <p className="text-sm text-slate-500">
-                  {requestsLoading ? "Cargando solicitudes..." : "No hay solicitudes para este filtro."}
+                  {requestsLoading ? "Cargando solicitudes..." : "Sin solicitudes."}
                 </p>
               ) : null}
             </div>
