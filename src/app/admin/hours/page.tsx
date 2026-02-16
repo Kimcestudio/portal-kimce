@@ -98,6 +98,12 @@ const getInitials = (user: FirestoreUser | null, fallback = "C") => {
   return (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
 };
 
+const getRequestTitle = (request: HourRequest) => {
+  if (request.type === "EXTRA_ACTIVIDAD") return "Actividad extra";
+  if (request.type) return request.type;
+  return "Solicitud de horas";
+};
+
 function computeBreakMinutes(record: AdminAttendanceRecord | null) {
   if (!record) return 0;
   return record.breaks.reduce((total, current) => {
@@ -622,7 +628,7 @@ export default function AdminHoursPage() {
               >
                 <div>
                   <p className="font-semibold text-slate-900">
-                    {request.type ?? (request.source === "extraActivity" ? "Actividad extra" : "Solicitud de horas") }
+                    {getRequestTitle(request)}
                   </p>
                   <p className="text-xs text-slate-500">
                     {request.date ?? request.weekKey}
