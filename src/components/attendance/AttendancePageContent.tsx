@@ -142,6 +142,7 @@ export default function AttendancePageContent() {
   const [correctionDraft, setCorrectionDraft] = useState<CorrectionDraft>(emptyCorrection);
   const [schedule, setSchedule] = useState<WorkSchedule>(DEFAULT_WORK_SCHEDULES[0]);
   const [pendingHourRequestsCount, setPendingHourRequestsCount] = useState(0);
+  const [pendingExtraActivitiesCount, setPendingExtraActivitiesCount] = useState(0);
 
   const weekStart = useMemo(() => {
     const base = new Date();
@@ -228,6 +229,7 @@ export default function AttendancePageContent() {
   useEffect(() => {
     if (!user?.uid) return;
     const hourRequestsRef = query(collection(db, "hourRequests"), where("uid", "==", user.uid));
+    const extraActivitiesRef = query(collection(db, "extraActivities"), where("uid", "==", user.uid));
 
     const unsubscribeHourRequests = onSnapshot(
       hourRequestsRef,
@@ -246,10 +248,34 @@ export default function AttendancePageContent() {
       }
     );
 
+    const unsubscribeExtraActivities = onSnapshot(
+      extraActivitiesRef,
+      (snapshot) => {
+        const count = snapshot.docs.filter((docSnap) => {
+          const data = docSnap.data() as { status?: string };
+          return (data.status ?? "").toLowerCase() === "pending";
+        }).length;
+        setPendingExtraActivitiesCount(count);
+        if (process.env.NODE_ENV === "development") {
+          console.log("[requests] pending extraActivities:", count);
+        }
+      },
+      (error) => {
+        console.error("[attendance] Error loading extraActivities pending count", error);
+      }
+    );
+
     return () => {
       unsubscribeHourRequests();
+      unsubscribeExtraActivities();
     };
   }, [user?.uid]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      console.log("[requests] pending total:", pendingHourRequestsCount + pendingExtraActivitiesCount);
+    }
+  }, [pendingExtraActivitiesCount, pendingHourRequestsCount]);
 
   const reloadToday = () => {
     if (!user) return;
@@ -433,17 +459,18 @@ export default function AttendancePageContent() {
       reason: extraDraft.note || null,
     };
     try {
-      const docRef = await addDoc(collection(db, "hourRequests"), {
+      const docRef = await addDoc(collection(db, "extraActivities"), {
         ...payload,
         type: "EXTRA_ACTIVIDAD",
+        updatedAt: serverTimestamp(),
       });
       if (process.env.NODE_ENV === "development") {
-        console.log("[attendance] hourRequests (extra) saved", { uid: user.uid, payload, id: docRef.id });
+        console.log("[attendance] extraActivities saved", { uid: user.uid, payload, id: docRef.id });
       }
     } catch (error) {
       const err = error as { code?: string; message?: string };
       console.error("[attendance] Error creating extra activity", {
-        collection: "hourRequests",
+        collection: "extraActivities",
         uid: user.uid,
         payload,
         code: err?.code,
@@ -583,7 +610,7 @@ export default function AttendancePageContent() {
           onFilterChange={setFilter}
           onOpenExtra={() => setExtraOpen(true)}
           onOpenRequest={() => setRequestOpen(true)}
-          pendingCount={pendingHourRequestsCount}
+          pendingCount={pendingHourRequestsCount + pendingExtraActivitiesCount}
         />
       </div>
 
