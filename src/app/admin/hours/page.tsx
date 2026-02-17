@@ -1,16 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  collectionGroup,
-  doc,
-  onSnapshot,
-  query,
-  updateDoc,
-  type DocumentData,
-} from "firebase/firestore";
+import { collection, onSnapshot, type DocumentData } from "firebase/firestore";
 import PageHeader from "@/components/PageHeader";
+import UserAvatar from "@/components/common/UserAvatar";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   expectedMinutesForDate,
@@ -28,6 +21,8 @@ import type { AdminAttendanceRecord, UserProfile, WorkSchedule } from "@/service
 type FirestoreUser = UserProfile & {
   name?: string;
   fullName?: string;
+  avatarUrl?: string;
+  profilePhoto?: string;
 };
 
 type FirestoreTimestamp = {
@@ -39,32 +34,13 @@ type HourRecord = AdminAttendanceRecord & {
   weekKey: string;
 };
 
-type HourRequestStatus = "pending" | "approved" | "rejected";
-
-type HourRequest = {
-  id: string;
+type TimeEntryEvent = {
   uid: string;
+  dayKey: string;
   weekKey: string;
-  status: HourRequestStatus;
-  createdAt: string;
-  type?: string;
-  reason?: string;
-  hours?: number;
-  date?: string;
-  endDate?: string;
-  collection: string;
-};
-
-const REQUEST_COLLECTIONS = ["hourRequests", "attendanceRequests", "requests"];
-
-const normalizeStatus = (value: unknown): HourRequestStatus => {
-  if (typeof value === "string") {
-    const lower = value.toLowerCase();
-    if (lower === "pending" || lower === "approved" || lower === "rejected") {
-      return lower;
-    }
-  }
-  return "pending";
+  type: string;
+  ts: string;
+  totalMinutes?: number;
 };
 
 const normalizeTimestamp = (value: unknown) => {
@@ -96,10 +72,7 @@ export default function AdminHoursPage() {
   const [users, setUsers] = useState<FirestoreUser[]>([]);
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
   const [records, setRecords] = useState<HourRecord[]>([]);
-  const [requestSources, setRequestSources] = useState<Record<string, HourRequest[]>>({});
-  const [requestFilter, setRequestFilter] = useState<HourRequestStatus | "all">("all");
   const [loading, setLoading] = useState(true);
-  const [requestsLoading, setRequestsLoading] = useState(true);
 
   const scheduleOptions = workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES;
   const scheduleById = useMemo(
@@ -107,7 +80,9 @@ export default function AdminHoursPage() {
     [scheduleOptions]
   );
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
-  const weekKey = useMemo(() => formatISODate(weekStart), [weekStart]);
+  const weekKey = useMemo(() => getWeekKey(formatISODate(weekStart)), [weekStart]);
+  const weekDateSet = useMemo(() => new Set(weekDates.map((date) => formatISODate(date))), [weekDates]);
+  const weekEnd = useMemo(() => weekDates[6] ?? weekStart, [weekDates, weekStart]);
 
   useEffect(() => {
     if (user?.role !== "admin") return;
@@ -124,6 +99,8 @@ export default function AdminHoursPage() {
             name: data.name,
             fullName: data.fullName,
             photoURL: data.photoURL ?? "",
+            avatarUrl: data.avatarUrl,
+            profilePhoto: data.profilePhoto,
             role: (data.role as UserProfile["role"]) ?? "collab",
             position: data.position ?? "",
             workScheduleId: data.workScheduleId,
@@ -182,7 +159,7 @@ export default function AdminHoursPage() {
 
   useEffect(() => {
     if (user?.role !== "admin") return;
-    const hoursRef = collectionGroup(db, "hours");
+    const hoursRef = collection(db, "timeEntries");
     const unsubscribe = onSnapshot(
       hoursRef,
       (snapshot) => {
@@ -190,54 +167,71 @@ export default function AdminHoursPage() {
           const uidSet = new Set<string>();
           snapshot.docs.forEach((docSnap) => {
             const data = docSnap.data() as DocumentData;
-            const parentUserId = docSnap.ref.parent.parent?.id;
-            const userId = data.userId ?? data.uid ?? parentUserId ?? "unknown";
+            const userId = data.uid ?? data.userId ?? "unknown";
             uidSet.add(userId);
           });
           console.log("[admin/hours] hours docs", snapshot.size);
           console.log("[admin/hours] hours uids", Array.from(uidSet));
+          const firstDoc = snapshot.docs[0]?.data() as DocumentData | undefined;
+          if (firstDoc) {
+            console.log("[admin/hours] hours sample keys", Object.keys(firstDoc));
+          }
         }
-        const nextRecords = snapshot.docs.map((docSnap) => {
-          const data = docSnap.data() as DocumentData;
-          const parentUserId = docSnap.ref.parent.parent?.id;
-          const userId = data.userId ?? data.uid ?? parentUserId ?? "unknown";
-          const dateValue =
-            (typeof data.date === "string" ? data.date : null) ??
-            (typeof data.day === "string" ? data.day : null) ??
-            normalizeTimestamp(data.date) ??
-            normalizeTimestamp(data.checkInAt) ??
-            normalizeTimestamp(data.createdAt) ??
-            "";
-          const dateISO = dateValue ? dateValue.slice(0, 10) : "";
-          const weekKeyValue = typeof data.weekKey === "string" && data.weekKey.length > 0
-            ? data.weekKey
-            : dateISO
-              ? getWeekKey(dateISO)
-              : "";
-          const totalMinutes = typeof data.totalMinutes === "number"
-            ? data.totalMinutes
-            : typeof data.minutes === "number"
-              ? data.minutes
-              : typeof data.hours === "number"
-                ? Math.round(data.hours * 60)
-                : 0;
+        const events: TimeEntryEvent[] = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data() as DocumentData;
+            const uid = data.uid ?? data.userId;
+            const tsISO = normalizeTimestamp(data.ts) ?? normalizeTimestamp(data.createdAt) ?? "";
+            const dayKey =
+              (typeof data.dayKey === "string" ? data.dayKey : "") ||
+              (tsISO ? tsISO.slice(0, 10) : "");
+            if (!uid || !dayKey || !tsISO) return null;
+            return {
+              uid,
+              dayKey,
+              weekKey: typeof data.weekKey === "string" && data.weekKey.length > 0 ? data.weekKey : getWeekKey(dayKey),
+              type: typeof data.type === "string" ? data.type : "manual",
+              ts: tsISO,
+              totalMinutes: typeof data.totalMinutes === "number" ? data.totalMinutes : undefined,
+            } satisfies TimeEntryEvent;
+          })
+          .filter(Boolean) as TimeEntryEvent[];
+
+        const grouped = new Map<string, TimeEntryEvent[]>();
+        events.forEach((event) => {
+          const key = `${event.uid}_${event.dayKey}`;
+          const current = grouped.get(key) ?? [];
+          current.push(event);
+          grouped.set(key, current);
+        });
+
+        const nextRecords = Array.from(grouped.entries()).map(([key, dayEvents]) => {
+          const checkInEvent = dayEvents
+            .filter((event) => event.type === "clock_in")
+            .sort((a, b) => a.ts.localeCompare(b.ts))[0];
+          const checkOutEvent = dayEvents
+            .filter((event) => event.type === "clock_out")
+            .sort((a, b) => b.ts.localeCompare(a.ts))[0];
+          const userId = dayEvents[0]?.uid ?? "unknown";
+          const dateISO = dayEvents[0]?.dayKey ?? "";
+          const weekKeyValue = dayEvents[0]?.weekKey ?? (dateISO ? getWeekKey(dateISO) : "");
+          const derivedMinutes =
+            checkInEvent && checkOutEvent
+              ? Math.max(0, Math.round((new Date(checkOutEvent.ts).getTime() - new Date(checkInEvent.ts).getTime()) / 60000))
+              : 0;
+          const totalMinutes = checkOutEvent?.totalMinutes ?? derivedMinutes;
           return {
-            id: docSnap.id,
+            id: key,
             userId,
             date: dateISO,
-            checkInAt: normalizeTimestamp(data.checkInAt),
-            checkOutAt: normalizeTimestamp(data.checkOutAt),
-            breaks: Array.isArray(data.breaks)
-              ? data.breaks.map((item: DocumentData) => ({
-                  startAt: normalizeTimestamp(item.startAt) ?? "",
-                  endAt: normalizeTimestamp(item.endAt),
-                }))
-              : [],
-            notes: data.notes ?? null,
+            checkInAt: checkInEvent?.ts ?? null,
+            checkOutAt: checkOutEvent?.ts ?? null,
+            breaks: [],
+            notes: null,
             totalMinutes,
-            status: (data.status as AdminAttendanceRecord["status"]) ?? (data.checkOutAt ? "CLOSED" : "OPEN"),
+            status: checkOutEvent ? "CLOSED" : "OPEN",
             weekKey: weekKeyValue,
-          };
+          } satisfies HourRecord;
         });
         setRecords(nextRecords);
       },
@@ -248,98 +242,18 @@ export default function AdminHoursPage() {
     return () => unsubscribe();
   }, [user?.role]);
 
-  useEffect(() => {
-    if (user?.role !== "admin") return;
-    const unsubscribers = REQUEST_COLLECTIONS.map((collectionName) => {
-      const ref = collection(db, collectionName);
-      const q = query(ref);
-      return onSnapshot(
-        q,
-        (snapshot) => {
-          const nextRequests = snapshot.docs
-            .map((docSnap) => {
-            const data = docSnap.data() as DocumentData;
-            const uid = data.uid ?? data.userId ?? data.createdBy ?? "unknown";
-            const dateValue =
-              (typeof data.date === "string" ? data.date : null) ??
-              normalizeTimestamp(data.date) ??
-              normalizeTimestamp(data.createdAt) ??
-              "";
-            const dateISO = dateValue ? dateValue.slice(0, 10) : "";
-            const weekKeyValue = typeof data.weekKey === "string" && data.weekKey.length > 0
-              ? data.weekKey
-              : dateISO
-                ? getWeekKey(dateISO)
-                : "";
-            if (
-              collectionName === "requests" &&
-              !data.hours &&
-              data.type !== "PERMISO_HORAS" &&
-              data.type !== "HOURS"
-            ) {
-              return null;
-            }
-            return {
-              id: docSnap.id,
-              uid,
-              weekKey: weekKeyValue,
-              status: normalizeStatus(data.status ?? data.state),
-              createdAt: normalizeTimestamp(data.createdAt) ?? new Date().toISOString(),
-              type: data.type ?? data.requestType,
-              reason: data.reason ?? data.motivo,
-              hours: typeof data.hours === "number" ? data.hours : undefined,
-              date: data.date,
-              endDate: data.endDate,
-              collection: collectionName,
-            } satisfies HourRequest;
-          })
-            .filter(Boolean) as HourRequest[];
-          setRequestSources((prev) => ({ ...prev, [collectionName]: nextRequests }));
-          setRequestsLoading(false);
-        },
-        (error) => {
-          console.error(`[admin/hours] Error loading ${collectionName}`, error);
-          setRequestsLoading(false);
-        }
-      );
-    });
-    return () => {
-      unsubscribers.forEach((unsubscribe) => unsubscribe());
-    };
-  }, [user?.role]);
-
   const collaboratorUsers = useMemo(
     () => users.filter((item) => item.role !== "admin"),
     [users]
   );
 
   const filteredRecords = useMemo(
-    () => records.filter((record) => record.weekKey === weekKey),
-    [records, weekKey]
+    () =>
+      records.filter(
+        (record) => record.weekKey === weekKey || (record.date && weekDateSet.has(record.date))
+      ),
+    [records, weekDateSet, weekKey]
   );
-
-  useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      console.log("[admin/hours] selectedWeekKey", weekKey);
-      console.log("[admin/hours] total docs before filter", records.length);
-      console.log("[admin/hours] docs after weekKey filter", filteredRecords.length);
-    }
-  }, [filteredRecords.length, records.length, weekKey]);
-
-  const requests = useMemo(() => {
-    const merged = Object.values(requestSources).flat();
-    return merged.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [requestSources]);
-
-  const pendingRequests = useMemo(
-    () => requests.filter((item) => item.status === "pending"),
-    [requests]
-  );
-
-  const filteredRequests = useMemo(() => {
-    if (requestFilter === "all") return requests;
-    return requests.filter((item) => item.status === requestFilter);
-  }, [requestFilter, requests]);
 
   const summaries = useMemo(() => {
     const scopedUsers = selectedUserId === "all"
@@ -385,22 +299,9 @@ export default function AdminHoursPage() {
     ? records.filter(
         (record) =>
           record.userId === detailUser.uid &&
-          record.weekKey === weekKey
+          (record.weekKey === weekKey || (record.date && weekDateSet.has(record.date)))
       )
     : [];
-
-  const handleUpdateRequest = async (request: HourRequest, status: HourRequestStatus) => {
-    if (user?.role !== "admin") return;
-    try {
-      await updateDoc(doc(db, request.collection, request.id), {
-        status,
-        reviewedBy: user.uid,
-        reviewedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      console.error("[admin/hours] Error updating request", error);
-    }
-  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -452,7 +353,15 @@ export default function AdminHoursPage() {
               onClick={() => setDetailUserId(item.user.uid)}
             >
               <div>
-                <p className="font-semibold text-slate-900">{getUserDisplayName(item.user)}</p>
+                <div className="flex items-center gap-2">
+                  <UserAvatar
+                    name={getUserDisplayName(item.user)}
+                    photoURL={item.user.photoURL}
+                    avatarUrl={item.user.avatarUrl}
+                    profilePhoto={item.user.profilePhoto}
+                  />
+                  <p className="font-semibold text-slate-900">{getUserDisplayName(item.user)}</p>
+                </div>
                 <p className="text-xs text-slate-500">
                   {item.user.position} · Semana {formatISODate(weekStart)}
                 </p>
@@ -484,118 +393,20 @@ export default function AdminHoursPage() {
           ) : null}
         </div>
       </div>
-      <div className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">Solicitudes de horas</h3>
-            <p className="text-xs text-slate-500">
-              {pendingRequests.length} pendientes · Semana {weekKey}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { label: "Todas", value: "all" },
-              { label: "Pendientes", value: "pending" },
-              { label: "Aprobadas", value: "approved" },
-              { label: "Rechazadas", value: "rejected" },
-            ].map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => setRequestFilter(item.value as HourRequestStatus | "all")}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                  requestFilter === item.value
-                    ? "bg-indigo-600 text-white shadow-[0_8px_18px_rgba(79,70,229,0.35)]"
-                    : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="mt-4 space-y-3">
-          {filteredRequests.map((request) => {
-            const createdBy = collaboratorUsers.find((item) => item.uid === request.uid);
-            const statusLabel =
-              request.status === "pending"
-                ? "Pendiente"
-                : request.status === "approved"
-                ? "Aprobada"
-                : "Rechazada";
-            return (
-              <div
-                key={`${request.collection}-${request.id}`}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
-              >
-                <div>
-                  <p className="font-semibold text-slate-900">
-                    {request.type ?? "Solicitud de horas"}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {request.date ?? request.weekKey}
-                    {request.endDate ? ` - ${request.endDate}` : ""} ·{" "}
-                    {request.hours ? `${request.hours}h` : "Jornada completa"} ·{" "}
-                    {request.reason ?? "Sin motivo"}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {getUserDisplayName(createdBy ?? {
-                      uid: request.uid,
-                      email: "",
-                      displayName: "",
-                      photoURL: "",
-                      role: "collab",
-                      position: "",
-                      active: true,
-                    })}{" "}
-                    · {new Date(request.createdAt).toLocaleDateString("es-ES")}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      request.status === "pending"
-                        ? "bg-amber-100 text-amber-700"
-                        : request.status === "approved"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-rose-100 text-rose-700"
-                    }`}
-                  >
-                    {statusLabel}
-                  </span>
-                  <button
-                    className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 transition hover:-translate-y-0.5"
-                    onClick={() => handleUpdateRequest(request, "approved")}
-                    type="button"
-                  >
-                    Aprobar
-                  </button>
-                  <button
-                    className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5"
-                    onClick={() => handleUpdateRequest(request, "rejected")}
-                    type="button"
-                  >
-                    Rechazar
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          {filteredRequests.length === 0 ? (
-            <p className="text-sm text-slate-500">
-              {requestsLoading ? "Cargando solicitudes..." : "No hay solicitudes para este filtro."}
-            </p>
-          ) : null}
-        </div>
-      </div>
       {detailUser ? (
         <div className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Detalle semanal</h3>
-              <p className="text-xs text-slate-500">
-                {getUserDisplayName(detailUser)} · {detailUser.position}
-              </p>
+              <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+                <UserAvatar
+                  name={getUserDisplayName(detailUser)}
+                  photoURL={detailUser.photoURL}
+                  avatarUrl={detailUser.avatarUrl}
+                  profilePhoto={detailUser.profilePhoto}
+                />
+                <span>{getUserDisplayName(detailUser)} · {detailUser.position}</span>
+              </div>
             </div>
             <button
               className="rounded-full border border-slate-200/60 px-3 py-1 text-xs font-semibold text-slate-500"
