@@ -340,7 +340,7 @@ export default function AdminHoursPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Horarios</h2>
-            <p className="text-xs text-slate-500">Vista semanal por colaborador.</p>
+            <p className="text-xs text-slate-500">Vista semanal por colaborador (solo horarios).</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <label className="text-xs font-semibold text-slate-500">
