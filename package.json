@@ -5,9 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:export": "next build",
+    "build:export": "next build && next export",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "export": "next export",
+    "deploy": "npm run build:export && firebase deploy --only hosting"
   },
   "dependencies": {
     "firebase": "10.12.2",
