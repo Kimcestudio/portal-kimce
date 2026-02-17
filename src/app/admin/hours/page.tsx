@@ -54,6 +54,22 @@ const normalizeTimestamp = (value: unknown) => {
 const getUserDisplayName = (user: FirestoreUser) =>
   user.displayName || user.fullName || user.name || user.email || "Colaborador";
 
+const EXTRA_ACTIVITY_TYPE = "EXTRA_ACTIVIDAD";
+const PERMIT_TYPES = new Set(["DIA_LIBRE", "PERMISO_HORAS", "VACACIONES", "MEDICO", "HOURS", "PERMISO"]);
+
+const normalizeRequestType = (type: string | undefined) =>
+  typeof type === "string" ? type.toUpperCase() : "";
+
+const getRequestCategory = (request: HourRequest): "permit" | "extra" => {
+  const normalizedType = normalizeRequestType(request.type);
+  if (normalizedType === EXTRA_ACTIVITY_TYPE) return "extra";
+  if (PERMIT_TYPES.has(normalizedType)) return "permit";
+  return "permit";
+};
+
+const getRequestTitle = (request: HourRequest) =>
+  getRequestCategory(request) === "extra" ? "Actividad extra" : "Libre / Permiso";
+
 function computeBreakMinutes(record: AdminAttendanceRecord | null) {
   if (!record) return 0;
   return record.breaks.reduce((total, current) => {
@@ -290,6 +306,40 @@ export default function AdminHoursPage() {
     selectedUserId,
     weekDates,
   ]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      const uniqueTypes = Array.from(new Set(requests.map((item) => item.type).filter(Boolean)));
+      console.log("[admin/hours] activeWeekKey", weekKey);
+      console.log("[admin/hours] weekRange", formatISODate(weekStart), formatISODate(weekEnd));
+      console.log("[admin/hours] hours read", records.length);
+      console.log(
+        "[admin/hours] collaborator uids",
+        summaries.map((item) => item.user.uid)
+      );
+      console.log("[admin/hours] docs after week filter", filteredRecords.length);
+      console.log("[admin/hours] requests read", requests.length);
+      console.log("[admin/hours] count Libre/Permiso", permitRequests.length);
+      console.log("[admin/hours] count Extra", extraRequests.length);
+      console.log("[admin/hours] count historial", historyItems.length);
+      console.log("[admin] hourRequests total:", requests.length);
+      console.log("[admin] unique types:", uniqueTypes);
+      console.log("[admin] freePermission:", permitRequests.length);
+      console.log("[admin] extras:", extraRequests.length);
+    }
+  }, [extraRequests.length, filteredRecords.length, historyItems.length, permitRequests.length, records.length, requests.length, summaries, weekEnd, weekKey, weekStart]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV === "development") {
+      const hourRequestsCount = (requestSources["hourRequests:root"]?.length ?? 0) +
+        (requestSources["hourRequests:group"]?.length ?? 0);
+      const extraActivitiesCount = (requestSources["extraActivities:root"]?.length ?? 0) +
+        (requestSources["extraActivities:group"]?.length ?? 0);
+      console.log("[admin/hours] users count", users.length);
+      console.log("[admin/hours] hourRequests count", hourRequestsCount);
+      console.log("[admin/hours] extraActivities count", extraActivitiesCount);
+    }
+  }, [requestSources, users.length]);
 
   const detailUser = detailUserId
     ? collaboratorUsers.find((item) => item.uid === detailUserId) ?? null
