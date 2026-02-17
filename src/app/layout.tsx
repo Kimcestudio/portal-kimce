@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import "./globals.css";
 
+
 export const metadata: Metadata = {
   title: "Dashboard | doc.track",
   description: "Collaborator dashboard clone",

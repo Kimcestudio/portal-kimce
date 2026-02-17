@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getDocs,
   limit,
@@ -327,6 +328,25 @@ export default function AdminRequestsPage() {
     });
   };
 
+  const handleDeleteRequest = async (request: AdminRequestItem) => {
+    if (!user || user.role !== "admin") return;
+    const confirmed = typeof window === "undefined"
+      ? true
+      : window.confirm("¿Seguro que deseas eliminar esta solicitud? Esta acción no se puede deshacer.");
+    if (!confirmed) return;
+
+    await deleteDoc(doc(db, request.documentPath));
+
+    setHistoryItems((prev) => prev.filter((item) => item.documentPath !== request.documentPath));
+    setRequestSources((prev) => {
+      const next: Record<string, AdminRequestItem[]> = {};
+      Object.entries(prev).forEach(([key, items]) => {
+        next[key] = items.filter((item) => item.documentPath !== request.documentPath);
+      });
+      return next;
+    });
+  };
+
   const collaboratorUsers = useMemo(() => users.filter((item) => item.role !== "admin"), [users]);
 
   useEffect(() => {
@@ -499,6 +519,15 @@ export default function AdminRequestsPage() {
                       >
                         Rechazar
                       </button>
+                      {user?.role === "admin" ? (
+                        <button
+                          className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 transition hover:-translate-y-0.5"
+                          onClick={() => void handleDeleteRequest(request)}
+                          type="button"
+                        >
+                          Eliminar
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -591,6 +620,15 @@ export default function AdminRequestsPage() {
                         Rechazar
                       </button>
                     </>
+                  ) : null}
+                  {user?.role === "admin" ? (
+                    <button
+                      className="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700 transition hover:-translate-y-0.5"
+                      onClick={() => void handleDeleteRequest(request)}
+                      type="button"
+                    >
+                      Eliminar
+                    </button>
                   ) : null}
                 </div>
               </div>
