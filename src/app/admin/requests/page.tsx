@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
   getDocs,
   limit,
@@ -37,7 +38,7 @@ type FirestoreTimestamp = {
 type HourRequestStatus = "pending" | "approved" | "rejected";
 
 type AdminRequestItem = {
-  id: string;
+  docId: string;
   uid: string;
   type?: string;
   status: HourRequestStatus;
@@ -48,6 +49,8 @@ type AdminRequestItem = {
   hours?: number;
   reason?: string;
   source: "hourRequest" | "extraActivity";
+  collectionPath: "hourRequests" | "extraActivities";
+  sourceTag: string;
   documentPath: string;
 };
 
@@ -106,6 +109,7 @@ export default function AdminRequestsPage() {
   const [historyCursorExtraActivities, setHistoryCursorExtraActivities] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
   const [historyHasMore, setHistoryHasMore] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [deletingRequestKey, setDeletingRequestKey] = useState<string | null>(null);
 
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
   const weekKey = useMemo(() => getWeekKey(formatISODate(weekStart)), [weekStart]);
@@ -162,7 +166,7 @@ export default function AdminRequestsPage() {
                   ? getWeekKey(dateISO)
                   : "";
               return {
-                id: docSnap.id,
+                docId: docSnap.id,
                 uid,
                 type: data.type ?? data.requestType,
                 status: normalizeStatus(data.status ?? data.state),
@@ -177,6 +181,8 @@ export default function AdminRequestsPage() {
                     : undefined,
                 reason: data.reason ?? data.motivo ?? data.note,
                 source: collectionName === "extraActivities" ? "extraActivity" : "hourRequest",
+                collectionPath: collectionName === "extraActivities" ? "extraActivities" : "hourRequests",
+                sourceTag: key,
                 documentPath: docSnap.ref.path,
               } satisfies AdminRequestItem;
             });
@@ -192,10 +198,12 @@ export default function AdminRequestsPage() {
     };
   }, [user?.role]);
 
+  const getRequestKey = (request: Pick<AdminRequestItem, "documentPath">) => request.documentPath;
+
   const requests = useMemo(() => {
     const merged = Object.values(requestSources).flat();
     const deduped = new Map<string, AdminRequestItem>();
-    merged.forEach((item) => deduped.set(item.documentPath, item));
+    merged.forEach((item) => deduped.set(getRequestKey(item), item));
     return Array.from(deduped.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }, [requestSources]);
 
@@ -243,7 +251,7 @@ export default function AdminRequestsPage() {
         ? getWeekKey(dateISO)
         : "";
     return {
-      id: docSnap.id,
+      docId: docSnap.id,
       uid,
       type: data.type ?? data.requestType,
       status: normalizeStatus(data.status ?? data.state),
@@ -258,6 +266,8 @@ export default function AdminRequestsPage() {
           : undefined,
       reason: data.reason ?? data.motivo ?? data.note,
       source: collectionName === "extraActivities" ? "extraActivity" : "hourRequest",
+      collectionPath: collectionName === "extraActivities" ? "extraActivities" : "hourRequests",
+      sourceTag: `history:${collectionName}`,
       documentPath: docSnap.ref.path,
     } satisfies AdminRequestItem;
   };
@@ -301,7 +311,7 @@ export default function AdminRequestsPage() {
       setHistoryItems((prev) => {
         const base = reset ? [] : prev;
         const deduped = new Map<string, AdminRequestItem>();
-        [...base, ...merged].forEach((item) => deduped.set(item.documentPath, item));
+        [...base, ...merged].forEach((item) => deduped.set(getRequestKey(item), item));
         return Array.from(deduped.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
       });
 
@@ -325,6 +335,42 @@ export default function AdminRequestsPage() {
       reviewedBy: user.uid,
       reviewedAt: new Date().toISOString(),
     });
+  };
+
+  const handleDeleteRequest = async (request: AdminRequestItem) => {
+    if (!user || user.role !== "admin") return;
+
+    const confirmed = typeof window === "undefined"
+      ? true
+      : window.confirm("¿Eliminar esta solicitud? Esta acción no se puede deshacer.");
+    if (!confirmed) return;
+
+    const requestKey = getRequestKey(request);
+    setDeletingRequestKey(requestKey);
+
+    try {
+      await deleteDoc(doc(db, request.documentPath));
+
+      setHistoryItems((prev) => prev.filter((item) => getRequestKey(item) !== requestKey));
+      setRequestSources((prev) => {
+        const next: Record<string, AdminRequestItem[]> = {};
+        Object.entries(prev).forEach(([key, items]) => {
+          next[key] = items.filter((item) => getRequestKey(item) !== requestKey);
+        });
+        return next;
+      });
+    } catch (error) {
+      const firebaseCode =
+        typeof error === "object" && error !== null && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : "unknown";
+      console.error(`[admin/requests] No se pudo eliminar la solicitud (code: ${firebaseCode})`, error);
+      if (typeof window !== "undefined") {
+        window.alert("No se pudo eliminar la solicitud. Intenta nuevamente.");
+      }
+    } finally {
+      setDeletingRequestKey(null);
+    }
   };
 
   const collaboratorUsers = useMemo(() => users.filter((item) => item.role !== "admin"), [users]);
@@ -442,7 +488,7 @@ export default function AdminRequestsPage() {
                     : "Rechazada";
                 return (
                   <div
-                    key={request.documentPath}
+                    key={getRequestKey(request)}
                     className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
                   >
                     <div>
@@ -493,12 +539,22 @@ export default function AdminRequestsPage() {
                         Aprobar
                       </button>
                       <button
-                        className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5"
+                        className="rounded-full border border-rose-200 bg-white px-3 py-1 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-50"
                         onClick={() => handleUpdateRequest(request, "rejected")}
                         type="button"
                       >
                         Rechazar
                       </button>
+                      {user?.role === "admin" ? (
+                        <button
+                          className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+                          disabled={deletingRequestKey === getRequestKey(request)}
+                          onClick={() => void handleDeleteRequest(request)}
+                          type="button"
+                        >
+                          {deletingRequestKey === getRequestKey(request) ? "Eliminando..." : "Eliminar"}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 );
@@ -531,7 +587,7 @@ export default function AdminRequestsPage() {
                 : "Rechazada";
             return (
               <div
-                key={`history-${request.documentPath}`}
+                key={`history-${getRequestKey(request)}`}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
               >
                 <div>
@@ -584,13 +640,23 @@ export default function AdminRequestsPage() {
                         Aprobar
                       </button>
                       <button
-                        className="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5"
+                        className="rounded-full border border-rose-200 bg-white px-3 py-1 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-50"
                         onClick={() => handleUpdateRequest(request, "rejected")}
                         type="button"
                       >
                         Rechazar
                       </button>
                     </>
+                  ) : null}
+                  {user?.role === "admin" ? (
+                    <button
+                      className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+                      disabled={deletingRequestKey === getRequestKey(request)}
+                      onClick={() => void handleDeleteRequest(request)}
+                      type="button"
+                    >
+                      {deletingRequestKey === getRequestKey(request) ? "Eliminando..." : "Eliminar"}
+                    </button>
                   ) : null}
                 </div>
               </div>
