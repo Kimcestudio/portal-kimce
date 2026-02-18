@@ -379,6 +379,8 @@ export default function AdminHoursPage() {
       );
       if (firebaseCode.includes("permission-denied")) {
         window.alert("Tu usuario no tiene permisos de admin o reglas/roles no están correctos.");
+      } else if (firebaseCode.includes("functions/internal") || firebaseCode === "internal") {
+        window.alert("Error interno del servidor. Revisa los logs de Cloud Functions.");
       } else {
         window.alert("No se pudieron eliminar los datos del colaborador. Intenta nuevamente.");
       }
