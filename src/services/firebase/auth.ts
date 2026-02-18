@@ -5,6 +5,7 @@ import { auth } from "@/services/firebase/client";
 import { readStorage, writeStorage } from "@/services/firebase/storage";
 
 const SESSION_KEY = "portal_auth_session";
+const AUTH_SESSION_EVENT = "portal_auth_session_changed";
 
 type AuthSession = {
   uid: string;
@@ -17,10 +18,18 @@ export function getStoredSession() {
 
 export function onAuthStateChanged(callback: (session: AuthSession | null) => void) {
   if (typeof window === "undefined") return () => undefined;
+
   const handler = () => callback(getStoredSession());
+
   window.addEventListener("storage", handler);
+  window.addEventListener(AUTH_SESSION_EVENT, handler);
+
   handler();
-  return () => window.removeEventListener("storage", handler);
+
+  return () => {
+    window.removeEventListener("storage", handler);
+    window.removeEventListener(AUTH_SESSION_EVENT, handler);
+  };
 }
 
 export function setStoredSession(session: AuthSession | null) {
@@ -29,6 +38,10 @@ export function setStoredSession(session: AuthSession | null) {
   } else {
     if (typeof window === "undefined") return;
     window.localStorage.removeItem(SESSION_KEY);
+  }
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(AUTH_SESSION_EVENT));
   }
 }
 
