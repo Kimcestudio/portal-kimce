@@ -330,7 +330,7 @@ export default function AdminRequestsPage() {
 
   const handleUpdateRequest = async (request: AdminRequestItem, status: HourRequestStatus) => {
     if (!user || user.role !== "admin") return;
-    await updateDoc(doc(db, request.documentPath), {
+    await updateDoc(doc(db, request.collectionPath, request.docId), {
       status,
       reviewedBy: user.uid,
       reviewedAt: new Date().toISOString(),
