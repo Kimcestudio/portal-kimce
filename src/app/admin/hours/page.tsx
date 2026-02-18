@@ -6,6 +6,7 @@ import {
   onSnapshot,
   type DocumentData,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import PageHeader from "@/components/PageHeader";
 import UserAvatar from "@/components/common/UserAvatar";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -81,6 +82,7 @@ export default function AdminHoursPage() {
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
   const [records, setRecords] = useState<HourRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingCollaboratorData, setDeletingCollaboratorData] = useState(false);
 
   const scheduleOptions = workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES;
 
@@ -331,6 +333,49 @@ export default function AdminHoursPage() {
       )
     : [];
 
+  const handleDeleteCollaboratorData = async () => {
+    if (!user || user.role !== "admin") return;
+    if (selectedUserId === "all") return;
+
+    const confirmed = window.confirm(
+      "Esto eliminará horarios y solicitudes del colaborador. No se puede deshacer.",
+    );
+    if (!confirmed) return;
+
+    setDeletingCollaboratorData(true);
+    try {
+      const functions = getFunctions();
+      const deleteCallable = httpsCallable<
+        { targetUid: string; mode?: "ALL" | "TIME_ONLY" },
+        { ok: boolean; deleted?: Record<string, number> }
+      >(functions, "adminDeleteUserData");
+
+      const response = await deleteCallable({
+        targetUid: selectedUserId,
+        mode: "ALL",
+      });
+
+      if (response.data?.ok) {
+        window.alert("Datos del colaborador eliminados correctamente.");
+      } else {
+        window.alert("No se pudo confirmar la eliminación de datos.");
+      }
+    } catch (error) {
+      const firebaseCode =
+        typeof error === "object" && error !== null && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : "unknown";
+      console.error(`[admin/hours] Error eliminando datos del colaborador (code: ${firebaseCode})`, error);
+      if (firebaseCode.includes("permission-denied")) {
+        window.alert("Tu usuario no tiene permisos de admin o reglas/roles no están correctos.");
+      } else {
+        window.alert("No se pudieron eliminar los datos del colaborador. Intenta nuevamente.");
+      }
+    } finally {
+      setDeletingCollaboratorData(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
@@ -371,6 +416,17 @@ export default function AdminHoursPage() {
                 ))}
               </select>
             </label>
+
+            {selectedUserId !== "all" ? (
+              <button
+                type="button"
+                className="self-end rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+                disabled={deletingCollaboratorData}
+                onClick={() => void handleDeleteCollaboratorData()}
+              >
+                {deletingCollaboratorData ? "Eliminando..." : "Borrar datos del colaborador"}
+              </button>
+            ) : null}
           </div>
         </div>
 
