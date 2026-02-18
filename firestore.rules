@@ -59,14 +59,28 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.auth.uid == request.resource.data.uid;
       allow read, list: if isSignedIn() && request.auth.uid == resource.data.uid;
       allow update: if isSignedIn() && request.auth.uid == resource.data.uid;
-      allow read, list, update: if isAdmin();
+      allow read, list, update, delete: if isAdmin();
     }
 
     match /extraActivities/{activityId} {
       allow create: if isSignedIn() && request.auth.uid == request.resource.data.uid;
       allow read, list: if isSignedIn() && request.auth.uid == resource.data.uid;
       allow update: if isSignedIn() && request.auth.uid == resource.data.uid;
-      allow read, list, update: if isAdmin();
+      allow read, list, update, delete: if isAdmin();
+    }
+
+    match /users/{uid}/hourRequests/{requestId} {
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow read, list: if isSignedIn() && request.auth.uid == uid;
+      allow update: if isSignedIn() && request.auth.uid == uid;
+      allow read, list, update, delete: if isAdmin();
+    }
+
+    match /users/{uid}/extraActivities/{activityId} {
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow read, list: if isSignedIn() && request.auth.uid == uid;
+      allow update: if isSignedIn() && request.auth.uid == uid;
+      allow read, list, update, delete: if isAdmin();
     }
 
     match /timeEntries/{docId} {
