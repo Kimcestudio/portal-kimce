@@ -19,141 +19,180 @@ function logError(message, payload = {}) {
   logger.error(message, payload);
 }
 
-async function deleteCollectionGroupByField({ collectionId, field, targetUid, deletedPaths }) {
+async function deleteRootCollectionByField({ collectionId, field, targetUid, deletedPaths }) {
   let totalDeleted = 0;
   let totalFound = 0;
   let batchNumber = 0;
 
-  while (true) {
-    const snapshot = await db
-      .collectionGroup(collectionId)
-      .where(field, "==", targetUid)
-      .limit(MAX_BATCH_SIZE)
-      .get();
+  logInfo(`deleting ${collectionId} by ${field}`, { collectionId, field, targetUid });
 
-    const fetched = snapshot.size;
-    if (fetched === 0) {
-      logInfo("query finished (no more docs)", {
+  try {
+    while (true) {
+      const snapshot = await db
+        .collection(collectionId)
+        .where(field, "==", targetUid)
+        .limit(MAX_BATCH_SIZE)
+        .get();
+
+      const fetched = snapshot.size;
+      if (fetched === 0) {
+        logInfo("query finished (no more docs)", {
+          collectionId,
+          field,
+          targetUid,
+          batchNumber,
+          totalFound,
+          totalDeleted,
+        });
+        break;
+      }
+
+      batchNumber += 1;
+      totalFound += fetched;
+
+      const batch = db.batch();
+      let batchDeletes = 0;
+
+      snapshot.docs.forEach((docSnap) => {
+        const path = docSnap.ref.path;
+        if (deletedPaths.has(path)) return;
+        deletedPaths.add(path);
+        batch.delete(docSnap.ref);
+        batchDeletes += 1;
+      });
+
+      if (batchDeletes === 0) {
+        logInfo("batch skipped (already scheduled)", {
+          collectionId,
+          field,
+          targetUid,
+          batchNumber,
+          fetched,
+        });
+        continue;
+      }
+
+      await batch.commit();
+      totalDeleted += batchDeletes;
+
+      logInfo("batch deleted", {
         collectionId,
         field,
         targetUid,
         batchNumber,
-        totalFound,
+        fetched,
+        batchDeletes,
         totalDeleted,
       });
-      break;
     }
 
-    batchNumber += 1;
-    totalFound += fetched;
-
-    logInfo("batch fetched", {
+    return { found: totalFound, deleted: totalDeleted };
+  } catch (error) {
+    logError("deleteRootCollectionByField failed", {
       collectionId,
       field,
       targetUid,
-      batchNumber,
-      fetched,
-      totalFound,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null,
     });
-
-    const batch = db.batch();
-    let batchDeletes = 0;
-
-    snapshot.docs.forEach((docSnap) => {
-      const path = docSnap.ref.path;
-      if (deletedPaths.has(path)) return;
-      deletedPaths.add(path);
-      batch.delete(docSnap.ref);
-      batchDeletes += 1;
-    });
-
-    if (batchDeletes === 0) {
-      logInfo("batch skipped (all docs already scheduled)", {
-        collectionId,
-        field,
-        targetUid,
-        batchNumber,
-      });
-      continue;
+    console.error("[adminDeleteUserData] deleteRootCollectionByField raw error", error);
+    if (error instanceof Error && error.stack) {
+      console.error("[adminDeleteUserData] deleteRootCollectionByField raw stack", error.stack);
     }
 
-    await batch.commit();
-    totalDeleted += batchDeletes;
-
-    logInfo("batch deleted", {
-      collectionId,
+    throw new HttpsError("internal", "Error interno al borrar datos", {
+      collection: collectionId,
       field,
-      targetUid,
-      batchNumber,
-      batchDeletes,
-      totalDeleted,
+      originalMessage: error instanceof Error ? error.message : String(error),
     });
   }
-
-  return { found: totalFound, deleted: totalDeleted };
 }
 
 async function deleteUserSubcollection({ targetUid, subcollection, deletedPaths }) {
   let totalDeleted = 0;
   let totalFound = 0;
   let batchNumber = 0;
+  const collectionPath = `users/${targetUid}/${subcollection}`;
 
-  while (true) {
-    const snapshot = await db
-      .collection("users")
-      .doc(targetUid)
-      .collection(subcollection)
-      .limit(MAX_BATCH_SIZE)
-      .get();
+  logInfo(`deleting ${collectionPath}`, { targetUid, subcollection, collectionPath });
 
-    const fetched = snapshot.size;
-    if (fetched === 0) {
-      logInfo("user subcollection finished (no more docs)", {
+  try {
+    while (true) {
+      const snapshot = await db
+        .collection("users")
+        .doc(targetUid)
+        .collection(subcollection)
+        .limit(MAX_BATCH_SIZE)
+        .get();
+
+      const fetched = snapshot.size;
+      if (fetched === 0) {
+        logInfo("user subcollection finished (no more docs)", {
+          targetUid,
+          subcollection,
+          batchNumber,
+          totalFound,
+          totalDeleted,
+        });
+        break;
+      }
+
+      batchNumber += 1;
+      totalFound += fetched;
+
+      const batch = db.batch();
+      let batchDeletes = 0;
+
+      snapshot.docs.forEach((docSnap) => {
+        const path = docSnap.ref.path;
+        if (deletedPaths.has(path)) return;
+        deletedPaths.add(path);
+        batch.delete(docSnap.ref);
+        batchDeletes += 1;
+      });
+
+      if (batchDeletes === 0) {
+        logInfo("user subcollection batch skipped (already scheduled)", {
+          targetUid,
+          subcollection,
+          batchNumber,
+        });
+        continue;
+      }
+
+      await batch.commit();
+      totalDeleted += batchDeletes;
+
+      logInfo("user subcollection batch deleted", {
         targetUid,
         subcollection,
         batchNumber,
-        totalFound,
+        fetched,
+        batchDeletes,
         totalDeleted,
       });
-      break;
     }
 
-    batchNumber += 1;
-    totalFound += fetched;
-
-    const batch = db.batch();
-    let batchDeletes = 0;
-
-    snapshot.docs.forEach((docSnap) => {
-      const path = docSnap.ref.path;
-      if (deletedPaths.has(path)) return;
-      deletedPaths.add(path);
-      batch.delete(docSnap.ref);
-      batchDeletes += 1;
-    });
-
-    if (batchDeletes === 0) {
-      logInfo("user subcollection batch skipped (already scheduled)", {
-        targetUid,
-        subcollection,
-        batchNumber,
-      });
-      continue;
-    }
-
-    await batch.commit();
-    totalDeleted += batchDeletes;
-
-    logInfo("user subcollection batch deleted", {
+    return { found: totalFound, deleted: totalDeleted };
+  } catch (error) {
+    logError("deleteUserSubcollection failed", {
       targetUid,
       subcollection,
-      batchNumber,
-      batchDeletes,
-      totalDeleted,
+      collectionPath,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null,
+    });
+    console.error("[adminDeleteUserData] deleteUserSubcollection raw error", error);
+    if (error instanceof Error && error.stack) {
+      console.error("[adminDeleteUserData] deleteUserSubcollection raw stack", error.stack);
+    }
+
+    throw new HttpsError("internal", "Error interno al borrar datos", {
+      collection: collectionPath,
+      field: "documentId",
+      originalMessage: error instanceof Error ? error.message : String(error),
     });
   }
-
-  return { found: totalFound, deleted: totalDeleted };
 }
 
 exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 540, memory: "1GiB" }, async (request) => {
@@ -204,13 +243,13 @@ exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 54
       usersExtraActivities: 0,
     };
 
-    const timeByUid = await deleteCollectionGroupByField({
+    const timeByUid = await deleteRootCollectionByField({
       collectionId: "timeEntries",
       field: "uid",
       targetUid,
       deletedPaths,
     });
-    const timeByUserId = await deleteCollectionGroupByField({
+    const timeByUserId = await deleteRootCollectionByField({
       collectionId: "timeEntries",
       field: "userId",
       targetUid,
@@ -219,13 +258,13 @@ exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 54
     deleted.timeEntries = timeByUid.deleted + timeByUserId.deleted;
 
     if (mode === "ALL") {
-      const hourByUid = await deleteCollectionGroupByField({
+      const hourByUid = await deleteRootCollectionByField({
         collectionId: "hourRequests",
         field: "uid",
         targetUid,
         deletedPaths,
       });
-      const hourByUserId = await deleteCollectionGroupByField({
+      const hourByUserId = await deleteRootCollectionByField({
         collectionId: "hourRequests",
         field: "userId",
         targetUid,
@@ -233,13 +272,13 @@ exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 54
       });
       deleted.hourRequests = hourByUid.deleted + hourByUserId.deleted;
 
-      const extraByUid = await deleteCollectionGroupByField({
+      const extraByUid = await deleteRootCollectionByField({
         collectionId: "extraActivities",
         field: "uid",
         targetUid,
         deletedPaths,
       });
-      const extraByUserId = await deleteCollectionGroupByField({
+      const extraByUserId = await deleteRootCollectionByField({
         collectionId: "extraActivities",
         field: "userId",
         targetUid,
@@ -307,6 +346,10 @@ exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 54
       throw error;
     }
 
-    throw new HttpsError("internal", "Error interno al borrar datos del colaborador.");
+    throw new HttpsError("internal", "Error interno al borrar datos", {
+      collection: "unknown",
+      field: "unknown",
+      originalMessage: error instanceof Error ? error.message : String(error),
+    });
   }
 });
