@@ -156,7 +156,7 @@ async function deleteUserSubcollection({ targetUid, subcollection, deletedPaths 
   return { found: totalFound, deleted: totalDeleted };
 }
 
-exports.adminDeleteUserData = onCall(async (request) => {
+exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 540, memory: "1GiB" }, async (request) => {
   const requesterUid = request.auth?.uid ?? null;
   const targetUid = typeof request.data?.targetUid === "string" ? request.data.targetUid.trim() : "";
   const mode = request.data?.mode === "TIME_ONLY" ? "TIME_ONLY" : "ALL";
@@ -297,6 +297,11 @@ exports.adminDeleteUserData = onCall(async (request) => {
       message: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : null,
     });
+
+    console.error("[adminDeleteUserData] raw error", error);
+    if (error instanceof Error && error.stack) {
+      console.error("[adminDeleteUserData] raw stack", error.stack);
+    }
 
     if (error instanceof HttpsError) {
       throw error;
