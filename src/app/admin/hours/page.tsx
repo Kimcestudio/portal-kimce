@@ -76,6 +76,7 @@ export default function AdminHoursPage() {
 
   const [weekStart, setWeekStart] = useState(() => getWeekStartMonday(new Date()));
   const [selectedUserId, setSelectedUserId] = useState<string>("all");
+  const [deleteTargetUserId, setDeleteTargetUserId] = useState<string>("all");
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
 
   const [users, setUsers] = useState<FirestoreUser[]>([]);
@@ -335,10 +336,13 @@ export default function AdminHoursPage() {
 
   const handleDeleteCollaboratorData = async () => {
     if (!user || user.role !== "admin") return;
-    if (selectedUserId === "all") return;
+    if (deleteTargetUserId === "all") return;
+
+    const collaborator = collaboratorUsers.find((item) => item.uid === deleteTargetUserId) ?? null;
+    const collaboratorName = collaborator ? getUserDisplayName(collaborator) : deleteTargetUserId;
 
     const confirmed = window.confirm(
-      "Esto eliminará horarios y solicitudes del colaborador. No se puede deshacer.",
+      `Esto eliminará horarios y solicitudes del colaborador ${collaboratorName}. No se puede deshacer.`,
     );
     if (!confirmed) return;
 
@@ -351,7 +355,7 @@ export default function AdminHoursPage() {
       >(functions, "adminDeleteUserData");
 
       const response = await deleteCallable({
-        targetUid: selectedUserId,
+        targetUid: deleteTargetUserId,
         mode: "ALL",
       });
 
@@ -365,7 +369,14 @@ export default function AdminHoursPage() {
         typeof error === "object" && error !== null && "code" in error
           ? String((error as { code?: unknown }).code)
           : "unknown";
-      console.error(`[admin/hours] Error eliminando datos del colaborador (code: ${firebaseCode})`, error);
+      const firebaseMessage =
+        typeof error === "object" && error !== null && "message" in error
+          ? String((error as { message?: unknown }).message)
+          : "";
+      console.error(
+        `[admin/hours] Error eliminando datos del colaborador (code: ${firebaseCode}, message: ${firebaseMessage})`,
+        error,
+      );
       if (firebaseCode.includes("permission-denied")) {
         window.alert("Tu usuario no tiene permisos de admin o reglas/roles no están correctos.");
       } else {
@@ -417,16 +428,6 @@ export default function AdminHoursPage() {
               </select>
             </label>
 
-            {selectedUserId !== "all" ? (
-              <button
-                type="button"
-                className="self-end rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
-                disabled={deletingCollaboratorData}
-                onClick={() => void handleDeleteCollaboratorData()}
-              >
-                {deletingCollaboratorData ? "Eliminando..." : "Borrar datos del colaborador"}
-              </button>
-            ) : null}
           </div>
         </div>
 
@@ -476,6 +477,43 @@ export default function AdminHoursPage() {
           {summaries.length === 0 ? (
             <p className="text-sm text-slate-500">{loading ? "Cargando horarios..." : "No hay registros para esta semana."}</p>
           ) : null}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-5 shadow-[0_8px_24px_rgba(17,24,39,0.04)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Gestión avanzada</h3>
+            <p className="text-xs text-rose-700">
+              Esto elimina horarios, solicitudes y actividades. No se puede deshacer.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-xs font-semibold text-slate-600">
+              Elegir colaborador a eliminar datos
+              <select
+                className="mt-2 block min-w-[240px] rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
+                value={deleteTargetUserId}
+                onChange={(event) => setDeleteTargetUserId(event.target.value)}
+              >
+                <option value="all">Selecciona colaborador</option>
+                {collaboratorUsers.map((item) => (
+                  <option key={item.uid} value={item.uid}>
+                    {getUserDisplayName(item)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              className="rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={deleteTargetUserId === "all" || deletingCollaboratorData}
+              onClick={() => void handleDeleteCollaboratorData()}
+            >
+              {deletingCollaboratorData ? "Eliminando..." : "Borrar datos del colaborador"}
+            </button>
+          </div>
         </div>
       </div>
 
