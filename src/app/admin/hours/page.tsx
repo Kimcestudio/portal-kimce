@@ -9,6 +9,7 @@ import {
 import { getFunctions, httpsCallable } from "firebase/functions";
 import PageHeader from "@/components/PageHeader";
 import UserAvatar from "@/components/common/UserAvatar";
+import CollaboratorDashboard from "@/components/attendance/CollaboratorDashboard";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   expectedMinutesForDate,
@@ -334,6 +335,58 @@ export default function AdminHoursPage() {
       )
     : [];
 
+  useEffect(() => {
+    if (selectedUserId === "all") {
+      setDetailUserId(null);
+      setDeleteTargetUserId("all");
+      return;
+    }
+
+    setDetailUserId(selectedUserId);
+    setDeleteTargetUserId(selectedUserId);
+  }, [selectedUserId]);
+
+  const detailSchedule = detailUser
+    ? scheduleById.get(detailUser.workScheduleId ?? "") ?? scheduleOptions[0]
+    : null;
+
+  const detailExpectedMinutesWeek = detailSchedule
+    ? weekDates.reduce((total, date) => total + expectedMinutesForDate(date, detailSchedule), 0)
+    : 0;
+
+  const detailWorkedMinutesWeek = detailRecords.reduce((total, record) => total + record.totalMinutes, 0);
+  const detailDiffMinutesWeek = detailWorkedMinutesWeek - detailExpectedMinutesWeek;
+
+  const detailCompletedDays = detailRecords.filter((record) => {
+    if (record.status !== "CLOSED") return false;
+    return new Date(`${record.date}T00:00:00`).getDay() !== 0;
+  }).length;
+
+  const detailTotalBalanceMinutes = detailUser && detailSchedule
+    ? records
+        .filter((record) => record.userId === detailUser.uid)
+        .reduce((sum, record) => {
+          const recordDate = new Date(`${record.date}T00:00:00`);
+          return sum + (record.totalMinutes - expectedMinutesForDate(recordDate, detailSchedule));
+        }, 0)
+    : 0;
+
+  const detailChartData = detailSchedule
+    ? weekDates
+        .filter((date) => date.getDay() !== 0)
+        .map((date) => {
+          const dateISO = formatISODate(date);
+          const record = detailRecords.find((item) => item.date === dateISO);
+          const targetHours = expectedMinutesForDate(date, detailSchedule) / 60;
+
+          return {
+            label: date.toLocaleDateString("es-ES", { weekday: "short" }),
+            hours: record ? Math.round((record.totalMinutes / 60) * 10) / 10 : 0,
+            target: targetHours,
+          };
+        })
+    : [];
+
   const handleDeleteCollaboratorData = async () => {
     if (!user || user.role !== "admin") return;
     if (deleteTargetUserId === "all") return;
@@ -439,7 +492,10 @@ export default function AdminHoursPage() {
               key={item.user.uid}
               type="button"
               className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-left text-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(15,23,42,0.08)]"
-              onClick={() => setDetailUserId(item.user.uid)}
+              onClick={() => {
+                setDetailUserId(item.user.uid);
+                setDeleteTargetUserId(item.user.uid);
+              }}
             >
               <div>
                 <div className="flex items-center gap-2">
@@ -587,6 +643,16 @@ export default function AdminHoursPage() {
               });
             })}
           </div>
+
+          <CollaboratorDashboard
+            collaboratorName={getUserDisplayName(detailUser)}
+            workedMinutes={detailWorkedMinutesWeek}
+            expectedMinutes={detailExpectedMinutesWeek}
+            diffMinutes={detailDiffMinutesWeek}
+            completedDays={detailCompletedDays}
+            totalBalanceMinutes={detailTotalBalanceMinutes}
+            chartData={detailChartData}
+          />
         </div>
       ) : null}
 
