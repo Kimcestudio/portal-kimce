@@ -3,11 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   collection,
-  collectionGroup,
   onSnapshot,
-  query,
   type DocumentData,
 } from "firebase/firestore";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import PageHeader from "@/components/PageHeader";
 import UserAvatar from "@/components/common/UserAvatar";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -50,21 +49,6 @@ type TimeEntryEvent = {
   totalMinutes?: number;
 };
 
-type RequestBase = {
-  id: string;
-  uid: string;
-  type: string;
-  status: "pending" | "approved" | "rejected" | "cancelled" | string;
-  createdAt: string;
-  date?: string | null;
-  endDate?: string | null;
-  weekKey: string;
-  minutes?: number | null;
-  hours?: number | null;
-  reason?: string | null;
-  note?: string | null;
-  source: "hourRequests" | "extraActivities";
-};
 
 const normalizeTimestamp = (value: unknown) => {
   if (!value) return null;
@@ -77,31 +61,6 @@ const normalizeTimestamp = (value: unknown) => {
 const getUserDisplayName = (user: FirestoreUser) =>
   user.displayName || user.fullName || user.name || user.email || "Colaborador";
 
-const EXTRA_ACTIVITY_TYPE = "EXTRA_ACTIVIDAD";
-const PERMIT_TYPES = new Set([
-  "DIA_LIBRE",
-  "PERMISO_HORAS",
-  "VACACIONES",
-  "MEDICO",
-  "HOURS",
-  "PERMISO",
-]);
-
-const normalizeRequestType = (type: string | undefined | null) =>
-  typeof type === "string" ? type.toUpperCase() : "";
-
-const getRequestCategory = (request: Pick<RequestBase, "type" | "source">): "permit" | "extra" => {
-  // Si viene de extraActivities, siempre es "extra"
-  if (request.source === "extraActivities") return "extra";
-  const normalizedType = normalizeRequestType(request.type);
-  if (normalizedType === EXTRA_ACTIVITY_TYPE) return "extra";
-  if (PERMIT_TYPES.has(normalizedType)) return "permit";
-  return "permit";
-};
-
-const getRequestTitle = (request: Pick<RequestBase, "type" | "source">) =>
-  getRequestCategory(request) === "extra" ? "Actividad extra" : "Libre / Permiso";
-
 function computeBreakMinutes(record: AdminAttendanceRecord | null) {
   if (!record) return 0;
   return record.breaks.reduce((total, current) => {
@@ -112,72 +71,19 @@ function computeBreakMinutes(record: AdminAttendanceRecord | null) {
   }, 0);
 }
 
-function safeISODate(value?: string | null) {
-  if (!value) return null;
-  // si ya es YYYY-MM-DD
-  if (value.length >= 10 && value[4] === "-" && value[7] === "-") return value.slice(0, 10);
-  const t = new Date(value).getTime();
-  if (Number.isNaN(t)) return null;
-  return new Date(t).toISOString().slice(0, 10);
-}
-
-function deriveWeekKey(dateISO: string | null) {
-  if (!dateISO) return "";
-  return getWeekKey(dateISO);
-}
-
-function normalizeRequestDoc(
-  docId: string,
-  data: DocumentData,
-  source: RequestBase["source"],
-): RequestBase | null {
-  const uid = (data.uid ?? data.userId) as string | undefined;
-  if (!uid) return null;
-
-  const createdAt =
-    normalizeTimestamp(data.createdAt) ??
-    normalizeTimestamp(data.ts) ??
-    normalizeTimestamp(data.date) ??
-    new Date().toISOString();
-
-  const dateISO = safeISODate(data.date ?? data.startDate ?? data.fecha ?? null);
-  const endDateISO = safeISODate(data.endDate ?? data.fechaFin ?? null);
-
-  const weekKey =
-    (typeof data.weekKey === "string" && data.weekKey.length > 0 ? data.weekKey : "") ||
-    deriveWeekKey(dateISO);
-
-  const type = typeof data.type === "string" ? data.type : source === "extraActivities" ? EXTRA_ACTIVITY_TYPE : "REQUEST";
-
-  return {
-    id: docId,
-    uid,
-    type,
-    status: (data.status as string) ?? "pending",
-    createdAt,
-    date: dateISO,
-    endDate: endDateISO,
-    weekKey,
-    minutes: typeof data.minutes === "number" ? data.minutes : typeof data.totalMinutes === "number" ? data.totalMinutes : null,
-    hours: typeof data.hours === "number" ? data.hours : null,
-    reason: (data.reason as string) ?? (data.motivo as string) ?? null,
-    note: (data.note as string) ?? (data.notas as string) ?? (data.description as string) ?? null,
-    source,
-  };
-}
-
 export default function AdminHoursPage() {
   const { user } = useAuth();
 
   const [weekStart, setWeekStart] = useState(() => getWeekStartMonday(new Date()));
   const [selectedUserId, setSelectedUserId] = useState<string>("all");
+  const [deleteTargetUserId, setDeleteTargetUserId] = useState<string>("all");
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
 
   const [users, setUsers] = useState<FirestoreUser[]>([]);
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
   const [records, setRecords] = useState<HourRecord[]>([]);
-  const [requests, setRequests] = useState<RequestBase[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deletingCollaboratorData, setDeletingCollaboratorData] = useState(false);
 
   const scheduleOptions = workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES;
 
@@ -189,7 +95,6 @@ export default function AdminHoursPage() {
   const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
   const weekKey = useMemo(() => getWeekKey(formatISODate(weekStart)), [weekStart]);
   const weekDateSet = useMemo(() => new Set(weekDates.map((date) => formatISODate(date))), [weekDates]);
-  const weekEnd = useMemo(() => weekDates[6] ?? weekStart, [weekDates, weekStart]);
 
   // ---- USERS
   useEffect(() => {
@@ -372,106 +277,7 @@ export default function AdminHoursPage() {
     return () => unsubscribe();
   }, [user?.role]);
 
-  // ---- REQUESTS (hourRequests + extraActivities) root + group
-  useEffect(() => {
-    if (user?.role !== "admin") return;
-
-    const unsubscribers: Array<() => void> = [];
-
-    const mergeAndSet = (partial: { source: RequestBase["source"]; items: RequestBase[] }) => {
-      setRequests((prev) => {
-        // Reemplaza por source
-        const filteredPrev = prev.filter((x) => x.source !== partial.source);
-        // Dedup por (source + id)
-        const map = new Map<string, RequestBase>();
-        [...filteredPrev, ...partial.items].forEach((r) => map.set(`${r.source}:${r.id}`, r));
-        return Array.from(map.values());
-      });
-    };
-
-    // hourRequests root
-    unsubscribers.push(
-      onSnapshot(
-        collection(db, "hourRequests"),
-        (snap) => {
-          const items = snap.docs
-            .map((d) => normalizeRequestDoc(d.id, d.data() as DocumentData, "hourRequests"))
-            .filter(Boolean) as RequestBase[];
-
-          if (process.env.NODE_ENV === "development") {
-            console.log("[admin/hours] hourRequests(root) docs", snap.size);
-          }
-          mergeAndSet({ source: "hourRequests", items });
-        },
-        (err) => console.error("[admin/hours] hourRequests(root) error", err),
-      ),
-    );
-
-    // hourRequests group
-    unsubscribers.push(
-      onSnapshot(
-        query(collectionGroup(db, "hourRequests")),
-        (snap) => {
-          const items = snap.docs
-            .map((d) => normalizeRequestDoc(d.id, d.data() as DocumentData, "hourRequests"))
-            .filter(Boolean) as RequestBase[];
-
-          if (process.env.NODE_ENV === "development") {
-            console.log("[admin/hours] hourRequests(group) docs", snap.size);
-          }
-          // Los agregamos al mismo source "hourRequests" (se dedupea por id)
-          mergeAndSet({ source: "hourRequests", items });
-        },
-        (err) => console.error("[admin/hours] hourRequests(group) error", err),
-      ),
-    );
-
-    // extraActivities root
-    unsubscribers.push(
-      onSnapshot(
-        collection(db, "extraActivities"),
-        (snap) => {
-          const items = snap.docs
-            .map((d) => normalizeRequestDoc(d.id, d.data() as DocumentData, "extraActivities"))
-            .filter(Boolean) as RequestBase[];
-
-          if (process.env.NODE_ENV === "development") {
-            console.log("[admin/hours] extraActivities(root) docs", snap.size);
-          }
-          mergeAndSet({ source: "extraActivities", items });
-        },
-        (err) => console.error("[admin/hours] extraActivities(root) error", err),
-      ),
-    );
-
-    // extraActivities group
-    unsubscribers.push(
-      onSnapshot(
-        query(collectionGroup(db, "extraActivities")),
-        (snap) => {
-          const items = snap.docs
-            .map((d) => normalizeRequestDoc(d.id, d.data() as DocumentData, "extraActivities"))
-            .filter(Boolean) as RequestBase[];
-
-          if (process.env.NODE_ENV === "development") {
-            console.log("[admin/hours] extraActivities(group) docs", snap.size);
-          }
-          mergeAndSet({ source: "extraActivities", items });
-        },
-        (err) => console.error("[admin/hours] extraActivities(group) error", err),
-      ),
-    );
-
-    return () => unsubscribers.forEach((fn) => fn());
-  }, [user?.role]);
-
   const collaboratorUsers = useMemo(() => users.filter((item) => item.role !== "admin"), [users]);
-
-  const userById = useMemo(() => {
-    const map = new Map<string, FirestoreUser>();
-    users.forEach((u) => map.set(u.uid, u));
-    return map;
-  }, [users]);
 
   const filteredRecords = useMemo(
     () =>
@@ -506,64 +312,16 @@ export default function AdminHoursPage() {
     });
   }, [collaboratorUsers, filteredRecords, scheduleById, scheduleOptions, selectedUserId, weekDates]);
 
-  // ---- REQUESTS FILTERED + SPLIT
-  const weekRequests = useMemo(() => {
-    const scoped =
-      selectedUserId === "all"
-        ? requests
-        : requests.filter((r) => r.uid === selectedUserId);
-
-    return scoped.filter((r) => {
-      // match weekKey OR match within dates range of week
-      if (r.weekKey && r.weekKey === weekKey) return true;
-      if (r.date && weekDateSet.has(r.date)) return true;
-      return false;
-    });
-  }, [requests, selectedUserId, weekDateSet, weekKey]);
-
-  const pendingRequests = useMemo(
-    () => weekRequests.filter((r) => (r.status ?? "").toLowerCase() === "pending"),
-    [weekRequests],
-  );
-
-  const permitRequests = useMemo(
-    () => pendingRequests.filter((r) => getRequestCategory(r) === "permit"),
-    [pendingRequests],
-  );
-
-  const extraRequests = useMemo(
-    () => pendingRequests.filter((r) => getRequestCategory(r) === "extra"),
-    [pendingRequests],
-  );
-
-  const historyItems = useMemo(() => {
-    // historial = todo (pendiente + no pendiente) para esa semana
-    const items = weekRequests.slice();
-    items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return items;
-  }, [weekRequests]);
-
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return;
 
-    const uniqueTypes = Array.from(new Set(weekRequests.map((r) => r.type).filter(Boolean)));
     console.log("[admin/hours] activeWeekKey", weekKey);
-    console.log("[admin/hours] weekRange", formatISODate(weekStart), formatISODate(weekEnd));
     console.log("[admin/hours] records total", records.length);
     console.log("[admin/hours] records after week filter", filteredRecords.length);
-    console.log("[admin/hours] requests week total", weekRequests.length);
-    console.log("[admin/hours] requests pending permit", permitRequests.length);
-    console.log("[admin/hours] requests pending extra", extraRequests.length);
-    console.log("[admin/hours] requests unique types", uniqueTypes);
   }, [
     weekKey,
-    weekStart,
-    weekEnd,
     records.length,
     filteredRecords.length,
-    weekRequests.length,
-    permitRequests.length,
-    extraRequests.length,
   ]);
 
   const detailUser = detailUserId ? collaboratorUsers.find((item) => item.uid === detailUserId) ?? null : null;
@@ -576,6 +334,59 @@ export default function AdminHoursPage() {
       )
     : [];
 
+  const handleDeleteCollaboratorData = async () => {
+    if (!user || user.role !== "admin") return;
+    if (deleteTargetUserId === "all") return;
+
+    const collaborator = collaboratorUsers.find((item) => item.uid === deleteTargetUserId) ?? null;
+    const collaboratorName = collaborator ? getUserDisplayName(collaborator) : deleteTargetUserId;
+
+    const confirmed = window.confirm(
+      `Esto eliminará horarios y solicitudes del colaborador ${collaboratorName}. No se puede deshacer.`,
+    );
+    if (!confirmed) return;
+
+    setDeletingCollaboratorData(true);
+    try {
+      const functions = getFunctions();
+      const deleteCallable = httpsCallable<
+        { targetUid: string; mode?: "ALL" | "TIME_ONLY" },
+        { ok: boolean; deleted?: Record<string, number> }
+      >(functions, "adminDeleteUserData");
+
+      const response = await deleteCallable({
+        targetUid: deleteTargetUserId,
+        mode: "ALL",
+      });
+
+      if (response.data?.ok) {
+        window.alert("Datos del colaborador eliminados correctamente.");
+      } else {
+        window.alert("No se pudo confirmar la eliminación de datos.");
+      }
+    } catch (error) {
+      const firebaseCode =
+        typeof error === "object" && error !== null && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : "unknown";
+      const firebaseMessage =
+        typeof error === "object" && error !== null && "message" in error
+          ? String((error as { message?: unknown }).message)
+          : "";
+      console.error(
+        `[admin/hours] Error eliminando datos del colaborador (code: ${firebaseCode}, message: ${firebaseMessage})`,
+        error,
+      );
+      if (firebaseCode.includes("permission-denied")) {
+        window.alert("Tu usuario no tiene permisos de admin o reglas/roles no están correctos.");
+      } else {
+        window.alert("No se pudieron eliminar los datos del colaborador. Intenta nuevamente.");
+      }
+    } finally {
+      setDeletingCollaboratorData(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
@@ -585,7 +396,7 @@ export default function AdminHoursPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-slate-900">Horarios</h2>
-            <p className="text-xs text-slate-500">Vista semanal por colaborador.</p>
+            <p className="text-xs text-slate-500">Vista semanal por colaborador (solo horarios).</p>
           </div>
           <div className="flex flex-wrap gap-3">
             <label className="text-xs font-semibold text-slate-500">
@@ -616,6 +427,7 @@ export default function AdminHoursPage() {
                 ))}
               </select>
             </label>
+
           </div>
         </div>
 
@@ -665,6 +477,43 @@ export default function AdminHoursPage() {
           {summaries.length === 0 ? (
             <p className="text-sm text-slate-500">{loading ? "Cargando horarios..." : "No hay registros para esta semana."}</p>
           ) : null}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-5 shadow-[0_8px_24px_rgba(17,24,39,0.04)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Gestión avanzada</h3>
+            <p className="text-xs text-rose-700">
+              Esto elimina horarios, solicitudes y actividades. No se puede deshacer.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-xs font-semibold text-slate-600">
+              Elegir colaborador a eliminar datos
+              <select
+                className="mt-2 block min-w-[240px] rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
+                value={deleteTargetUserId}
+                onChange={(event) => setDeleteTargetUserId(event.target.value)}
+              >
+                <option value="all">Selecciona colaborador</option>
+                {collaboratorUsers.map((item) => (
+                  <option key={item.uid} value={item.uid}>
+                    {getUserDisplayName(item)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              className="rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
+              disabled={deleteTargetUserId === "all" || deletingCollaboratorData}
+              onClick={() => void handleDeleteCollaboratorData()}
+            >
+              {deletingCollaboratorData ? "Eliminando..." : "Borrar datos del colaborador"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -739,164 +588,6 @@ export default function AdminHoursPage() {
         </div>
       ) : null}
 
-      {/* ----------------------- SOLICITUDES (2 CARDS + HISTORIAL) ----------------------- */}
-      <div className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">Solicitudes</h2>
-            <p className="text-xs text-slate-500">Pendientes y historial (por semana).</p>
-          </div>
-          <div className="text-xs text-slate-500">
-            Semana {formatISODate(weekStart)} — {formatISODate(weekEnd)}
-          </div>
-        </div>
-
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          {/* Libre / Permiso */}
-          <div className="rounded-2xl border border-slate-200/60 p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900">Libre / Permiso</h3>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                {permitRequests.length} pendientes
-              </span>
-            </div>
-
-            <div className="mt-3 space-y-2">
-              {permitRequests.slice(0, 6).map((req) => {
-                const u = userById.get(req.uid);
-                return (
-                  <div key={`${req.source}:${req.id}`} className="flex items-center justify-between rounded-xl border border-slate-200/60 px-3 py-2 text-sm">
-                    <div className="flex items-center gap-2">
-                      <UserAvatar
-                        name={u ? getUserDisplayName(u) : "Colaborador"}
-                        photoURL={u?.photoURL ?? ""}
-                        avatarUrl={u?.avatarUrl}
-                        profilePhoto={u?.profilePhoto}
-                      />
-                      <div>
-                        <p className="font-semibold text-slate-900">{u ? getUserDisplayName(u) : "Colaborador"}</p>
-                        <p className="text-xs text-slate-500">
-                          {getRequestTitle(req)} · {req.date ?? "—"} {req.endDate ? `→ ${req.endDate}` : ""}
-                        </p>
-                      </div>
-                    </div>
-                    <span className="text-xs font-semibold text-amber-700">Pendiente</span>
-                  </div>
-                );
-              })}
-
-              {permitRequests.length === 0 ? (
-                <p className="text-xs text-slate-400">Sin pendientes.</p>
-              ) : null}
-            </div>
-          </div>
-
-          {/* Actividades extra */}
-          <div className="rounded-2xl border border-slate-200/60 p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900">Actividades extra</h3>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-                {extraRequests.length} pendientes
-              </span>
-            </div>
-
-            <div className="mt-3 space-y-2">
-              {extraRequests.slice(0, 6).map((req) => {
-                const u = userById.get(req.uid);
-                const minutes = req.minutes ?? (typeof req.hours === "number" ? Math.round(req.hours * 60) : 0);
-                return (
-                  <div key={`${req.source}:${req.id}`} className="flex items-center justify-between rounded-xl border border-slate-200/60 px-3 py-2 text-sm">
-                    <div className="flex items-center gap-2">
-                      <UserAvatar
-                        name={u ? getUserDisplayName(u) : "Colaborador"}
-                        photoURL={u?.photoURL ?? ""}
-                        avatarUrl={u?.avatarUrl}
-                        profilePhoto={u?.profilePhoto}
-                      />
-                      <div>
-                        <p className="font-semibold text-slate-900">{u ? getUserDisplayName(u) : "Colaborador"}</p>
-                        <p className="text-xs text-slate-500">
-                          {req.date ?? "—"} · {minutesToHHMM(minutes)}
-                          {req.reason ? ` · ${req.reason}` : ""}
-                        </p>
-                      </div>
-                    </div>
-                    <span className="text-xs font-semibold text-amber-700">Pendiente</span>
-                  </div>
-                );
-              })}
-
-              {extraRequests.length === 0 ? (
-                <p className="text-xs text-slate-400">Sin pendientes.</p>
-              ) : null}
-            </div>
-          </div>
-        </div>
-
-        {/* HISTORIAL */}
-        <div className="mt-6 rounded-2xl border border-slate-200/60">
-          <div className="flex items-center justify-between px-4 py-3">
-            <h3 className="text-sm font-semibold text-slate-900">Historial</h3>
-            <span className="text-xs text-slate-500">{historyItems.length} items</span>
-          </div>
-
-          <div className="border-t border-slate-200/60">
-            {historyItems.length === 0 ? (
-              <p className="px-4 py-6 text-center text-xs text-slate-400">Sin solicitudes en esta semana.</p>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {historyItems.slice(0, 20).map((req) => {
-                  const u = userById.get(req.uid);
-                  const category = getRequestCategory(req);
-                  const minutes = req.minutes ?? (typeof req.hours === "number" ? Math.round(req.hours * 60) : null);
-
-                  const status = (req.status ?? "").toLowerCase();
-                  const pill =
-                    status === "pending"
-                      ? "bg-amber-100 text-amber-700"
-                      : status === "approved"
-                        ? "bg-green-100 text-green-700"
-                        : status === "rejected"
-                          ? "bg-rose-100 text-rose-700"
-                          : "bg-slate-100 text-slate-600";
-
-                  return (
-                    <div key={`${req.source}:${req.id}`} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
-                      <div className="flex items-center gap-2">
-                        <UserAvatar
-                          name={u ? getUserDisplayName(u) : "Colaborador"}
-                          photoURL={u?.photoURL ?? ""}
-                          avatarUrl={u?.avatarUrl}
-                          profilePhoto={u?.profilePhoto}
-                        />
-                        <div>
-                          <p className="font-semibold text-slate-900">
-                            {u ? getUserDisplayName(u) : "Colaborador"}{" "}
-                            <span className="text-xs font-normal text-slate-500">
-                              · {category === "extra" ? "Actividad extra" : "Libre / Permiso"}
-                            </span>
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {req.date ?? "—"} {req.endDate ? `→ ${req.endDate}` : ""}{" "}
-                            {minutes !== null ? `· ${minutesToHHMM(minutes)}` : ""}{" "}
-                            {req.reason ? `· ${req.reason}` : ""}
-                            {req.note ? `· ${req.note}` : ""}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${pill}`}>{req.status}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {historyItems.length > 20 ? (
-            <p className="px-4 py-3 text-xs text-slate-400">Mostrando 20 de {historyItems.length} (puedes ampliar luego).</p>
-          ) : null}
-        </div>
-      </div>
     </div>
   );
 }
