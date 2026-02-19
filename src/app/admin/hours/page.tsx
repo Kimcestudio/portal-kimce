@@ -387,6 +387,19 @@ export default function AdminHoursPage() {
         })
     : [];
 
+
+  const handleSelectCollaboratorFromHours = (clickedUid: string) => {
+    setDetailUserId(clickedUid);
+    setDeleteTargetUserId((current) => {
+      console.log("[admin/hours] collaborator selected from hours list", {
+        clickedUid,
+        before: current,
+        after: clickedUid,
+      });
+      return clickedUid;
+    });
+  };
+
   const handleDeleteCollaboratorData = async () => {
     if (!user || user.role !== "admin") return;
     if (deleteTargetUserId === "all") return;
@@ -492,10 +505,7 @@ export default function AdminHoursPage() {
               key={item.user.uid}
               type="button"
               className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-left text-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(15,23,42,0.08)]"
-              onClick={() => {
-                setDetailUserId(item.user.uid);
-                setDeleteTargetUserId(item.user.uid);
-              }}
+              onClick={() => handleSelectCollaboratorFromHours(item.user.uid)}
             >
               <div>
                 <div className="flex items-center gap-2">
@@ -551,7 +561,7 @@ export default function AdminHoursPage() {
               Elegir colaborador a eliminar datos
               <select
                 className="mt-2 block min-w-[240px] rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm"
-                value={deleteTargetUserId}
+                value={deleteTargetUserId ?? "all"}
                 onChange={(event) => setDeleteTargetUserId(event.target.value)}
               >
                 <option value="all">Selecciona colaborador</option>
