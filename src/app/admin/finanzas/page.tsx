@@ -74,6 +74,31 @@ import {
 import { db } from "@/services/firebase/client";
 import { Pencil, Trash2 } from "lucide-react";
 
+
+const parsePaymentPeriodToMonthKey = (periodo?: string | null) => {
+  if (!periodo) return null;
+  const raw = periodo.trim();
+  const slashMatch = raw.match(/^(\d{2})\/(\d{4})$/);
+  if (slashMatch) {
+    const month = Number(slashMatch[1]);
+    const year = Number(slashMatch[2]);
+    if (month >= 1 && month <= 12) {
+      return `${year}-${String(month).padStart(2, "0")}`;
+    }
+  }
+
+  const dashMatch = raw.match(/^(\d{4})-(\d{2})$/);
+  if (dashMatch) {
+    const year = Number(dashMatch[1]);
+    const month = Number(dashMatch[2]);
+    if (month >= 1 && month <= 12) {
+      return `${year}-${String(month).padStart(2, "0")}`;
+    }
+  }
+
+  return null;
+};
+
 const tabLabels: Record<FinanceTabKey, string> = {
   dashboard: "Dashboard",
   movimientos: "Movimientos",
@@ -315,8 +340,9 @@ export default function FinanceModulePage() {
 
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => {
-      const monthKey = getMonthKeyFromDate(payment.fechaPago);
-      if (monthKey && monthKey !== filters.monthKey) return false;
+      const paymentPeriodMonthKey =
+        parsePaymentPeriodToMonthKey(payment.periodo) ?? payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
+      if (paymentPeriodMonthKey && paymentPeriodMonthKey !== filters.monthKey) return false;
       if (!filters.includeCancelled && payment.status === "cancelled") return false;
       if (filters.status !== "all" && payment.status !== filters.status) return false;
       if (filters.account !== "all" && payment.cuentaOrigen !== filters.account) return false;
@@ -353,7 +379,9 @@ export default function FinanceModulePage() {
     };
     movements.forEach((movement) => addYear(movement.monthKey));
     expenses.forEach((expense) => addYear(expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto)));
-    payments.forEach((payment) => addYear(payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago)));
+    payments.forEach((payment) =>
+      addYear(parsePaymentPeriodToMonthKey(payment.periodo) ?? payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago)),
+    );
     years.add(new Date().getFullYear());
     return Array.from(years).sort((a, b) => b - a);
   }, [expenses, movements, payments]);
