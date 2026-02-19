@@ -1582,9 +1582,9 @@ export default function FinanceModulePage() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
                       <tr>
-                        <th className="px-4 py-3">Fecha</th>
-                        <th className="px-4 py-3">Colaborador</th>
                         <th className="px-4 py-3">Periodo</th>
+                        <th className="px-4 py-3">Colaborador</th>
+                        <th className="px-4 py-3">Fecha de pago</th>
                         <th className="px-4 py-3">Cuenta</th>
                         <th className="px-4 py-3">Estado</th>
                         <th className="px-4 py-3 text-right">Monto</th>
@@ -1594,16 +1594,16 @@ export default function FinanceModulePage() {
                     <tbody>
                       {filteredPayments.map((payment) => (
                         <tr key={payment.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {formatShortDate(payment.fechaPago)}
-                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{payment.periodo}</td>
                           <td className="px-4 py-3">
                             <p className="font-semibold text-slate-900">
                               {collaboratorLookup.get(payment.colaboradorId) ?? "Colaborador"}
                             </p>
                             <p className="text-xs text-slate-500">{payment.referencia ?? "-"}</p>
                           </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{payment.periodo}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {formatShortDate(payment.fechaPago)}
+                          </td>
                           <td className="px-4 py-3 text-xs text-slate-500">{payment.cuentaOrigen}</td>
                           <td className="px-4 py-3">
                             <FinanceStatusSelect
