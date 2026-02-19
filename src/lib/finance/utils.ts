@@ -26,14 +26,21 @@ export function getMonthLabel(monthKey: string) {
   return formatMonthLabel(monthKey);
 }
 
-export function buildMonthOptions(count = 13) {
+export function buildMonthOptions() {
   const options = [] as { value: string; label: string }[];
-  const now = new Date();
-  for (let i = 0; i < count; i += 1) {
-    const date = new Date(now.getFullYear(), now.getMonth() + i, 1);
-    const key = getMonthKey(date);
+  const startMonth = new Date(2026, 0, 1);
+  const today = new Date();
+  const endByDefault = new Date(startMonth.getFullYear(), startMonth.getMonth() + 13, 1);
+  const endByToday = new Date(today.getFullYear(), today.getMonth() + 12, 1);
+  const endMonth = endByToday > endByDefault ? endByToday : endByDefault;
+
+  const cursor = new Date(startMonth.getFullYear(), startMonth.getMonth(), 1);
+  while (cursor <= endMonth) {
+    const key = getMonthKey(cursor);
     options.push({ value: key, label: formatMonthLabel(key) });
+    cursor.setMonth(cursor.getMonth() + 1);
   }
+
   return options;
 }
 
