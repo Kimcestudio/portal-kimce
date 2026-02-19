@@ -1,13 +1,27 @@
+import { useMemo } from "react";
 import type { FinanceFilters } from "@/lib/finance/types";
-import { buildMonthOptions } from "@/lib/finance/utils";
+import { formatMonthLabel, getMonthKey } from "@/lib/finance/utils";
 
 interface FinanceFilterBarProps {
   filters: FinanceFilters;
   onChange: (filters: FinanceFilters) => void;
 }
 
+const MONTHS_ANCHOR = new Date(2026, 0, 1);
+const MONTHS_COUNT = 14;
+
 export default function FinanceFilterBar({ filters, onChange }: FinanceFilterBarProps) {
-  const monthOptions = buildMonthOptions();
+  const monthOptions = useMemo(() => {
+    const base = MONTHS_ANCHOR;
+    return Array.from({ length: MONTHS_COUNT }, (_, i) => {
+      const date = new Date(base.getFullYear(), base.getMonth() + i, 1);
+      const value = getMonthKey(date);
+      return {
+        value,
+        label: formatMonthLabel(value),
+      };
+    });
+  }, []);
 
   return (
     <div className="flex flex-wrap gap-3 rounded-2xl bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
