@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import type { UserProfile } from "@/services/firebase/types";
 import {
-  getCurrentUser,
   getStoredSession,
   onAuthStateChanged,
   signInWithEmailPassword,
@@ -52,14 +51,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const adminAllowlist = ["kimcestudio@gmail.com"]; // Actualiza esta lista para el bootstrap admin.
 
   useEffect(() => {
-    const session = getStoredSession();
-    const currentProfile = getCurrentUser();
-    setAuthUser(session ? { uid: session.uid, email: session.email } : null);
-    setProfile(currentProfile);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("view_mode", viewMode);
   }, [viewMode]);
@@ -72,23 +63,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let isMounted = true;
-    const unsubscribe = onAuthStateChanged(async (session) => {
+
+    const syncSession = async (session: ReturnType<typeof getStoredSession>) => {
       if (!isMounted) return;
+
       if (!session) {
         setAuthUser(null);
         setProfile(null);
         setLoading(false);
         return;
       }
+
       setLoading(true);
       setAuthUser({ uid: session.uid, email: session.email });
+
       const localProfile = getUserById(session.uid);
       let nextProfile = localProfile;
+
       try {
         const userRef = doc(db, "users", session.uid);
         const snapshot = await getDoc(userRef);
+
         if (snapshot.exists()) {
           const data = snapshot.data() as Partial<UserProfile>;
+
           if (!data.role || !data.workScheduleId) {
             await setDoc(
               userRef,
@@ -97,11 +95,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 workScheduleId: data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
                 updatedAt: serverTimestamp(),
               },
-              { merge: true }
+              { merge: true },
             );
+
             data.role = data.role ?? "collab";
             data.workScheduleId = data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID;
           }
+
           nextProfile = {
             uid: data.uid ?? session.uid,
             email: data.email ?? session.email,
@@ -119,20 +119,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 ? data.createdAt
                 : localProfile?.createdAt ?? new Date().toISOString(),
           };
+
           upsertUser(nextProfile);
         }
       } catch (error) {
         if (process.env.NODE_ENV !== "production") {
           console.log("[auth] Firestore sync failed", error);
         }
+      } finally {
+        if (!isMounted) return;
+        setProfile(nextProfile);
+        setLoading(false);
       }
-      if (!isMounted) return;
-      setProfile(nextProfile);
-      setLoading(false);
+    };
+
+    const unsubscribe = onAuthStateChanged((session) => {
+      void syncSession(session);
     });
+
     return () => {
       isMounted = false;
-      if (unsubscribe) unsubscribe();
+      unsubscribe();
     };
   }, []);
 
