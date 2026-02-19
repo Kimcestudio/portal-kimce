@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   onSnapshot,
@@ -9,7 +9,7 @@ import {
 import { getFunctions, httpsCallable } from "firebase/functions";
 import PageHeader from "@/components/PageHeader";
 import UserAvatar from "@/components/common/UserAvatar";
-import CollaboratorDashboard from "@/components/attendance/CollaboratorDashboard";
+import CollaboratorDashboard from "@/components/dashboard/CollaboratorDashboard";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
   expectedMinutesForDate,
@@ -85,6 +85,7 @@ export default function AdminHoursPage() {
   const [records, setRecords] = useState<HourRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingCollaboratorData, setDeletingCollaboratorData] = useState(false);
+  const detailSectionRef = useRef<HTMLDivElement | null>(null);
 
   const scheduleOptions = workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES;
 
@@ -398,6 +399,10 @@ export default function AdminHoursPage() {
       });
       return clickedUid;
     });
+
+    requestAnimationFrame(() => {
+      detailSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
   };
 
   const handleDeleteCollaboratorData = async () => {
@@ -504,7 +509,7 @@ export default function AdminHoursPage() {
             <button
               key={item.user.uid}
               type="button"
-              className="flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-left text-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(15,23,42,0.08)]"
+              className={`flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left text-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_24px_rgba(15,23,42,0.08)] ${detailUserId === item.user.uid ? "border-indigo-300 bg-indigo-50/40" : "border-slate-200/60"}`}
               onClick={() => handleSelectCollaboratorFromHours(item.user.uid)}
             >
               <div>
@@ -587,7 +592,7 @@ export default function AdminHoursPage() {
 
       {/* ----------------------- DETALLE ----------------------- */}
       {detailUser ? (
-        <div className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+        <div ref={detailSectionRef} className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Detalle semanal</h3>
