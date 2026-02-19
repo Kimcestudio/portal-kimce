@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/useAuth";
 
@@ -12,12 +12,10 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
-  const [redirectTo, setRedirectTo] = useState<string | null>(null);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setRedirectTo(params.get("from"));
-  }, []);
+  const getRedirectTo = () => {
+    if (typeof window === "undefined") return null;
+    return new URLSearchParams(window.location.search).get("from");
+  };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -25,11 +23,12 @@ function LoginForm() {
     setError(null);
     try {
       const user = await signInWithEmail(email, password);
+      const redirectTo = getRedirectTo();
       if (redirectTo) {
         router.replace(redirectTo);
         return;
       }
-      router.replace(user.role === "admin" ? "/admin/dashboard" : "/dashboard");
+      router.replace(user.role === "admin" ? "/admin/dashboard" : "/app/dashboard");
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -44,11 +43,12 @@ function LoginForm() {
       console.log("CLICK Google: start");
       const user = await signInWithGoogle();
       console.log("CLICK Google: success");
+      const redirectTo = getRedirectTo();
       if (redirectTo) {
         router.replace(redirectTo);
         return;
       }
-      router.replace(user.role === "admin" ? "/admin/dashboard" : "/dashboard");
+      router.replace(user.role === "admin" ? "/admin/dashboard" : "/app/dashboard");
     } catch (err) {
       setError((err as Error).message);
     } finally {
