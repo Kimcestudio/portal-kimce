@@ -204,6 +204,20 @@ export function computeMonthProjection(
     expensesProjected,
     projectedNet,
     projectedMargin,
+    detail: {
+      ingresos: {
+        total: incomeProjected,
+        count: monthMovements.length,
+      },
+      colaboradores: {
+        total: paymentsPaid + paymentsPending,
+        count: monthPayments.length,
+      },
+      gastos: {
+        total: expensesPaid + expensesPending,
+        count: monthExpenses.length,
+      },
+    },
   };
 }
 
