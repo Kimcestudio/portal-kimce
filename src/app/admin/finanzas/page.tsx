@@ -25,7 +25,7 @@ import {
   calcKpis,
   computeAlerts,
   computeCashFlow,
-  computeMonthProjection,
+  getMonthlyProjection,
   computeMonthlySeries,
   computeYearToDateTotals,
   filterMovements,
@@ -405,8 +405,8 @@ export default function FinanceModulePage() {
   );
 
   const projection = useMemo(
-    () => computeMonthProjection(movements, expenses, payments, filters.monthKey, filters.account),
-    [expenses, filters.account, filters.monthKey, movements, payments],
+    () => getMonthlyProjection(movements, expenses, payments, filters.monthKey),
+    [expenses, filters.monthKey, movements, payments],
   );
 
   const monthlyCashFlow = useMemo(
@@ -429,11 +429,6 @@ export default function FinanceModulePage() {
       month: Number(monthPart),
     };
   }, [filters.monthKey]);
-
-  const selectedPeriodo = useMemo(() => {
-    if (!selectedMonthInfo.year || !selectedMonthInfo.month) return "--/----";
-    return `${String(selectedMonthInfo.month).padStart(2, "0")}/${selectedMonthInfo.year}`;
-  }, [selectedMonthInfo.month, selectedMonthInfo.year]);
 
   const monthlySeries = useMemo(
     () => computeMonthlySeries(movements, expenses, payments, filters.monthKey, 12, filters.account),
@@ -1369,26 +1364,26 @@ export default function FinanceModulePage() {
 
                                 <div>
                                   <p className="font-semibold text-slate-600">INGRESOS</p>
-                                  <p>- Total ingresos del mes: {formatCurrency(projection.detail.ingresos.total)}</p>
-                                  <p>- Nº movimientos considerados: {projection.detail.ingresos.count}</p>
+                                  <p>- Total ingresos considerados: {formatCurrency(projection.detail.ingresos.total)}</p>
+                                  <p>- Cantidad de ingresos considerados: {projection.detail.ingresos.count}</p>
                                 </div>
 
                                 <div>
                                   <p className="font-semibold text-slate-600">EGRESOS</p>
                                   <p>
-                                    - Pagos a colaboradores (periodo {selectedPeriodo}): {" "}
+                                    - Pagos a colaboradores (periodo {projection.detail.colaboradores.periodKey}): {" "}
                                     {formatCurrency(projection.detail.colaboradores.total)}
                                   </p>
-                                  <p>- Nº pagos considerados: {projection.detail.colaboradores.count}</p>
+                                  <p>- Cantidad de pagos considerados: {projection.detail.colaboradores.count}</p>
                                   <p>- Gastos del mes: {formatCurrency(projection.detail.gastos.total)}</p>
-                                  <p>- Nº gastos considerados: {projection.detail.gastos.count}</p>
-                                  <p>- Total egresos: {formatCurrency(projection.expensesProjected)}</p>
+                                  <p>- Cantidad de gastos considerados: {projection.detail.gastos.count}</p>
+                                  <p>- Total egresos considerados: {formatCurrency(projection.expensesProjected)}</p>
                                 </div>
 
                                 <div>
-                                  <p className="font-semibold text-slate-600">UTILIDAD</p>
-                                  <p>- Fórmula aplicada: Ingresos - Egresos</p>
-                                  <p>- Resultado: {formatCurrency(projection.projectedNet)}</p>
+                                  <p className="font-semibold text-slate-600">UTILIDAD Y MARGEN</p>
+                                  <p>- Utilidad = Ingresos - Egresos: {formatCurrency(projection.projectedNet)}</p>
+                                  <p>- Margen = (Utilidad / Ingresos) × 100: {projection.projectedMargin.toFixed(1)}%</p>
                                 </div>
                               </div>
                             ) : null}
@@ -1889,26 +1884,26 @@ export default function FinanceModulePage() {
 
                             <div>
                               <p className="font-semibold text-slate-600">INGRESOS</p>
-                              <p>- Total ingresos del mes: {formatCurrency(projection.detail.ingresos.total)}</p>
-                              <p>- Nº movimientos considerados: {projection.detail.ingresos.count}</p>
+                              <p>- Total ingresos considerados: {formatCurrency(projection.detail.ingresos.total)}</p>
+                              <p>- Cantidad de ingresos considerados: {projection.detail.ingresos.count}</p>
                             </div>
 
                             <div>
                               <p className="font-semibold text-slate-600">EGRESOS</p>
                               <p>
-                                - Pagos a colaboradores (periodo {selectedPeriodo}): {" "}
+                                - Pagos a colaboradores (periodo {projection.detail.colaboradores.periodKey}): {" "}
                                 {formatCurrency(projection.detail.colaboradores.total)}
                               </p>
-                              <p>- Nº pagos considerados: {projection.detail.colaboradores.count}</p>
+                              <p>- Cantidad de pagos considerados: {projection.detail.colaboradores.count}</p>
                               <p>- Gastos del mes: {formatCurrency(projection.detail.gastos.total)}</p>
-                              <p>- Nº gastos considerados: {projection.detail.gastos.count}</p>
-                              <p>- Total egresos: {formatCurrency(projection.expensesProjected)}</p>
+                              <p>- Cantidad de gastos considerados: {projection.detail.gastos.count}</p>
+                              <p>- Total egresos considerados: {formatCurrency(projection.expensesProjected)}</p>
                             </div>
 
                             <div>
-                              <p className="font-semibold text-slate-600">UTILIDAD</p>
-                              <p>- Fórmula aplicada: Ingresos - Egresos</p>
-                              <p>- Resultado: {formatCurrency(projection.projectedNet)}</p>
+                              <p className="font-semibold text-slate-600">UTILIDAD Y MARGEN</p>
+                              <p>- Utilidad = Ingresos - Egresos: {formatCurrency(projection.projectedNet)}</p>
+                              <p>- Margen = (Utilidad / Ingresos) × 100: {projection.projectedMargin.toFixed(1)}%</p>
                             </div>
                           </div>
                         ) : null}
