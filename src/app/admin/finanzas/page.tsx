@@ -74,6 +74,31 @@ import {
 import { db } from "@/services/firebase/client";
 import { Pencil, Trash2 } from "lucide-react";
 
+
+const parsePaymentPeriodToMonthKey = (periodo?: string | null) => {
+  if (!periodo) return null;
+  const raw = periodo.trim();
+  const slashMatch = raw.match(/^(\d{2})\/(\d{4})$/);
+  if (slashMatch) {
+    const month = Number(slashMatch[1]);
+    const year = Number(slashMatch[2]);
+    if (month >= 1 && month <= 12) {
+      return `${year}-${String(month).padStart(2, "0")}`;
+    }
+  }
+
+  const dashMatch = raw.match(/^(\d{4})-(\d{2})$/);
+  if (dashMatch) {
+    const year = Number(dashMatch[1]);
+    const month = Number(dashMatch[2]);
+    if (month >= 1 && month <= 12) {
+      return `${year}-${String(month).padStart(2, "0")}`;
+    }
+  }
+
+  return null;
+};
+
 const tabLabels: Record<FinanceTabKey, string> = {
   dashboard: "Dashboard",
   movimientos: "Movimientos",
@@ -101,6 +126,8 @@ export default function FinanceModulePage() {
   const [editingPayment, setEditingPayment] = useState<CollaboratorPayment | null>(null);
   const [editingTransfer, setEditingTransfer] = useState<TransferMovement | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [isProjectionDetailOpen, setIsProjectionDetailOpen] = useState(false);
+  const [isDetailModalProjectionOpen, setIsDetailModalProjectionOpen] = useState(false);
   const [detailTab, setDetailTab] = useState<
     "summary" | "income" | "expenses" | "payments" | "accounts"
   >("summary");
@@ -315,8 +342,9 @@ export default function FinanceModulePage() {
 
   const filteredPayments = useMemo(() => {
     return payments.filter((payment) => {
-      const monthKey = getMonthKeyFromDate(payment.fechaPago);
-      if (monthKey && monthKey !== filters.monthKey) return false;
+      const paymentPeriodMonthKey =
+        parsePaymentPeriodToMonthKey(payment.periodo) ?? payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
+      if (paymentPeriodMonthKey && paymentPeriodMonthKey !== filters.monthKey) return false;
       if (!filters.includeCancelled && payment.status === "cancelled") return false;
       if (filters.status !== "all" && payment.status !== filters.status) return false;
       if (filters.account !== "all" && payment.cuentaOrigen !== filters.account) return false;
@@ -353,7 +381,9 @@ export default function FinanceModulePage() {
     };
     movements.forEach((movement) => addYear(movement.monthKey));
     expenses.forEach((expense) => addYear(expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto)));
-    payments.forEach((payment) => addYear(payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago)));
+    payments.forEach((payment) =>
+      addYear(parsePaymentPeriodToMonthKey(payment.periodo) ?? payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago)),
+    );
     years.add(new Date().getFullYear());
     return Array.from(years).sort((a, b) => b - a);
   }, [expenses, movements, payments]);
@@ -399,6 +429,11 @@ export default function FinanceModulePage() {
       month: Number(monthPart),
     };
   }, [filters.monthKey]);
+
+  const selectedPeriodo = useMemo(() => {
+    if (!selectedMonthInfo.year || !selectedMonthInfo.month) return "--/----";
+    return `${String(selectedMonthInfo.month).padStart(2, "0")}/${selectedMonthInfo.year}`;
+  }, [selectedMonthInfo.month, selectedMonthInfo.year]);
 
   const monthlySeries = useMemo(
     () => computeMonthlySeries(movements, expenses, payments, filters.monthKey, 12, filters.account),
@@ -1318,6 +1353,46 @@ export default function FinanceModulePage() {
                               </p>
                             </div>
                           </div>
+
+                          <div className="mt-4 border-t border-slate-100 pt-3">
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-slate-500 transition hover:text-slate-700"
+                              onClick={() => setIsProjectionDetailOpen((prev) => !prev)}
+                            >
+                              {isProjectionDetailOpen ? "Ocultar detalle" : "Ver detalle"}
+                            </button>
+
+                            {isProjectionDetailOpen ? (
+                              <div className="mt-3 space-y-3 text-xs text-slate-500">
+                                <p className="font-semibold text-slate-600">📊 Detalle del cálculo</p>
+
+                                <div>
+                                  <p className="font-semibold text-slate-600">INGRESOS</p>
+                                  <p>- Total ingresos del mes: {formatCurrency(projection.detail.ingresos.total)}</p>
+                                  <p>- Nº movimientos considerados: {projection.detail.ingresos.count}</p>
+                                </div>
+
+                                <div>
+                                  <p className="font-semibold text-slate-600">EGRESOS</p>
+                                  <p>
+                                    - Pagos a colaboradores (periodo {selectedPeriodo}): {" "}
+                                    {formatCurrency(projection.detail.colaboradores.total)}
+                                  </p>
+                                  <p>- Nº pagos considerados: {projection.detail.colaboradores.count}</p>
+                                  <p>- Gastos del mes: {formatCurrency(projection.detail.gastos.total)}</p>
+                                  <p>- Nº gastos considerados: {projection.detail.gastos.count}</p>
+                                  <p>- Total egresos: {formatCurrency(projection.expensesProjected)}</p>
+                                </div>
+
+                                <div>
+                                  <p className="font-semibold text-slate-600">UTILIDAD</p>
+                                  <p>- Fórmula aplicada: Ingresos - Egresos</p>
+                                  <p>- Resultado: {formatCurrency(projection.projectedNet)}</p>
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
                         </div>
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
@@ -1554,9 +1629,9 @@ export default function FinanceModulePage() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
                       <tr>
-                        <th className="px-4 py-3">Fecha</th>
-                        <th className="px-4 py-3">Colaborador</th>
                         <th className="px-4 py-3">Periodo</th>
+                        <th className="px-4 py-3">Colaborador</th>
+                        <th className="px-4 py-3">Fecha de pago</th>
                         <th className="px-4 py-3">Cuenta</th>
                         <th className="px-4 py-3">Estado</th>
                         <th className="px-4 py-3 text-right">Monto</th>
@@ -1566,16 +1641,16 @@ export default function FinanceModulePage() {
                     <tbody>
                       {filteredPayments.map((payment) => (
                         <tr key={payment.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {formatShortDate(payment.fechaPago)}
-                          </td>
+                          <td className="px-4 py-3 text-xs text-slate-500">{payment.periodo}</td>
                           <td className="px-4 py-3">
                             <p className="font-semibold text-slate-900">
                               {collaboratorLookup.get(payment.colaboradorId) ?? "Colaborador"}
                             </p>
                             <p className="text-xs text-slate-500">{payment.referencia ?? "-"}</p>
                           </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{payment.periodo}</td>
+                          <td className="px-4 py-3 text-xs text-slate-500">
+                            {formatShortDate(payment.fechaPago)}
+                          </td>
                           <td className="px-4 py-3 text-xs text-slate-500">{payment.cuentaOrigen}</td>
                           <td className="px-4 py-3">
                             <FinanceStatusSelect
@@ -1797,6 +1872,46 @@ export default function FinanceModulePage() {
                           <span>Margen proyectado</span>
                           <span className="font-semibold">{projection.projectedMargin.toFixed(1)}%</span>
                         </div>
+                      </div>
+
+                      <div className="mt-3 border-t border-slate-100 pt-3">
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-slate-500 transition hover:text-slate-700"
+                          onClick={() => setIsDetailModalProjectionOpen((prev) => !prev)}
+                        >
+                          {isDetailModalProjectionOpen ? "Ocultar detalle" : "Ver detalle"}
+                        </button>
+
+                        {isDetailModalProjectionOpen ? (
+                          <div className="mt-3 space-y-3 text-xs text-slate-500">
+                            <p className="font-semibold text-slate-600">📊 Detalle del cálculo</p>
+
+                            <div>
+                              <p className="font-semibold text-slate-600">INGRESOS</p>
+                              <p>- Total ingresos del mes: {formatCurrency(projection.detail.ingresos.total)}</p>
+                              <p>- Nº movimientos considerados: {projection.detail.ingresos.count}</p>
+                            </div>
+
+                            <div>
+                              <p className="font-semibold text-slate-600">EGRESOS</p>
+                              <p>
+                                - Pagos a colaboradores (periodo {selectedPeriodo}): {" "}
+                                {formatCurrency(projection.detail.colaboradores.total)}
+                              </p>
+                              <p>- Nº pagos considerados: {projection.detail.colaboradores.count}</p>
+                              <p>- Gastos del mes: {formatCurrency(projection.detail.gastos.total)}</p>
+                              <p>- Nº gastos considerados: {projection.detail.gastos.count}</p>
+                              <p>- Total egresos: {formatCurrency(projection.expensesProjected)}</p>
+                            </div>
+
+                            <div>
+                              <p className="font-semibold text-slate-600">UTILIDAD</p>
+                              <p>- Fórmula aplicada: Ingresos - Egresos</p>
+                              <p>- Resultado: {formatCurrency(projection.projectedNet)}</p>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </div>
