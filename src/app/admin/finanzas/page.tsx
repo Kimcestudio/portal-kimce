@@ -404,29 +404,73 @@ export default function FinanceModulePage() {
     });
   }, [filters, transfers]);
 
-  const visibleExpensesTotal = useMemo(
-    () => filteredExpenses.reduce((sum, expense) => sum + expense.monto, 0),
-    [filteredExpenses],
-  );
-
-  const visiblePaymentsTotal = useMemo(
-    () => filteredPayments.reduce((sum, payment) => sum + payment.montoFinal, 0),
-    [filteredPayments],
-  );
-
-  const visibleTransfersTotal = useMemo(() => {
-    return filteredTransfers.reduce(
-      (totals, transfer) => {
-        if (transfer.tipoMovimiento === "INGRESO_CAJA") {
-          totals.in += transfer.monto;
-        }
-        if (transfer.tipoMovimiento === "SALIDA_CAJA") {
-          totals.out += transfer.monto;
-        }
-        return totals;
-      },
-      { in: 0, out: 0 },
+  const movementTableKpis = useMemo(() => {
+    const total = filteredMovements.reduce((sum, movement) => sum + (movement.tax?.total ?? movement.amount), 0);
+    const paid = filteredMovements.reduce(
+      (sum, movement) => sum + (movement.status !== "pending" ? movement.tax?.total ?? movement.amount : 0),
+      0,
     );
+    const pending = filteredMovements.reduce(
+      (sum, movement) => sum + (movement.status === "pending" ? movement.tax?.total ?? movement.amount : 0),
+      0,
+    );
+    const igv = filteredMovements.reduce((sum, movement) => sum + (movement.tax?.igv ?? 0), 0);
+    const net = total - igv;
+    return { total, paid, pending, igv, net };
+  }, [filteredMovements]);
+
+  const paymentTableKpis = useMemo(() => {
+    const total = filteredPayments.reduce((sum, payment) => sum + payment.montoFinal, 0);
+    const paid = filteredPayments.reduce(
+      (sum, payment) => sum + (payment.status !== "pending" ? payment.montoFinal : 0),
+      0,
+    );
+    const pending = filteredPayments.reduce(
+      (sum, payment) => sum + (payment.status === "pending" ? payment.montoFinal : 0),
+      0,
+    );
+    const count = filteredPayments.length;
+    const avg = count > 0 ? total / count : 0;
+    return { total, paid, pending, count, avg };
+  }, [filteredPayments]);
+
+  const expenseTableKpis = useMemo(() => {
+    const total = filteredExpenses.reduce((sum, expense) => sum + expense.monto, 0);
+    const paid = filteredExpenses.reduce(
+      (sum, expense) => sum + (expense.status !== "pending" ? expense.monto : 0),
+      0,
+    );
+    const pending = filteredExpenses.reduce(
+      (sum, expense) => sum + (expense.status === "pending" ? expense.monto : 0),
+      0,
+    );
+    const fixed = filteredExpenses.reduce(
+      (sum, expense) => sum + (expense.tipoGasto === "FIJO" ? expense.monto : 0),
+      0,
+    );
+    const variable = filteredExpenses.reduce(
+      (sum, expense) => sum + (expense.tipoGasto === "VARIABLE" ? expense.monto : 0),
+      0,
+    );
+    return { total, paid, pending, fixed, variable };
+  }, [filteredExpenses]);
+
+  const cashTableKpis = useMemo(() => {
+    const entries = filteredTransfers.reduce(
+      (sum, transfer) => sum + (transfer.tipoMovimiento === "INGRESO_CAJA" ? transfer.monto : 0),
+      0,
+    );
+    const exits = filteredTransfers.reduce(
+      (sum, transfer) => sum + (transfer.tipoMovimiento === "SALIDA_CAJA" ? transfer.monto : 0),
+      0,
+    );
+    const count = filteredTransfers.length;
+    return {
+      entries,
+      exits,
+      net: entries - exits,
+      count,
+    };
   }, [filteredTransfers]);
 
 
@@ -681,31 +725,6 @@ export default function FinanceModulePage() {
       incomePending: projection.incomePending,
     });
   }, [isAnnualView, projection]);
-
-  const monthSummary = useMemo(() => {
-    const monthMovements = movements.filter((movement) => {
-      if (movement.monthKey !== filters.monthKey) return false;
-      if (!filters.includeCancelled && movement.status === "cancelled") return false;
-      return true;
-    });
-    const total = monthMovements.reduce(
-      (sum, movement) => sum + (movement.tax?.total ?? movement.amount),
-      0
-    );
-    const igv = monthMovements.reduce((sum, movement) => sum + (movement.tax?.igv ?? 0), 0);
-    const net = total - igv;
-    const paid = monthMovements.reduce(
-      (sum, movement) =>
-        sum + (movement.status !== "pending" ? movement.tax?.total ?? movement.amount : 0),
-      0,
-    );
-    const pending = monthMovements.reduce(
-      (sum, movement) =>
-        sum + (movement.status === "pending" ? movement.tax?.total ?? movement.amount : 0),
-      0
-    );
-    return { total, paid, pending, igv, net };
-  }, [filters.includeCancelled, filters.monthKey, movements]);
 
   const detailTotals = useMemo(() => {
     const incomeTotal = filteredMovements.reduce(
@@ -1678,11 +1697,11 @@ export default function FinanceModulePage() {
               {activeTab === "movimientos" ? (
                 <>
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                    <FinanceKpiCard title="Total" value={monthSummary.total} tone="slate" />
-                    <FinanceKpiCard title="Cobrado" value={monthSummary.paid} tone="green" />
-                    <FinanceKpiCard title="Pendiente" value={monthSummary.pending} tone="amber" />
-                    <FinanceKpiCard title="IGV" value={monthSummary.igv} tone="blue" />
-                    <FinanceKpiCard title="Neto" value={monthSummary.net} tone="rose" />
+                    <FinanceKpiCard title="Total" value={movementTableKpis.total} tone="slate" />
+                    <FinanceKpiCard title="Cobrado" value={movementTableKpis.paid} tone="green" />
+                    <FinanceKpiCard title="Pendiente" value={movementTableKpis.pending} tone="amber" />
+                    <FinanceKpiCard title="IGV" value={movementTableKpis.igv} tone="blue" />
+                    <FinanceKpiCard title="Neto" value={movementTableKpis.net} tone="rose" />
                   </div>
                   <FinanceTable
                     movements={filteredMovements}
@@ -1695,8 +1714,16 @@ export default function FinanceModulePage() {
               ) : null}
 
               {activeTab === "gastos" ? (
-                <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                  <table className="w-full text-left text-sm">
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                    <FinanceKpiCard title="Total" value={expenseTableKpis.total} tone="slate" />
+                    <FinanceKpiCard title="Pagado" value={expenseTableKpis.paid} tone="green" />
+                    <FinanceKpiCard title="Pendiente" value={expenseTableKpis.pending} tone="amber" />
+                    <FinanceKpiCard title="Fijos" value={expenseTableKpis.fixed} tone="blue" />
+                    <FinanceKpiCard title="Variables" value={expenseTableKpis.variable} tone="rose" />
+                  </div>
+                  <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                    <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
                       <tr>
                         <th className="px-4 py-3">Fecha</th>
@@ -1771,13 +1798,22 @@ export default function FinanceModulePage() {
                         </tr>
                       ) : null}
                     </tbody>
-                  </table>
-                </div>
+                    </table>
+                  </div>
+                </>
               ) : null}
 
               {activeTab === "pagos" ? (
-                <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                  <table className="w-full text-left text-sm">
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                    <FinanceKpiCard title="Total" value={paymentTableKpis.total} tone="slate" />
+                    <FinanceKpiCard title="Pagado" value={paymentTableKpis.paid} tone="green" />
+                    <FinanceKpiCard title="Pendiente" value={paymentTableKpis.pending} tone="amber" />
+                    <FinanceKpiCard title="# Pagos" value={paymentTableKpis.count} tone="blue" />
+                    <FinanceKpiCard title="Promedio" value={paymentTableKpis.avg} tone="rose" />
+                  </div>
+                  <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                    <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
                       <tr>
                         <th className="px-4 py-3">Periodo</th>
@@ -1856,13 +1892,22 @@ export default function FinanceModulePage() {
                         </tr>
                       ) : null}
                     </tbody>
-                  </table>
-                </div>
+                    </table>
+                  </div>
+                </>
               ) : null}
 
               {activeTab === "cuentas" ? (
-                <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                  <table className="w-full text-left text-sm">
+                <>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                    <FinanceKpiCard title="Entradas" value={cashTableKpis.entries} tone="green" />
+                    <FinanceKpiCard title="Salidas" value={cashTableKpis.exits} tone="rose" />
+                    <FinanceKpiCard title="Neto" value={cashTableKpis.net} tone="slate" />
+                    <FinanceKpiCard title="# Movimientos" value={cashTableKpis.count} tone="blue" />
+                    <FinanceKpiCard title="Saldo" value={cashTableKpis.net} tone="amber" />
+                  </div>
+                  <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                    <table className="w-full text-left text-sm">
                     <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
                       <tr>
                         <th className="px-4 py-3">Fecha</th>
@@ -1940,8 +1985,9 @@ export default function FinanceModulePage() {
                         </tr>
                       ) : null}
                     </tbody>
-                  </table>
-                </div>
+                    </table>
+                  </div>
+                </>
               ) : null}
             </div>
           )}
