@@ -403,6 +403,36 @@ export default function FinanceModulePage() {
     });
   }, [filters, transfers]);
 
+  const visiblePaymentsTotal = useMemo(
+    () => filteredPayments.reduce((sum, payment) => sum + payment.montoFinal, 0),
+    [filteredPayments],
+  );
+
+  const visibleExpensesTotal = useMemo(
+    () => filteredExpenses.reduce((sum, expense) => sum + expense.monto, 0),
+    [filteredExpenses],
+  );
+
+  const visibleTransfersTotal = useMemo(() => {
+    return filteredTransfers.reduce(
+      (totals, transfer) => {
+        if (transfer.tipoMovimiento === "SALIDA_CAJA") {
+          totals.out += transfer.monto;
+          return totals;
+        }
+        if (transfer.tipoMovimiento === "INGRESO_CAJA") {
+          totals.in += transfer.monto;
+          return totals;
+        }
+
+        totals.in += transfer.monto;
+        totals.out += transfer.monto;
+        return totals;
+      },
+      { in: 0, out: 0 },
+    );
+  }, [filteredTransfers]);
+
   const movementTableKpis = useMemo(() => {
     const total = filteredMovements.reduce((sum, movement) => sum + (movement.tax?.total ?? movement.amount), 0);
     const paid = filteredMovements.reduce(
@@ -419,7 +449,7 @@ export default function FinanceModulePage() {
   }, [filteredMovements]);
 
   const paymentTableKpis = useMemo(() => {
-    const total = filteredPayments.reduce((sum, payment) => sum + payment.montoFinal, 0);
+    const total = visiblePaymentsTotal;
     const paid = filteredPayments.reduce(
       (sum, payment) => sum + (payment.status !== "pending" ? payment.montoFinal : 0),
       0,
@@ -431,10 +461,10 @@ export default function FinanceModulePage() {
     const count = filteredPayments.length;
     const avg = count > 0 ? total / count : 0;
     return { total, paid, pending, count, avg };
-  }, [filteredPayments]);
+  }, [filteredPayments, visiblePaymentsTotal]);
 
   const expenseTableKpis = useMemo(() => {
-    const total = filteredExpenses.reduce((sum, expense) => sum + expense.monto, 0);
+    const total = visibleExpensesTotal;
     const paid = filteredExpenses.reduce(
       (sum, expense) => sum + (expense.status !== "pending" ? expense.monto : 0),
       0,
@@ -452,17 +482,11 @@ export default function FinanceModulePage() {
       0,
     );
     return { total, paid, pending, fixed, variable };
-  }, [filteredExpenses]);
+  }, [filteredExpenses, visibleExpensesTotal]);
 
   const cashTableKpis = useMemo(() => {
-    const entries = filteredTransfers.reduce(
-      (sum, transfer) => sum + (transfer.tipoMovimiento === "INGRESO_CAJA" ? transfer.monto : 0),
-      0,
-    );
-    const exits = filteredTransfers.reduce(
-      (sum, transfer) => sum + (transfer.tipoMovimiento === "SALIDA_CAJA" ? transfer.monto : 0),
-      0,
-    );
+    const entries = visibleTransfersTotal.in;
+    const exits = visibleTransfersTotal.out;
     const count = filteredTransfers.length;
     return {
       entries,
@@ -470,7 +494,7 @@ export default function FinanceModulePage() {
       net: entries - exits,
       count,
     };
-  }, [filteredTransfers]);
+  }, [filteredTransfers, visibleTransfersTotal]);
 
 
 
