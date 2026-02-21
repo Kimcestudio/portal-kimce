@@ -65,19 +65,13 @@ function toPeriodo(monthValue: unknown): string | null {
   return `${month}/${year}`;
 }
 
-function paymentMatchesSelectedPeriod(payment: CollaboratorPayment, selectedMonth: unknown): boolean {
+function paymentMatchesPeriodoOnly(payment: CollaboratorPayment, selectedMonth: unknown): boolean {
   const selectedMonthKey = toMonthKey(selectedMonth);
   if (!selectedMonthKey) return true;
 
-  const selectedPeriodo = toPeriodo(selectedMonth);
   const rawPeriodo = typeof payment.periodo === "string" ? payment.periodo.trim() : "";
-  if (selectedPeriodo && rawPeriodo) {
-    return rawPeriodo === selectedPeriodo || toMonthKey(rawPeriodo) === selectedMonthKey;
-  }
-
-  const paymentMonthKey = payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
-  if (!paymentMonthKey) return true;
-  return paymentMonthKey === selectedMonthKey;
+  if (!rawPeriodo) return false;
+  return toMonthKey(rawPeriodo) === selectedMonthKey;
 }
 
 export function filterMovements(movements: FinanceMovement[], filters: FinanceFilters) {
@@ -151,26 +145,22 @@ function sumBy<T>(items: T[], selector: (item: T) => number) {
   return items.reduce((total, item) => total + selector(item), 0);
 }
 
-export function computeMonthProjection(
+export function getMonthlyProjection(
   movements: FinanceMovement[],
   expenses: Expense[],
   payments: CollaboratorPayment[],
   month: string | Date | { month: number; year: number },
-  account: FinanceFilters["account"] = "all",
 ) {
+  const selectedMonthKey = toMonthKey(month);
+  const periodKey = toPeriodo(month) ?? "--/----";
   const monthMovements = movements.filter(
-    (movement) =>
-      movement.monthKey === toMonthKey(month) &&
-      (account === "all" || movement.accountDestination === account),
+    (movement) => movement.monthKey === selectedMonthKey,
   );
   const monthExpenses = expenses.filter((expense) => {
     const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
-    const selectedMonthKey = toMonthKey(month);
-    return expenseMonthKey === selectedMonthKey && (account === "all" || expense.cuentaOrigen === account);
+    return expenseMonthKey === selectedMonthKey;
   });
-  const monthPayments = payments.filter((payment) =>
-    paymentMatchesSelectedPeriod(payment, month) && (account === "all" || payment.cuentaOrigen === account),
-  );
+  const monthPayments = payments.filter((payment) => paymentMatchesPeriodoOnly(payment, month));
   const incomePaid = sumBy(monthMovements, (item) =>
     isPaid(item.status) ? item.tax?.total ?? item.amount : 0,
   );
@@ -212,12 +202,78 @@ export function computeMonthProjection(
       colaboradores: {
         total: paymentsPaid + paymentsPending,
         count: monthPayments.length,
+        periodKey,
       },
       gastos: {
         total: expensesPaid + expensesPending,
         count: monthExpenses.length,
       },
     },
+  };
+}
+
+export const computeMonthProjection = getMonthlyProjection;
+
+
+export function getMonthlyStatusMetrics(
+  movements: FinanceMovement[],
+  expenses: Expense[],
+  payments: CollaboratorPayment[],
+  transfers: TransferMovement[],
+  month: string | Date | { month: number; year: number },
+) {
+  const selectedMonthKey = toMonthKey(month);
+  const monthIncomePaid = sumBy(movements, (movement) => {
+    if (movement.monthKey !== selectedMonthKey) return 0;
+    if (!isPaid(movement.status)) return 0;
+    return movement.tax?.total ?? movement.amount;
+  });
+
+  const monthExpensesPaid = sumBy(expenses, (expense) => {
+    const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
+    if (expenseMonthKey !== selectedMonthKey) return 0;
+    if (!isPaid(expense.status)) return 0;
+    return expense.monto;
+  });
+
+  const collaboratorPaymentsPaid = sumBy(payments, (payment) => {
+    if (!paymentMatchesPeriodoOnly(payment, month)) return 0;
+    if (!isPaid(payment.status)) return 0;
+    return payment.montoFinal;
+  });
+
+  const transferTotals = transfers.reduce(
+    (totals, transfer) => {
+      const transferMonthKey = getMonthKeyFromDate(transfer.fecha);
+      if (transferMonthKey !== selectedMonthKey) return totals;
+      if (!isPaid(transfer.status)) return totals;
+      if (transfer.tipoMovimiento === "INGRESO_CAJA") {
+        totals.in += transfer.monto;
+      }
+      if (transfer.tipoMovimiento === "SALIDA_CAJA") {
+        totals.out += transfer.monto;
+      }
+      return totals;
+    },
+    { in: 0, out: 0 },
+  );
+
+  const expensesPaid = monthExpensesPaid + collaboratorPaymentsPaid;
+  const netIncome = monthIncomePaid - expensesPaid;
+  const margin = monthIncomePaid > 0 ? (netIncome / monthIncomePaid) * 100 : 0;
+  const cashIn = monthIncomePaid + transferTotals.in;
+  const cashOut = expensesPaid + transferTotals.out;
+
+  return {
+    incomePaid: monthIncomePaid,
+    expensesPaid,
+    collaboratorPaymentsPaid,
+    baseExpensesPaid: monthExpensesPaid,
+    transferIn: transferTotals.in,
+    transferOut: transferTotals.out,
+    netIncome,
+    margin,
+    cashFlow: cashIn - cashOut,
   };
 }
 
