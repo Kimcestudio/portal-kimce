@@ -1973,6 +1973,7 @@ export default function FinanceModulePage() {
         movements={copySourceData.movements}
         expenses={copySourceData.expenses}
         payments={copySourceData.payments}
+        collaborators={collaborators}
         loading={isCopyingMonthData}
       />
 

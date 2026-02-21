@@ -323,13 +323,36 @@ function toPeriodo(monthKey: string) {
 export async function getPreviousMonthCopyCandidates(currentMonthKey: string) {
   const previousMonthKey = getPreviousMonthKey(currentMonthKey);
   const previousPeriodo = toPeriodo(previousMonthKey);
+  const previousMonthStart = `${previousMonthKey}-01`;
+  const [yearPart, monthPart] = previousMonthKey.split("-");
+  const nextMonthDate = new Date(Number(yearPart), Number(monthPart), 1);
+  const nextMonthKey = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, "0")}`;
+  const previousMonthEndExclusive = `${nextMonthKey}-01`;
 
-  const [movementsSnapshot, expensesSnapshot, paymentsByPeriodoSnapshot, paymentsByMonthKeySnapshot] = await Promise.all([
+  const [
+    movementsSnapshot,
+    expensesByMonthKeySnapshot,
+    expensesByDateSnapshot,
+    paymentsByPeriodoSnapshot,
+    paymentsByMonthKeySnapshot,
+  ] = await Promise.all([
     getDocs(query(financeRefs.movementsRef, where("monthKey", "==", previousMonthKey))),
     getDocs(query(financeRefs.expensesRef, where("monthKey", "==", previousMonthKey))),
+    getDocs(
+      query(
+        financeRefs.expensesRef,
+        where("fechaGasto", ">=", previousMonthStart),
+        where("fechaGasto", "<", previousMonthEndExclusive),
+      ),
+    ),
     getDocs(query(financeRefs.collaboratorPaymentsRef, where("periodo", "==", previousPeriodo))),
     getDocs(query(financeRefs.collaboratorPaymentsRef, where("monthKey", "==", previousMonthKey))),
   ]);
+
+  const expensesMap = new Map<string, Expense>();
+  [...expensesByMonthKeySnapshot.docs, ...expensesByDateSnapshot.docs].forEach((item) => {
+    expensesMap.set(item.id, normalizeExpense({ ...item.data(), id: item.id }));
+  });
 
   const paymentMap = new Map<string, CollaboratorPayment>();
   [...paymentsByPeriodoSnapshot.docs, ...paymentsByMonthKeySnapshot.docs].forEach((item) => {
@@ -339,7 +362,7 @@ export async function getPreviousMonthCopyCandidates(currentMonthKey: string) {
   return {
     previousMonthKey,
     movements: movementsSnapshot.docs.map((item) => normalizeMovement({ ...item.data(), id: item.id })),
-    expenses: expensesSnapshot.docs.map((item) => normalizeExpense({ ...item.data(), id: item.id })),
+    expenses: Array.from(expensesMap.values()),
     payments: Array.from(paymentMap.values()),
   };
 }
