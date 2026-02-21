@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import FinanceGate from "@/components/admin/FinanceGate";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -103,6 +103,26 @@ const parsePaymentPeriodToMonthKey = (periodo?: string | null) => {
   return null;
 };
 
+const getLastDayOfMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
+
+const buildDateForMonth = (monthKey: string, preferredDay: number) => {
+  const [yearPart, monthPart] = monthKey.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  if (Number.isNaN(year) || Number.isNaN(month)) return null;
+  const lastDay = getLastDayOfMonth(year, month);
+  const day = Math.max(1, Math.min(preferredDay, lastDay));
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+const monthInRange = (targetMonthKey: string, startDate?: string | null, endDate?: string | null) => {
+  const startMonthKey = startDate ? getMonthKeyFromDate(startDate) : null;
+  const endMonthKey = endDate ? getMonthKeyFromDate(endDate) : null;
+  if (startMonthKey && targetMonthKey < startMonthKey) return false;
+  if (endMonthKey && targetMonthKey > endMonthKey) return false;
+  return true;
+};
+
 const tabLabels: Record<FinanceTabKey, string> = {
   dashboard: "Dashboard",
   movimientos: "Movimientos",
@@ -159,6 +179,7 @@ export default function FinanceModulePage() {
     category: "all",
     includeCancelled: true,
   });
+  const materializingMonthsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let movementsLoaded = false;
