@@ -1,12 +1,15 @@
 import {
   addDoc,
+  getDoc,
   deleteDoc,
   doc,
   getDocs,
   onSnapshot,
   orderBy,
   query,
+  setDoc,
   updateDoc,
+  where,
 } from "firebase/firestore";
 import type {
   Collaborator,
@@ -122,6 +125,71 @@ export async function createIncomeMovement(
 
   const docRef = await addDoc(financeRefs.incomesRef, movement);
   return { ...movement, id: docRef.id };
+}
+
+function getLastDayOfMonth(year: number, month: number) {
+  return new Date(year, month, 0).getDate();
+}
+
+function buildDateForMonth(monthKey: string, preferredDay: number) {
+  const [yearPart, monthPart] = monthKey.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  if (Number.isNaN(year) || Number.isNaN(month)) return null;
+  const day = Math.max(1, Math.min(preferredDay, getLastDayOfMonth(year, month)));
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function isDueDateWithinRange(dueDate: string, startAt?: string | null, endAt?: string | null) {
+  const normalizedStart = startAt ? formatDateOnly(startAt) ?? startAt : null;
+  const normalizedEnd = endAt ? formatDateOnly(endAt) ?? endAt : null;
+  if (normalizedStart && dueDate < normalizedStart) return false;
+  if (normalizedEnd && dueDate > normalizedEnd) return false;
+  return true;
+}
+
+export async function ensureRecurringMovementsForMonth(targetMonthKey: string) {
+  if (!targetMonthKey) return;
+  const templatesQuery = query(financeRefs.movementsRef, where("recurring.enabled", "==", true));
+  const templatesSnapshot = await getDocs(templatesQuery);
+  const templates = templatesSnapshot.docs.map((item) => normalizeMovement({ ...item.data(), id: item.id }));
+
+  await Promise.all(
+    templates
+      .filter((template) => !template.generatedFromId)
+      .filter((template) => targetMonthKey !== template.monthKey)
+      .map(async (template) => {
+        const deterministicId = `rec_${template.id}_${targetMonthKey}`;
+        const targetRef = doc(financeRefs.movementsRef, deterministicId);
+        const existingDoc = await getDoc(targetRef);
+        if (existingDoc.exists()) return;
+
+        const preferredDay = (template.recurring?.dayOfMonth ?? Number(template.incomeDate.split("-")[2])) || 1;
+        const incomeDate = buildDateForMonth(targetMonthKey, preferredDay) ?? template.incomeDate;
+        if (
+          !isDueDateWithinRange(
+            incomeDate,
+            template.recurring?.startAt ?? template.incomeDate,
+            template.recurring?.endAt ?? null,
+          )
+        ) {
+          return;
+        }
+        const now = new Date().toISOString();
+
+        const generated: Omit<FinanceMovement, "id"> = {
+          ...template,
+          incomeDate,
+          monthKey: targetMonthKey,
+          status: "pending",
+          generatedFromId: template.id,
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        await setDoc(targetRef, generated);
+      }),
+  );
 }
 
 export async function createCollaborator(input: Omit<Collaborator, "id" | "createdAt" | "updatedAt">) {
