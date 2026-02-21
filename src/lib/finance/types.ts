@@ -36,7 +36,12 @@ export interface FinanceMovement {
     dayOfMonth?: number | null;
     startAt?: string | null;
     endAt?: string | null;
+    monthsCount?: number | null;
   };
+  recurrenceId?: string | null;
+  recurrenceSourceId?: string | null;
+  generatedForMonthKey?: string | null;
+  generatedFromId?: string | null;
   monthKey: string;
   createdAt: string;
   updatedAt: string;
@@ -99,6 +104,11 @@ export interface Expense {
   monto: number;
   fechaGasto: string;
   monthKey?: string; // ✅ agregado
+  recurrenceId?: string | null;
+  recurrenceSourceId?: string | null;
+  generatedForMonthKey?: string | null;
+  fixedStartAt?: string | null;
+  fixedEndAt?: string | null;
   cuentaOrigen: FinanceAccountName;
   status: FinanceStatus;
   requiereDevolucion: boolean;

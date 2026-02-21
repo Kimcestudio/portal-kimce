@@ -32,6 +32,7 @@ export type IncomeFormValues = {
   recurringDayOfMonth: number;
   recurringStartAt: string;
   recurringEndAt: string;
+  recurringMonthsCount: number;
 };
 
 export type CollaboratorFormValues = {
@@ -154,6 +155,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       recurringDayOfMonth: 1,
       recurringStartAt: getTodayDateString(),
       recurringEndAt: "",
+      recurringMonthsCount: 1,
     },
     schema: (values) => {
       const errors: Record<string, string> = {};
@@ -169,6 +171,9 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
           (!recurring.recurringDayOfMonth || recurring.recurringDayOfMonth < 1 || recurring.recurringDayOfMonth > 31)
         ) {
           errors.recurringDayOfMonth = "Día entre 1 y 31";
+        }
+        if (!recurring.recurringMonthsCount || recurring.recurringMonthsCount < 1) {
+          errors.recurringMonthsCount = "Meses de contrato debe ser mayor o igual a 1";
         }
       }
       return errors;
@@ -787,6 +792,22 @@ export default function FinanceModal({
                     disabled={disabled || !incomeForm.recurringEnabled}
                   />
                   {errors.recurringStartAt ? <ErrorText message={errors.recurringStartAt} /> : null}
+                </label>
+                <label className="text-xs font-semibold text-slate-500">
+                  Meses de contrato
+                  <input
+                    className="mt-1 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
+                    type="number"
+                    min={1}
+                    value={incomeForm.recurringMonthsCount}
+                    onChange={(event) =>
+                      updateIncomeForm({
+                        recurringMonthsCount: event.target.value === "" ? 1 : Number(event.target.value),
+                      })
+                    }
+                    disabled={disabled || !incomeForm.recurringEnabled}
+                  />
+                  {errors.recurringMonthsCount ? <ErrorText message={errors.recurringMonthsCount} /> : null}
                 </label>
                 <label className="text-xs font-semibold text-slate-500">
                   Fin (opcional)
