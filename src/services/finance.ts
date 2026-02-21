@@ -140,11 +140,11 @@ function buildDateForMonth(monthKey: string, preferredDay: number) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function isTargetMonthInRange(targetMonthKey: string, startAt?: string | null, endAt?: string | null) {
-  const startMonthKey = startAt ? getMonthKeyFromDate(startAt) : null;
-  const endMonthKey = endAt ? getMonthKeyFromDate(endAt) : null;
-  if (startMonthKey && targetMonthKey < startMonthKey) return false;
-  if (endMonthKey && targetMonthKey > endMonthKey) return false;
+function isDueDateWithinRange(dueDate: string, startAt?: string | null, endAt?: string | null) {
+  const normalizedStart = startAt ? formatDateOnly(startAt) ?? startAt : null;
+  const normalizedEnd = endAt ? formatDateOnly(endAt) ?? endAt : null;
+  if (normalizedStart && dueDate < normalizedStart) return false;
+  if (normalizedEnd && dueDate > normalizedEnd) return false;
   return true;
 }
 
@@ -157,13 +157,6 @@ export async function ensureRecurringMovementsForMonth(targetMonthKey: string) {
   await Promise.all(
     templates
       .filter((template) => !template.generatedFromId)
-      .filter((template) =>
-        isTargetMonthInRange(
-          targetMonthKey,
-          template.recurring?.startAt ?? template.incomeDate,
-          template.recurring?.endAt ?? null,
-        ),
-      )
       .filter((template) => targetMonthKey !== template.monthKey)
       .map(async (template) => {
         const deterministicId = `rec_${template.id}_${targetMonthKey}`;
@@ -173,6 +166,15 @@ export async function ensureRecurringMovementsForMonth(targetMonthKey: string) {
 
         const preferredDay = (template.recurring?.dayOfMonth ?? Number(template.incomeDate.split("-")[2])) || 1;
         const incomeDate = buildDateForMonth(targetMonthKey, preferredDay) ?? template.incomeDate;
+        if (
+          !isDueDateWithinRange(
+            incomeDate,
+            template.recurring?.startAt ?? template.incomeDate,
+            template.recurring?.endAt ?? null,
+          )
+        ) {
+          return;
+        }
         const now = new Date().toISOString();
 
         const generated: Omit<FinanceMovement, "id"> = {
