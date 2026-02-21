@@ -153,21 +153,6 @@ function addMonths(dateValue: string, months: number) {
   return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
-function computeMonthlyDueDates({
-  startAt,
-  dayOfMonth,
-  monthsCount,
-}: {
-  startAt: string;
-  dayOfMonth: number;
-  monthsCount: number;
-}) {
-  return Array.from({ length: monthsCount }, (_, index) => {
-    const shiftedBase = addMonths(startAt, index);
-    const monthKey = getMonthKeyFromDateOnly(shiftedBase);
-    return buildDateForMonth(monthKey, dayOfMonth) ?? startAt;
-  });
-}
 
 function deriveMonthsCountFromEndAt({
   startAt,
@@ -193,6 +178,85 @@ function deriveMonthsCountFromEndAt({
   return Math.max(1, count);
 }
 
+function getMonthKeyWithOffset(baseMonthKey: string, offset: number) {
+  const [yearPart, monthPart] = baseMonthKey.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  if (Number.isNaN(year) || Number.isNaN(month)) return baseMonthKey;
+  const shifted = new Date(year, month - 1 + offset, 1);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, "0")}`;
+}
+
+async function materializeTemplate(
+  template: FinanceMovement,
+  options?: { targetMonthKey?: string },
+) {
+  const normalizedStartAt = formatDateOnly(template.recurring?.startAt ?? template.incomeDate) ?? template.incomeDate;
+  const dayOfMonth = (template.recurring?.dayOfMonth ?? Number(template.incomeDate.split("-")[2])) || 1;
+  const existingMonthsCount = template.recurring?.monthsCount ?? null;
+  const monthsCount =
+    existingMonthsCount && existingMonthsCount > 0
+      ? existingMonthsCount
+      : deriveMonthsCountFromEndAt({
+          startAt: normalizedStartAt,
+          endAt: template.recurring?.endAt ?? null,
+          dayOfMonth,
+        });
+
+  const templateMonthKey = template.monthKey ?? getMonthKeyFromDate(normalizedStartAt) ?? getMonthKey(new Date());
+  const lastMonthKey = getMonthKeyWithOffset(templateMonthKey, monthsCount - 1);
+  const autoEndAt = buildDateForMonth(lastMonthKey, dayOfMonth) ?? normalizedStartAt;
+  const persistedEndAt = template.recurring?.endAt ? formatDateOnly(template.recurring?.endAt) ?? template.recurring?.endAt : autoEndAt;
+
+  if (!existingMonthsCount || existingMonthsCount < 1 || !template.recurring?.endAt) {
+    await updateDoc(doc(financeRefs.movementsRef, template.id), {
+      recurring: {
+        ...(template.recurring ?? { enabled: true, freq: "monthly" as const }),
+        startAt: normalizedStartAt,
+        dayOfMonth,
+        monthsCount,
+        endAt: persistedEndAt,
+      },
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  await Promise.all(
+    Array.from({ length: monthsCount }, (_, index) => index).map(async (index) => {
+      const targetMonthKey = getMonthKeyWithOffset(templateMonthKey, index);
+      if (options?.targetMonthKey && options.targetMonthKey !== targetMonthKey) return;
+      const dueDate = buildDateForMonth(targetMonthKey, dayOfMonth) ?? normalizedStartAt;
+      if (dueDate < normalizedStartAt) return;
+      if (persistedEndAt && dueDate > persistedEndAt) return;
+      if (targetMonthKey === templateMonthKey) return;
+
+      const deterministicId = `${template.id}_${targetMonthKey}`;
+      const targetRef = doc(financeRefs.movementsRef, deterministicId);
+      const existingDoc = await getDoc(targetRef);
+      if (existingDoc.exists()) return;
+
+      const now = new Date().toISOString();
+      const shiftedExpected = template.expectedPayDate
+        ? buildDateForMonth(targetMonthKey, Number(template.expectedPayDate.split("-")[2]) || dayOfMonth) ?? null
+        : null;
+
+      const generated: Omit<FinanceMovement, "id"> = {
+        ...template,
+        incomeDate: dueDate,
+        expectedPayDate: shiftedExpected,
+        monthKey: targetMonthKey,
+        status: "pending",
+        generatedFromId: template.id,
+        generatedFromMonthKey: templateMonthKey,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await setDoc(targetRef, generated);
+    }),
+  );
+}
+
 export async function ensureRecurringMovementsForMonth(targetMonthKey: string) {
   if (!targetMonthKey) return;
   const templatesQuery = query(financeRefs.movementsRef, where("recurring.enabled", "==", true));
@@ -203,64 +267,17 @@ export async function ensureRecurringMovementsForMonth(targetMonthKey: string) {
     templates
       .filter((template) => !template.generatedFromId)
       .filter((template) => template.recurring?.freq === "monthly")
-      .filter((template) => targetMonthKey !== template.monthKey)
-      .map(async (template) => {
-        const normalizedStartAt = formatDateOnly(template.recurring?.startAt ?? template.incomeDate) ?? template.incomeDate;
-        const dayOfMonth = (template.recurring?.dayOfMonth ?? Number(template.incomeDate.split("-")[2])) || 1;
-        const existingMonthsCount = template.recurring?.monthsCount ?? null;
-        const monthsCount =
-          existingMonthsCount && existingMonthsCount > 0
-            ? existingMonthsCount
-            : deriveMonthsCountFromEndAt({
-                startAt: normalizedStartAt,
-                endAt: template.recurring?.endAt ?? null,
-                dayOfMonth,
-              });
-
-        if (!existingMonthsCount || existingMonthsCount < 1) {
-          await updateDoc(doc(financeRefs.movementsRef, template.id), {
-            recurring: {
-              ...(template.recurring ?? { enabled: true, freq: "monthly" as const }),
-              startAt: normalizedStartAt,
-              dayOfMonth,
-              monthsCount,
-            },
-            updatedAt: new Date().toISOString(),
-          });
-        }
-
-        const dueDates = computeMonthlyDueDates({
-          startAt: normalizedStartAt,
-          dayOfMonth,
-          monthsCount,
-        });
-        const filteredDueDates = (template.recurring?.endAt
-          ? dueDates.filter((dueDate) => dueDate <= (formatDateOnly(template.recurring?.endAt) ?? template.recurring?.endAt ?? dueDate))
-          : dueDates);
-
-        const targetDueDate = filteredDueDates.find((dueDate) => getMonthKeyFromDateOnly(dueDate) === targetMonthKey);
-        if (!targetDueDate) return;
-
-        const deterministicId = `rec_${template.id}_${targetMonthKey}`;
-        const targetRef = doc(financeRefs.movementsRef, deterministicId);
-        const existingDoc = await getDoc(targetRef);
-        if (existingDoc.exists()) return;
-
-        const now = new Date().toISOString();
-
-        const generated: Omit<FinanceMovement, "id"> = {
-          ...template,
-          incomeDate: targetDueDate,
-          monthKey: targetMonthKey,
-          status: "pending",
-          generatedFromId: template.id,
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        await setDoc(targetRef, generated);
-      }),
+      .map((template) => materializeTemplate(template, { targetMonthKey })),
   );
+}
+
+export async function materializeRecurringMovementById(templateId: string) {
+  const snapshot = await getDoc(doc(financeRefs.movementsRef, templateId));
+  if (!snapshot.exists()) return;
+  const template = normalizeMovement({ ...snapshot.data(), id: snapshot.id });
+  if (!template.recurring?.enabled || template.recurring?.freq !== "monthly") return;
+  if (template.generatedFromId) return;
+  await materializeTemplate(template);
 }
 
 function getPreviousMonthKey(monthKey: string) {

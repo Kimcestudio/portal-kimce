@@ -74,6 +74,8 @@ import {
   updateTransferStatus,
   getPreviousMonthCopyCandidates,
   copyItemsFromPreviousMonth,
+  ensureRecurringMovementsForMonth,
+  materializeRecurringMovementById,
 } from "@/services/finance";
 import { db } from "@/services/firebase/client";
 import { Pencil, Trash2 } from "lucide-react";
@@ -159,6 +161,7 @@ export default function FinanceModulePage() {
     expenses: Expense[];
     payments: CollaboratorPayment[];
   }>({ movements: [], expenses: [], payments: [] });
+  const materializingMonthsRef = useRef<Set<string>>(new Set());
   const [detailTab, setDetailTab] = useState<
     "summary" | "income" | "expenses" | "payments" | "accounts"
   >("summary");
@@ -427,6 +430,28 @@ export default function FinanceModulePage() {
   }, [filteredTransfers]);
 
 
+
+
+  useEffect(() => {
+    if (isLoading) return;
+    const monthKey = filters.monthKey;
+    if (!monthKey) return;
+    if (materializingMonthsRef.current.has(monthKey)) return;
+
+    const run = async () => {
+      materializingMonthsRef.current.add(monthKey);
+      try {
+        await ensureRecurringMovementsForMonth(monthKey);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("[FINANCE] recurring materialization error", error);
+      } finally {
+        materializingMonthsRef.current.delete(monthKey);
+      }
+    };
+
+    void run();
+  }, [filters.monthKey, isLoading]);
 
   const availableYears = useMemo(() => {
     const years = new Set<number>();
@@ -900,9 +925,15 @@ export default function FinanceModulePage() {
         };
         if (editingMovement) {
           await updateIncomeMovement(editingMovement.id, incomePayload);
+          if (payload.recurringEnabled && payload.recurringFreq === "monthly") {
+            await materializeRecurringMovementById(editingMovement.id);
+          }
           setToast({ message: "Ingreso actualizado", tone: "success" });
         } else {
-          await createIncomeMovement(incomePayload);
+          const created = await createIncomeMovement(incomePayload);
+          if (payload.recurringEnabled && payload.recurringFreq === "monthly") {
+            await materializeRecurringMovementById(created.id);
+          }
           setToast({ message: "Ingreso creado", tone: "success" });
         }
       }

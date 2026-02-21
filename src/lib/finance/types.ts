@@ -42,6 +42,7 @@ export interface FinanceMovement {
   recurrenceSourceId?: string | null;
   generatedForMonthKey?: string | null;
   generatedFromId?: string | null;
+  generatedFromMonthKey?: string | null;
   copiedFromId?: string | null;
   copiedFromMonthKey?: string | null;
   monthKey: string;
