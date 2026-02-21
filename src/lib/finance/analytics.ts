@@ -431,7 +431,7 @@ export function computeMonthlySeries(
       return expenseMonthKey === monthKey && (account === "all" || expense.cuentaOrigen === account);
     });
     const monthPayments = payments.filter((payment) => {
-      const paymentMonthKey = payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
+      const paymentMonthKey = toMonthKey(payment.periodo);
       return paymentMonthKey === monthKey && (account === "all" || payment.cuentaOrigen === account);
     });
     const incomePaid = sumBy(monthMovements, (movement) =>
