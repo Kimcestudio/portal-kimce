@@ -182,7 +182,6 @@ export default function FinanceModulePage() {
     category: "all",
     includeCancelled: true,
   });
-  const materializingMonthsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let movementsLoaded = false;
