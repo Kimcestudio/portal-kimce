@@ -310,10 +310,12 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         name: "colaboradorId",
         label: "Colaborador",
         type: "select",
-        options: context.collaborators.map((collaborator) => ({
-          value: collaborator.id,
-          label: collaborator.nombreCompleto,
-        })),
+        options: context.collaborators
+          .filter((collaborator) => collaborator.isActive ?? collaborator.activo ?? true)
+          .map((collaborator) => ({
+            value: collaborator.id,
+            label: collaborator.nombreCompleto,
+          })),
       },
       { name: "periodo", label: "Periodo (mes/año)", type: "text", placeholder: "09/2024" },
       { name: "montoBase", label: "Monto base", type: "number", placeholder: "0", min: 0 },

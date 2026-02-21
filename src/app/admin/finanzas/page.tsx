@@ -68,6 +68,8 @@ import {
   deleteExpense,
   deleteFinanceMovement,
   deleteTransfer,
+  updateCollaborator,
+  updateCollaboratorActive,
   updateCollaboratorPayment,
   updateCollaboratorPaymentStatus,
   updateExpense,
@@ -154,6 +156,9 @@ export default function FinanceModulePage() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [editingPayment, setEditingPayment] = useState<CollaboratorPayment | null>(null);
   const [editingTransfer, setEditingTransfer] = useState<TransferMovement | null>(null);
+  const [editingCollaborator, setEditingCollaborator] = useState<Collaborator | null>(null);
+  const [isCollaboratorsModalOpen, setIsCollaboratorsModalOpen] = useState(false);
+  const [collaboratorsFilter, setCollaboratorsFilter] = useState<"all" | "active" | "inactive">("all");
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isProjectionDetailOpen, setIsProjectionDetailOpen] = useState(false);
   const [isDetailModalProjectionOpen, setIsDetailModalProjectionOpen] = useState(false);
@@ -327,6 +332,7 @@ export default function FinanceModulePage() {
           return {
             ...data,
             id: doc.id,
+            isActive: data.isActive ?? data.activo ?? true,
           };
         });
         setCollaborators(items);
@@ -889,7 +895,7 @@ export default function FinanceModulePage() {
 
       if (type === "collaborator") {
         const payload = values as CollaboratorFormValues;
-        await createCollaborator({
+        const collaboratorPayload = {
           nombreCompleto: payload.nombreCompleto,
           rolPuesto: payload.rolPuesto,
           tipoPago: payload.tipoPago,
@@ -902,8 +908,15 @@ export default function FinanceModulePage() {
           finContrato: payload.finContrato ? new Date(payload.finContrato).toISOString() : null,
           activo: payload.activo,
           notas: payload.notas,
-        });
-        setToast({ message: "Colaborador creado", tone: "success" });
+          isActive: payload.activo,
+        };
+        if (editingCollaborator) {
+          await updateCollaborator(editingCollaborator.id, collaboratorPayload);
+          setToast({ message: "Colaborador actualizado", tone: "success" });
+        } else {
+          await createCollaborator(collaboratorPayload);
+          setToast({ message: "Colaborador creado", tone: "success" });
+        }
       }
 
       if (type === "collaborator_payment") {
@@ -1108,6 +1121,23 @@ export default function FinanceModulePage() {
       }
     : null;
 
+  const collaboratorInitialValues: Partial<CollaboratorFormValues> | null = editingCollaborator
+    ? {
+        nombreCompleto: editingCollaborator.nombreCompleto,
+        rolPuesto: editingCollaborator.rolPuesto,
+        tipoPago: editingCollaborator.tipoPago,
+        montoBase: editingCollaborator.montoBase,
+        moneda: editingCollaborator.moneda,
+        cuentaPagoPreferida: editingCollaborator.cuentaPagoPreferida,
+        diaPago: editingCollaborator.diaPago ?? "",
+        fechaPago: formatDateOnly(editingCollaborator.fechaPago) ?? "",
+        inicioContrato: formatDateOnly(editingCollaborator.inicioContrato) ?? editingCollaborator.inicioContrato,
+        finContrato: formatDateOnly(editingCollaborator.finContrato) ?? "",
+        activo: editingCollaborator.isActive ?? editingCollaborator.activo ?? true,
+        notas: editingCollaborator.notas ?? "",
+      }
+    : null;
+
   const transferInitialValues: Partial<TransferFormValues> | null = editingTransfer
     ? {
         tipoMovimiento: editingTransfer.tipoMovimiento,
@@ -1124,7 +1154,7 @@ export default function FinanceModulePage() {
   const modalInitialValues = useMemo(() => {
     switch (modalType) {
       case "collaborator":
-        return null;
+        return collaboratorInitialValues;
       case "expense":
         return expenseInitialValues;
       case "collaborator_payment":
@@ -1136,6 +1166,7 @@ export default function FinanceModulePage() {
         return incomeInitialValues;
     }
   }, [
+    collaboratorInitialValues,
     expenseInitialValues,
     incomeInitialValues,
     modalType,
@@ -1187,6 +1218,32 @@ export default function FinanceModulePage() {
     setToast({ message: "Movimiento eliminado", tone: "success" });
   };
 
+  const visibleCollaborators = useMemo(() => {
+    if (collaboratorsFilter === "active") {
+      return collaborators.filter((item) => item.isActive ?? item.activo ?? true);
+    }
+    if (collaboratorsFilter === "inactive") {
+      return collaborators.filter((item) => !(item.isActive ?? item.activo ?? true));
+    }
+    return collaborators;
+  }, [collaborators, collaboratorsFilter]);
+
+  const handleEditCollaborator = (collaborator: Collaborator) => {
+    setEditingCollaborator(collaborator);
+    setModalType("collaborator");
+    setIsModalOpen(true);
+    setIsSubmitting(false);
+  };
+
+  const handleToggleCollaborator = async (collaborator: Collaborator) => {
+    const nextActive = !(collaborator.isActive ?? collaborator.activo ?? true);
+    await updateCollaboratorActive(collaborator.id, nextActive);
+    setToast({
+      message: nextActive ? "Colaborador activado" : "Colaborador desactivado",
+      tone: "success",
+    });
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
@@ -1213,10 +1270,10 @@ export default function FinanceModulePage() {
               {activeTab === "pagos" ? (
                 <button
                   type="button"
-                  onClick={() => openModal("collaborator")}
+                  onClick={() => setIsCollaboratorsModalOpen(true)}
                   className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
                 >
-                  Nuevo colaborador
+                  Colaboradores
                 </button>
               ) : null}
               <button
@@ -1224,7 +1281,7 @@ export default function FinanceModulePage() {
                 onClick={handleOpenCopyPreviousMonth}
                 className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
               >
-                Copiar mes anterior
+                Importar del mes anterior
               </button>
               <button
                 type="button"
@@ -1966,6 +2023,111 @@ export default function FinanceModulePage() {
       ) : null}
 
 
+      {isCollaboratorsModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
+          <div className="w-full max-w-3xl rounded-3xl bg-white p-6 shadow-[0_30px_60px_rgba(15,23,42,0.35)]">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Gestión de colaboradores</h3>
+                <p className="text-xs text-slate-500">Administra alta, edición y estado de colaboradores.</p>
+              </div>
+              <button
+                type="button"
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500"
+                onClick={() => setIsCollaboratorsModalOpen(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <select
+                className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600"
+                value={collaboratorsFilter}
+                onChange={(event) =>
+                  setCollaboratorsFilter(event.target.value as "all" | "active" | "inactive")
+                }
+              >
+                <option value="all">Todos</option>
+                <option value="active">Activos</option>
+                <option value="inactive">Inactivos</option>
+              </select>
+              <button
+                type="button"
+                className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white"
+                onClick={() => {
+                  setEditingCollaborator(null);
+                  setModalType("collaborator");
+                  setIsModalOpen(true);
+                  setIsSubmitting(false);
+                }}
+              >
+                Nuevo colaborador
+              </button>
+            </div>
+
+            <div className="mt-4 max-h-[55vh] overflow-y-auto rounded-2xl border border-slate-200">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
+                  <tr>
+                    <th className="px-4 py-3">Nombre</th>
+                    <th className="px-4 py-3">Estado</th>
+                    <th className="px-4 py-3 text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleCollaborators.map((collaborator) => {
+                    const isActive = collaborator.isActive ?? collaborator.activo ?? true;
+                    return (
+                      <tr key={collaborator.id} className="border-t border-slate-100">
+                        <td className="px-4 py-3">
+                          <p className="font-semibold text-slate-900">{collaborator.nombreCompleto}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                              isActive ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"
+                            }`}
+                          >
+                            {isActive ? "Activo" : "Inactivo"}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              type="button"
+                              className="rounded-xl border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                              onClick={() => handleEditCollaborator(collaborator)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-xl border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                              onClick={() => handleToggleCollaborator(collaborator)}
+                            >
+                              {isActive ? "Desactivar" : "Activar"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {visibleCollaborators.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-6 text-center text-xs text-slate-400">
+                        Sin colaboradores para este filtro.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+
       <CopyPreviousMonthModal
         isOpen={isCopyModalOpen}
         onClose={() => setIsCopyModalOpen(false)}
@@ -1986,6 +2148,7 @@ export default function FinanceModulePage() {
           setEditingExpense(null);
           setEditingPayment(null);
           setEditingTransfer(null);
+          setEditingCollaborator(null);
         }}
         onSubmit={handleCreateMovement}
         disabled={isSubmitting}

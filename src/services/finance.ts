@@ -471,11 +471,32 @@ export async function createCollaborator(input: Omit<Collaborator, "id" | "creat
   const now = new Date().toISOString();
   const collaborator: Omit<Collaborator, "id"> = {
     ...input,
+    isActive: input.isActive ?? input.activo ?? true,
+    activo: input.activo ?? input.isActive ?? true,
     createdAt: now,
     updatedAt: now,
   };
   const docRef = await addDoc(financeRefs.collaboratorsRef, collaborator);
   return { ...collaborator, id: docRef.id };
+}
+
+
+export async function updateCollaborator(
+  id: string,
+  updates: Partial<Omit<Collaborator, "id" | "createdAt" | "updatedAt">>,
+) {
+  await updateDoc(doc(financeRefs.collaboratorsRef, id), {
+    ...updates,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function updateCollaboratorActive(id: string, isActive: boolean) {
+  await updateDoc(doc(financeRefs.collaboratorsRef, id), {
+    isActive,
+    activo: isActive,
+    updatedAt: new Date().toISOString(),
+  });
 }
 
 export async function createCollaboratorPayment(
