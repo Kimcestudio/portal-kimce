@@ -36,6 +36,7 @@ export interface FinanceMovement {
     dayOfMonth?: number | null;
     startAt?: string | null;
     endAt?: string | null;
+    monthsCount?: number | null;
   };
   recurrenceId?: string | null;
   recurrenceSourceId?: string | null;

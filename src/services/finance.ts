@@ -131,6 +131,10 @@ function getLastDayOfMonth(year: number, month: number) {
   return new Date(year, month, 0).getDate();
 }
 
+function getMonthKeyFromDateOnly(dateValue: string) {
+  return dateValue.slice(0, 7);
+}
+
 function buildDateForMonth(monthKey: string, preferredDay: number) {
   const [yearPart, monthPart] = monthKey.split("-");
   const year = Number(yearPart);
@@ -140,12 +144,53 @@ function buildDateForMonth(monthKey: string, preferredDay: number) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
-function isDueDateWithinRange(dueDate: string, startAt?: string | null, endAt?: string | null) {
-  const normalizedStart = startAt ? formatDateOnly(startAt) ?? startAt : null;
+function addMonths(dateValue: string, months: number) {
+  const [yearPart, monthPart] = dateValue.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  if (Number.isNaN(year) || Number.isNaN(month)) return dateValue;
+  const base = new Date(year, month - 1 + months, 1);
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-01`;
+}
+
+function computeMonthlyDueDates({
+  startAt,
+  dayOfMonth,
+  monthsCount,
+}: {
+  startAt: string;
+  dayOfMonth: number;
+  monthsCount: number;
+}) {
+  return Array.from({ length: monthsCount }, (_, index) => {
+    const shiftedBase = addMonths(startAt, index);
+    const monthKey = getMonthKeyFromDateOnly(shiftedBase);
+    return buildDateForMonth(monthKey, dayOfMonth) ?? startAt;
+  });
+}
+
+function deriveMonthsCountFromEndAt({
+  startAt,
+  endAt,
+  dayOfMonth,
+}: {
+  startAt: string;
+  endAt?: string | null;
+  dayOfMonth: number;
+}) {
   const normalizedEnd = endAt ? formatDateOnly(endAt) ?? endAt : null;
-  if (normalizedStart && dueDate < normalizedStart) return false;
-  if (normalizedEnd && dueDate > normalizedEnd) return false;
-  return true;
+  if (!normalizedEnd) return 1;
+  const normalizedStart = formatDateOnly(startAt) ?? startAt;
+  let count = 0;
+  for (let index = 0; index < 120; index += 1) {
+    const shiftedBase = addMonths(normalizedStart, index);
+    const monthKey = getMonthKeyFromDateOnly(shiftedBase);
+    const dueDate = buildDateForMonth(monthKey, dayOfMonth) ?? normalizedStart;
+    if (dueDate < normalizedStart) continue;
+    if (dueDate > normalizedEnd) break;
+    count += 1;
+  }
+  return Math.max(1, count);
 }
 
 export async function ensureRecurringMovementsForMonth(targetMonthKey: string) {
@@ -157,29 +202,55 @@ export async function ensureRecurringMovementsForMonth(targetMonthKey: string) {
   await Promise.all(
     templates
       .filter((template) => !template.generatedFromId)
+      .filter((template) => template.recurring?.freq === "monthly")
       .filter((template) => targetMonthKey !== template.monthKey)
       .map(async (template) => {
+        const normalizedStartAt = formatDateOnly(template.recurring?.startAt ?? template.incomeDate) ?? template.incomeDate;
+        const dayOfMonth = (template.recurring?.dayOfMonth ?? Number(template.incomeDate.split("-")[2])) || 1;
+        const existingMonthsCount = template.recurring?.monthsCount ?? null;
+        const monthsCount =
+          existingMonthsCount && existingMonthsCount > 0
+            ? existingMonthsCount
+            : deriveMonthsCountFromEndAt({
+                startAt: normalizedStartAt,
+                endAt: template.recurring?.endAt ?? null,
+                dayOfMonth,
+              });
+
+        if (!existingMonthsCount || existingMonthsCount < 1) {
+          await updateDoc(doc(financeRefs.movementsRef, template.id), {
+            recurring: {
+              ...(template.recurring ?? { enabled: true, freq: "monthly" as const }),
+              startAt: normalizedStartAt,
+              dayOfMonth,
+              monthsCount,
+            },
+            updatedAt: new Date().toISOString(),
+          });
+        }
+
+        const dueDates = computeMonthlyDueDates({
+          startAt: normalizedStartAt,
+          dayOfMonth,
+          monthsCount,
+        });
+        const filteredDueDates = (template.recurring?.endAt
+          ? dueDates.filter((dueDate) => dueDate <= (formatDateOnly(template.recurring?.endAt) ?? template.recurring?.endAt ?? dueDate))
+          : dueDates);
+
+        const targetDueDate = filteredDueDates.find((dueDate) => getMonthKeyFromDateOnly(dueDate) === targetMonthKey);
+        if (!targetDueDate) return;
+
         const deterministicId = `rec_${template.id}_${targetMonthKey}`;
         const targetRef = doc(financeRefs.movementsRef, deterministicId);
         const existingDoc = await getDoc(targetRef);
         if (existingDoc.exists()) return;
 
-        const preferredDay = (template.recurring?.dayOfMonth ?? Number(template.incomeDate.split("-")[2])) || 1;
-        const incomeDate = buildDateForMonth(targetMonthKey, preferredDay) ?? template.incomeDate;
-        if (
-          !isDueDateWithinRange(
-            incomeDate,
-            template.recurring?.startAt ?? template.incomeDate,
-            template.recurring?.endAt ?? null,
-          )
-        ) {
-          return;
-        }
         const now = new Date().toISOString();
 
         const generated: Omit<FinanceMovement, "id"> = {
           ...template,
-          incomeDate,
+          incomeDate: targetDueDate,
           monthKey: targetMonthKey,
           status: "pending",
           generatedFromId: template.id,

@@ -862,6 +862,7 @@ export default function FinanceModulePage() {
             dayOfMonth: payload.recurringFreq === "monthly" ? payload.recurringDayOfMonth : null,
             startAt: payload.recurringStartAt || null,
             endAt: payload.recurringEndAt || null,
+            monthsCount: payload.recurringMonthsCount,
           },
           recurrenceId:
             payload.recurringEnabled
@@ -1063,6 +1064,7 @@ export default function FinanceModulePage() {
         recurringDayOfMonth: editingMovement.recurring?.dayOfMonth ?? 1,
         recurringStartAt: formatDateOnly(editingMovement.recurring?.startAt) ?? "",
         recurringEndAt: formatDateOnly(editingMovement.recurring?.endAt) ?? "",
+        recurringMonthsCount: editingMovement.recurring?.monthsCount ?? 1,
       }
     : null;
 
