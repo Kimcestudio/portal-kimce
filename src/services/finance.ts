@@ -187,6 +187,16 @@ function getMonthKeyWithOffset(baseMonthKey: string, offset: number) {
   return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function addDays(dateValue: string, days: number) {
+  const [yearPart, monthPart, dayPart] = dateValue.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  const day = Number(dayPart);
+  if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) return dateValue;
+  const shifted = new Date(year, month - 1, day + days);
+  return `${shifted.getFullYear()}-${String(shifted.getMonth() + 1).padStart(2, "0")}-${String(shifted.getDate()).padStart(2, "0")}`;
+}
+
 async function materializeTemplate(
   template: FinanceMovement,
   options?: { targetMonthKey?: string },
@@ -203,10 +213,11 @@ async function materializeTemplate(
           dayOfMonth,
         });
 
-  const templateMonthKey = template.monthKey ?? getMonthKeyFromDate(normalizedStartAt) ?? getMonthKey(new Date());
-  const lastMonthKey = getMonthKeyWithOffset(templateMonthKey, monthsCount - 1);
-  const autoEndAt = buildDateForMonth(lastMonthKey, dayOfMonth) ?? normalizedStartAt;
-  const persistedEndAt = template.recurring?.endAt ? formatDateOnly(template.recurring?.endAt) ?? template.recurring?.endAt : autoEndAt;
+  const startMonthKey = getMonthKeyFromDate(normalizedStartAt) ?? template.monthKey ?? getMonthKey(new Date());
+  const autoEndAt = addDays(addMonths(normalizedStartAt, monthsCount), -1);
+  const persistedEndAt = template.recurring?.endAt
+    ? formatDateOnly(template.recurring?.endAt) ?? template.recurring?.endAt
+    : autoEndAt;
 
   if (!existingMonthsCount || existingMonthsCount < 1 || !template.recurring?.endAt) {
     await updateDoc(doc(financeRefs.movementsRef, template.id), {
@@ -221,14 +232,29 @@ async function materializeTemplate(
     });
   }
 
+  const occurrences: Array<{ monthKey: string; dueDate: string }> = [];
+  for (let index = 0; index < 240 && occurrences.length < monthsCount; index += 1) {
+    const targetMonthKey = getMonthKeyWithOffset(startMonthKey, index);
+    const dueDate = buildDateForMonth(targetMonthKey, dayOfMonth) ?? normalizedStartAt;
+    if (dueDate < normalizedStartAt) continue;
+    if (persistedEndAt && dueDate > persistedEndAt) break;
+    occurrences.push({ monthKey: targetMonthKey, dueDate });
+  }
+
+  if (process.env.NODE_ENV === "development" && monthsCount === 2) {
+    // eslint-disable-next-line no-console
+    console.log("[FINANCE] recurring dueDates", {
+      templateId: template.id,
+      monthsCount,
+      dueDates: occurrences.map((item) => item.dueDate),
+      monthKeys: occurrences.map((item) => item.monthKey),
+    });
+  }
+
   await Promise.all(
-    Array.from({ length: monthsCount }, (_, index) => index).map(async (index) => {
-      const targetMonthKey = getMonthKeyWithOffset(templateMonthKey, index);
+    occurrences.map(async ({ monthKey: targetMonthKey, dueDate }) => {
       if (options?.targetMonthKey && options.targetMonthKey !== targetMonthKey) return;
-      const dueDate = buildDateForMonth(targetMonthKey, dayOfMonth) ?? normalizedStartAt;
-      if (dueDate < normalizedStartAt) return;
-      if (persistedEndAt && dueDate > persistedEndAt) return;
-      if (targetMonthKey === templateMonthKey) return;
+      if (targetMonthKey === template.monthKey) return;
 
       const deterministicId = `${template.id}_${targetMonthKey}`;
       const targetRef = doc(financeRefs.movementsRef, deterministicId);
@@ -247,7 +273,7 @@ async function materializeTemplate(
         monthKey: targetMonthKey,
         status: "pending",
         generatedFromId: template.id,
-        generatedFromMonthKey: templateMonthKey,
+        generatedFromMonthKey: template.monthKey,
         createdAt: now,
         updatedAt: now,
       };
