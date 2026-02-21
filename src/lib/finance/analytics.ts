@@ -214,6 +214,69 @@ export function getMonthlyProjection(
 
 export const computeMonthProjection = getMonthlyProjection;
 
+
+export function getMonthlyStatusMetrics(
+  movements: FinanceMovement[],
+  expenses: Expense[],
+  payments: CollaboratorPayment[],
+  transfers: TransferMovement[],
+  month: string | Date | { month: number; year: number },
+) {
+  const selectedMonthKey = toMonthKey(month);
+  const monthIncomePaid = sumBy(movements, (movement) => {
+    if (movement.monthKey !== selectedMonthKey) return 0;
+    if (!isPaid(movement.status)) return 0;
+    return movement.tax?.total ?? movement.amount;
+  });
+
+  const monthExpensesPaid = sumBy(expenses, (expense) => {
+    const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
+    if (expenseMonthKey !== selectedMonthKey) return 0;
+    if (!isPaid(expense.status)) return 0;
+    return expense.monto;
+  });
+
+  const collaboratorPaymentsPaid = sumBy(payments, (payment) => {
+    if (!paymentMatchesPeriodoOnly(payment, month)) return 0;
+    if (!isPaid(payment.status)) return 0;
+    return payment.montoFinal;
+  });
+
+  const transferTotals = transfers.reduce(
+    (totals, transfer) => {
+      const transferMonthKey = getMonthKeyFromDate(transfer.fecha);
+      if (transferMonthKey !== selectedMonthKey) return totals;
+      if (!isPaid(transfer.status)) return totals;
+      if (transfer.tipoMovimiento === "INGRESO_CAJA") {
+        totals.in += transfer.monto;
+      }
+      if (transfer.tipoMovimiento === "SALIDA_CAJA") {
+        totals.out += transfer.monto;
+      }
+      return totals;
+    },
+    { in: 0, out: 0 },
+  );
+
+  const expensesPaid = monthExpensesPaid + collaboratorPaymentsPaid;
+  const netIncome = monthIncomePaid - expensesPaid;
+  const margin = monthIncomePaid > 0 ? (netIncome / monthIncomePaid) * 100 : 0;
+  const cashIn = monthIncomePaid + transferTotals.in;
+  const cashOut = expensesPaid + transferTotals.out;
+
+  return {
+    incomePaid: monthIncomePaid,
+    expensesPaid,
+    collaboratorPaymentsPaid,
+    baseExpensesPaid: monthExpensesPaid,
+    transferIn: transferTotals.in,
+    transferOut: transferTotals.out,
+    netIncome,
+    margin,
+    cashFlow: cashIn - cashOut,
+  };
+}
+
 export function computeCashFlow({
   movements,
   expenses,

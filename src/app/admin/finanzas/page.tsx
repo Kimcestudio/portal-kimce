@@ -26,6 +26,7 @@ import {
   computeAlerts,
   computeCashFlow,
   getMonthlyProjection,
+  getMonthlyStatusMetrics,
   computeMonthlySeries,
   computeYearToDateTotals,
   filterMovements,
@@ -409,17 +410,9 @@ export default function FinanceModulePage() {
     [expenses, filters.monthKey, movements, payments],
   );
 
-  const monthlyCashFlow = useMemo(
-    () =>
-      computeCashFlow({
-        movements,
-        expenses,
-        payments,
-        transfers,
-        monthKey: filters.monthKey,
-        account: filters.account,
-      }),
-    [expenses, filters.account, filters.monthKey, movements, payments, transfers],
+  const monthlyStatusMetrics = useMemo(
+    () => getMonthlyStatusMetrics(movements, expenses, payments, transfers, filters.monthKey),
+    [expenses, filters.monthKey, movements, payments, transfers],
   );
 
   const selectedMonthInfo = useMemo(() => {
@@ -573,11 +566,11 @@ export default function FinanceModulePage() {
       cashFlowLabel: "Flujo de caja",
       netLabel: "Utilidad neta",
       marginLabel: "Margen neto",
-      incomePaid: kpis.incomePaid,
-      expensesPaid: kpis.expensesPaid,
-      cashFlow: monthlyCashFlow.net,
-      netIncome: kpis.netIncome,
-      margin: kpis.margin,
+      incomePaid: monthlyStatusMetrics.incomePaid,
+      expensesPaid: monthlyStatusMetrics.expensesPaid,
+      cashFlow: monthlyStatusMetrics.cashFlow,
+      netIncome: monthlyStatusMetrics.netIncome,
+      margin: monthlyStatusMetrics.margin,
     };
   }, [
     annualCashFlow.net,
@@ -588,11 +581,11 @@ export default function FinanceModulePage() {
     annualYear,
     filters.monthKey,
     isAnnualView,
-    kpis.expensesPaid,
-    kpis.incomePaid,
-    kpis.margin,
-    kpis.netIncome,
-    monthlyCashFlow.net,
+    monthlyStatusMetrics.cashFlow,
+    monthlyStatusMetrics.expensesPaid,
+    monthlyStatusMetrics.incomePaid,
+    monthlyStatusMetrics.margin,
+    monthlyStatusMetrics.netIncome,
   ]);
 
   const alerts = useMemo(() => {
@@ -1306,11 +1299,11 @@ export default function FinanceModulePage() {
                   ) : (
                     <>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                        <FinanceKpiCard title="Ingresos cobrados" value={kpis.incomePaid} tone="blue" />
+                        <FinanceKpiCard title="Ingresos cobrados" value={monthlyStatusMetrics.incomePaid} tone="blue" />
                         <FinanceKpiCard title="Pendiente por cobrar" value={kpis.incomePending} tone="amber" />
-                        <FinanceKpiCard title="Gastos pagados" value={kpis.expensesPaid} tone="rose" />
-                        <FinanceKpiCard title="Flujo de caja" value={monthlyCashFlow.net} tone="slate" />
-                        <FinanceKpiCard title="Utilidad neta" value={kpis.netIncome} tone="green" />
+                        <FinanceKpiCard title="Gastos pagados" value={monthlyStatusMetrics.expensesPaid} tone="rose" />
+                        <FinanceKpiCard title="Flujo de caja" value={monthlyStatusMetrics.cashFlow} tone="slate" />
+                        <FinanceKpiCard title="Utilidad neta" value={monthlyStatusMetrics.netIncome} tone="green" />
                       </div>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
@@ -1830,19 +1823,19 @@ export default function FinanceModulePage() {
                       <div className="mt-3 space-y-2 text-sm">
                         <div className="flex items-center justify-between">
                           <span>Ingresos cobrados</span>
-                          <span className="font-semibold">{formatCurrency(kpis.incomePaid)}</span>
+                          <span className="font-semibold">{formatCurrency(monthlyStatusMetrics.incomePaid)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span>Gastos pagados</span>
-                          <span className="font-semibold">{formatCurrency(kpis.expensesPaid)}</span>
+                          <span className="font-semibold">{formatCurrency(monthlyStatusMetrics.expensesPaid)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span>Utilidad neta</span>
-                          <span className="font-semibold">{formatCurrency(kpis.netIncome)}</span>
+                          <span className="font-semibold">{formatCurrency(monthlyStatusMetrics.netIncome)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span>Margen neto</span>
-                          <span className="font-semibold">{kpis.margin.toFixed(1)}%</span>
+                          <span className="font-semibold">{monthlyStatusMetrics.margin.toFixed(1)}%</span>
                         </div>
                       </div>
                     </div>
