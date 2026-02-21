@@ -1,10 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { CollaboratorPayment, Expense, FinanceMovement } from "@/lib/finance/types";
-import { formatCurrency, formatShortDate, getStatusLabel } from "@/lib/finance/utils";
+import type { Collaborator, CollaboratorPayment, Expense, FinanceMovement } from "@/lib/finance/types";
+import { formatCurrency, formatShortDate, getStatusLabel, getMonthKeyFromDate } from "@/lib/finance/utils";
 
 type TabKey = "movements" | "expenses" | "payments";
+type ExpenseFilter = "all" | "fixed" | "variable";
 
 interface Props {
   isOpen: boolean;
@@ -18,8 +19,20 @@ interface Props {
   movements: FinanceMovement[];
   expenses: Expense[];
   payments: CollaboratorPayment[];
+  collaborators: Collaborator[];
   loading?: boolean;
 }
+
+const normalizeExpenseType = (expense: Expense): ExpenseFilter => {
+  const raw = String((expense as { type?: string }).type ?? expense.tipoGasto ?? "").toLowerCase();
+  if (raw === "fijo" || raw === "fixed" || raw === "f" || raw === "fijos") {
+    return "fixed";
+  }
+  if (raw === "variable" || raw === "variables" || raw === "var") {
+    return "variable";
+  }
+  return expense.tipoGasto === "FIJO" ? "fixed" : "variable";
+};
 
 export default function CopyPreviousMonthModal({
   isOpen,
@@ -28,12 +41,13 @@ export default function CopyPreviousMonthModal({
   movements,
   expenses,
   payments,
+  collaborators,
   loading,
 }: Props) {
   const [tab, setTab] = useState<TabKey>("movements");
   const [keepStatus, setKeepStatus] = useState(false);
   const [movementCategory, setMovementCategory] = useState("all");
-  const [expenseCategory, setExpenseCategory] = useState("all");
+  const [expenseCategory, setExpenseCategory] = useState<ExpenseFilter>("all");
   const [selectedMovements, setSelectedMovements] = useState<Set<string>>(new Set());
   const [selectedExpenses, setSelectedExpenses] = useState<Set<string>>(new Set());
   const [selectedPayments, setSelectedPayments] = useState<Set<string>>(new Set());
@@ -42,15 +56,36 @@ export default function CopyPreviousMonthModal({
     () => ["all", ...Array.from(new Set(movements.map((item) => item.projectService || "Sin categoría")))],
     [movements],
   );
-  const expenseCategories = useMemo(
-    () => ["all", ...Array.from(new Set(expenses.map((item) => item.categoria)))],
-    [expenses],
+
+  const collaboratorLookup = useMemo(() => {
+    const map = new Map<string, string>();
+    collaborators.forEach((collaborator) => {
+      const value =
+        collaborator.nombreCompleto ||
+        (collaborator as { fullName?: string }).fullName ||
+        (collaborator as { displayName?: string }).displayName ||
+        "Colaborador";
+      map.set(collaborator.id, value);
+    });
+    return map;
+  }, [collaborators]);
+
+  const recurrentMovements = movements.filter(
+    (m) => m.recurring?.enabled && (movementCategory === "all" || (m.projectService || "Sin categoría") === movementCategory),
+  );
+  const nonRecurrentMovements = movements.filter(
+    (m) => !m.recurring?.enabled && (movementCategory === "all" || (m.projectService || "Sin categoría") === movementCategory),
   );
 
-  const recurrentMovements = movements.filter((m) => m.recurring?.enabled && (movementCategory === "all" || (m.projectService || "Sin categoría") === movementCategory));
-  const nonRecurrentMovements = movements.filter((m) => !m.recurring?.enabled && (movementCategory === "all" || (m.projectService || "Sin categoría") === movementCategory));
-  const recurrentExpenses = expenses.filter((e) => e.tipoGasto === "FIJO" && (expenseCategory === "all" || e.categoria === expenseCategory));
-  const nonRecurrentExpenses = expenses.filter((e) => e.tipoGasto !== "FIJO" && (expenseCategory === "all" || e.categoria === expenseCategory));
+  const fixedExpenses = expenses.filter(
+    (expense) =>
+      normalizeExpenseType(expense) === "fixed" && (expenseCategory === "all" || expenseCategory === "fixed"),
+  );
+  const variableExpenses = expenses.filter(
+    (expense) =>
+      normalizeExpenseType(expense) === "variable" && (expenseCategory === "all" || expenseCategory === "variable"),
+  );
+
   const recurrentPayments = payments.filter((p) => p.isRecurring === true);
   const nonRecurrentPayments = payments.filter((p) => p.isRecurring !== true);
 
@@ -103,7 +138,10 @@ export default function CopyPreviousMonthModal({
             />
             <span className="flex-1">
               <span className="block font-semibold text-slate-700">{item.label}</span>
-              <span className="block text-slate-500">{formatCurrency(item.amount)} · {getStatusLabel(item.status as never)}{item.date ? ` · ${formatShortDate(item.date)}` : ""}</span>
+              <span className="block text-slate-500">
+                {formatCurrency(item.amount)} · {getStatusLabel(item.status as never)}
+                {item.date ? ` · ${formatShortDate(item.date)}` : ""}
+              </span>
             </span>
           </label>
         ))}
@@ -136,18 +174,44 @@ export default function CopyPreviousMonthModal({
 
         {tab === "expenses" ? (
           <div className="mt-4 space-y-3">
-            <select className="rounded-lg border border-slate-200 px-2 py-1 text-xs" value={expenseCategory} onChange={(e) => setExpenseCategory(e.target.value)}>
-              {expenseCategories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+            <select
+              className="rounded-lg border border-slate-200 px-2 py-1 text-xs"
+              value={expenseCategory}
+              onChange={(e) => setExpenseCategory(e.target.value as ExpenseFilter)}
+            >
+              <option value="all">all</option>
+              <option value="fixed">fixed</option>
+              <option value="variable">variable</option>
             </select>
-            {renderGroup("Recurrentes", recurrentExpenses.map((e) => ({ id: e.id, label: `${e.descripcion} · ${e.categoria}`, amount: e.monto, status: e.status, date: e.fechaGasto })), selectedExpenses, setSelectedExpenses)}
-            {renderGroup("No recurrentes", nonRecurrentExpenses.map((e) => ({ id: e.id, label: `${e.descripcion} · ${e.categoria}`, amount: e.monto, status: e.status, date: e.fechaGasto })), selectedExpenses, setSelectedExpenses)}
+            {renderGroup("Fijos", fixedExpenses.map((e) => ({ id: e.id, label: `${e.descripcion} · ${e.categoria}`, amount: e.monto, status: e.status, date: e.fechaGasto })), selectedExpenses, setSelectedExpenses)}
+            {renderGroup("Variables", variableExpenses.map((e) => ({ id: e.id, label: `${e.descripcion} · ${e.categoria}`, amount: e.monto, status: e.status, date: e.fechaGasto })), selectedExpenses, setSelectedExpenses)}
           </div>
         ) : null}
 
         {tab === "payments" ? (
           <div className="mt-4 space-y-3">
-            {renderGroup("Recurrentes", recurrentPayments.map((p) => ({ id: p.id, label: `${p.colaboradorId} · ${p.periodo}`, amount: p.montoFinal, status: p.status, date: p.fechaPago })), selectedPayments, setSelectedPayments)}
-            {renderGroup("No recurrentes", nonRecurrentPayments.map((p) => ({ id: p.id, label: `${p.colaboradorId} · ${p.periodo}`, amount: p.montoFinal, status: p.status, date: p.fechaPago })), selectedPayments, setSelectedPayments)}
+            {renderGroup("Recurrentes", recurrentPayments.map((p) => {
+              const collaboratorName = collaboratorLookup.get(p.colaboradorId) ?? "Colaborador";
+              const periodMonthKey = p.monthKey ?? getMonthKeyFromDate(p.fechaPago) ?? p.periodo;
+              return {
+                id: p.id,
+                label: `${collaboratorName} · ${periodMonthKey}`,
+                amount: p.montoFinal,
+                status: p.status,
+                date: p.fechaPago,
+              };
+            }), selectedPayments, setSelectedPayments)}
+            {renderGroup("No recurrentes", nonRecurrentPayments.map((p) => {
+              const collaboratorName = collaboratorLookup.get(p.colaboradorId) ?? "Colaborador";
+              const periodMonthKey = p.monthKey ?? getMonthKeyFromDate(p.fechaPago) ?? p.periodo;
+              return {
+                id: p.id,
+                label: `${collaboratorName} · ${periodMonthKey}`,
+                amount: p.montoFinal,
+                status: p.status,
+                date: p.fechaPago,
+              };
+            }), selectedPayments, setSelectedPayments)}
           </div>
         ) : null}
 
