@@ -71,6 +71,7 @@ import {
   updateIncomeMovement,
   updateTransfer,
   updateTransferStatus,
+  ensureRecurringMovementsForMonth,
 } from "@/services/finance";
 import { db } from "@/services/firebase/client";
 import { Pencil, Trash2 } from "lucide-react";
@@ -425,104 +426,17 @@ export default function FinanceModulePage() {
     const materializeMonthData = async () => {
       materializingMonthsRef.current.add(monthKey);
       try {
-        const movementsToCreate = movements
-          .filter((movement) => movement.recurring?.enabled && !movement.recurrenceSourceId)
-          .filter((movement) =>
-            monthInRange(
-              monthKey,
-              movement.recurring?.startAt ?? movement.incomeDate,
-              movement.recurring?.endAt ?? null,
-            ),
-          )
-          .filter((movement) => {
-            const sourceId = movement.recurrenceId ?? movement.id;
-            return !movements.some((item) => {
-              const itemSourceId = item.recurrenceSourceId ?? item.recurrenceId ?? item.id;
-              return itemSourceId === sourceId && item.monthKey === monthKey;
-            });
-          });
-
-        const fixedExpensesToCreate = expenses
-          .filter((expense) => expense.tipoGasto === "FIJO" && !expense.recurrenceSourceId)
-          .filter((expense) =>
-            monthInRange(
-              monthKey,
-              expense.fixedStartAt ?? expense.fechaGasto,
-              expense.fixedEndAt ?? null,
-            ),
-          )
-          .filter((expense) => {
-            const sourceId = expense.recurrenceId ?? expense.id;
-            return !expenses.some((item) => {
-              const itemSourceId = item.recurrenceSourceId ?? item.recurrenceId ?? item.id;
-              const itemMonthKey = item.monthKey ?? getMonthKeyFromDate(item.fechaGasto);
-              return itemSourceId === sourceId && itemMonthKey === monthKey;
-            });
-          });
-
-        await Promise.all([
-          ...movementsToCreate.map((movement) => {
-            const sourceId = movement.recurrenceId ?? movement.id;
-            const preferredDay = (movement.recurring?.dayOfMonth ?? Number(movement.incomeDate.split("-")[2])) || 1;
-            const incomeDate = buildDateForMonth(monthKey, preferredDay) ?? movement.incomeDate;
-            return createIncomeMovement({
-              clientName: movement.clientName,
-              projectService: movement.projectService ?? "",
-              amount: movement.tax?.base ?? movement.amount,
-              incomeDate,
-              expectedPayDate: movement.expectedPayDate ?? null,
-              accountDestination: movement.accountDestination,
-              status: "pending",
-              reference: movement.reference ?? "",
-              notes: movement.notes ?? "",
-              tax: movement.tax,
-              recurring: {
-                enabled: false,
-                freq: movement.recurring?.freq ?? "monthly",
-                dayOfMonth: movement.recurring?.dayOfMonth ?? null,
-                startAt: null,
-                endAt: null,
-              },
-              recurrenceId: sourceId,
-              recurrenceSourceId: sourceId,
-              generatedForMonthKey: monthKey,
-            });
-          }),
-          ...fixedExpensesToCreate.map((expense) => {
-            const sourceId = expense.recurrenceId ?? expense.id;
-            const expenseDay = Number((expense.fechaGasto ?? "").split("-")[2]) || 1;
-            const fechaGasto = buildDateForMonth(monthKey, expenseDay) ?? expense.fechaGasto;
-            return createExpense({
-              tipoGasto: expense.tipoGasto,
-              categoria: expense.categoria,
-              descripcion: expense.descripcion,
-              monto: expense.monto,
-              fechaGasto,
-              monthKey,
-              recurrenceId: sourceId,
-              recurrenceSourceId: sourceId,
-              generatedForMonthKey: monthKey,
-              fixedStartAt: expense.fixedStartAt ?? expense.fechaGasto,
-              fixedEndAt: expense.fixedEndAt ?? null,
-              cuentaOrigen: expense.cuentaOrigen,
-              status: "pending",
-              requiereDevolucion: expense.requiereDevolucion,
-              devolucionMonto: expense.devolucionMonto ?? null,
-              referencia: expense.referencia ?? null,
-              notas: expense.notas ?? null,
-            });
-          }),
-        ]);
+        await ensureRecurringMovementsForMonth(monthKey);
       } catch (error) {
         // eslint-disable-next-line no-console
-        console.error("[FINANCE] recurrence materialization error", error);
+        console.error("[FINANCE] recurring movements materialization error", error);
       } finally {
         materializingMonthsRef.current.delete(monthKey);
       }
     };
 
     void materializeMonthData();
-  }, [expenses, filters.monthKey, isLoading, movements]);
+  }, [filters.monthKey, isLoading]);
 
   const availableYears = useMemo(() => {
     const years = new Set<number>();

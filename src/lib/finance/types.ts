@@ -40,6 +40,7 @@ export interface FinanceMovement {
   recurrenceId?: string | null;
   recurrenceSourceId?: string | null;
   generatedForMonthKey?: string | null;
+  generatedFromId?: string | null;
   monthKey: string;
   createdAt: string;
   updatedAt: string;
