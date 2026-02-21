@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import FinanceGate from "@/components/admin/FinanceGate";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -9,6 +9,7 @@ import FinanceHeroCard from "@/components/finance/FinanceHeroCard";
 import FinanceKpiCard from "@/components/finance/FinanceKpiCard";
 import FinanceFilterBar from "@/components/finance/FinanceFilterBar";
 import FinanceTable from "@/components/finance/FinanceTable";
+import CopyPreviousMonthModal from "@/components/finance/CopyPreviousMonthModal";
 import FinancePendingList from "@/components/finance/FinancePendingList";
 import FinanceStatusSelect from "@/components/finance/FinanceStatusSelect";
 import FinanceMonthlyChart from "@/components/finance/FinanceMonthlyChart";
@@ -25,7 +26,8 @@ import {
   calcKpis,
   computeAlerts,
   computeCashFlow,
-  computeMonthProjection,
+  getMonthlyProjection,
+  getMonthlyStatusMetrics,
   computeMonthlySeries,
   computeYearToDateTotals,
   filterMovements,
@@ -70,6 +72,10 @@ import {
   updateIncomeMovement,
   updateTransfer,
   updateTransferStatus,
+  getPreviousMonthCopyCandidates,
+  copyItemsFromPreviousMonth,
+  ensureRecurringMovementsForMonth,
+  materializeRecurringMovementById,
 } from "@/services/finance";
 import { db } from "@/services/firebase/client";
 import { Pencil, Trash2 } from "lucide-react";
@@ -128,6 +134,14 @@ export default function FinanceModulePage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isProjectionDetailOpen, setIsProjectionDetailOpen] = useState(false);
   const [isDetailModalProjectionOpen, setIsDetailModalProjectionOpen] = useState(false);
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [isCopyingMonthData, setIsCopyingMonthData] = useState(false);
+  const [copySourceData, setCopySourceData] = useState<{
+    movements: FinanceMovement[];
+    expenses: Expense[];
+    payments: CollaboratorPayment[];
+  }>({ movements: [], expenses: [], payments: [] });
+  const materializingMonthsRef = useRef<Set<string>>(new Set());
   const [detailTab, setDetailTab] = useState<
     "summary" | "income" | "expenses" | "payments" | "accounts"
   >("summary");
@@ -369,6 +383,55 @@ export default function FinanceModulePage() {
     });
   }, [filters, transfers]);
 
+  const visibleExpensesTotal = useMemo(
+    () => filteredExpenses.reduce((sum, expense) => sum + expense.monto, 0),
+    [filteredExpenses],
+  );
+
+  const visiblePaymentsTotal = useMemo(
+    () => filteredPayments.reduce((sum, payment) => sum + payment.montoFinal, 0),
+    [filteredPayments],
+  );
+
+  const visibleTransfersTotal = useMemo(() => {
+    return filteredTransfers.reduce(
+      (totals, transfer) => {
+        if (transfer.tipoMovimiento === "INGRESO_CAJA") {
+          totals.in += transfer.monto;
+        }
+        if (transfer.tipoMovimiento === "SALIDA_CAJA") {
+          totals.out += transfer.monto;
+        }
+        return totals;
+      },
+      { in: 0, out: 0 },
+    );
+  }, [filteredTransfers]);
+
+
+
+
+  useEffect(() => {
+    if (isLoading) return;
+    const monthKey = filters.monthKey;
+    if (!monthKey) return;
+    if (materializingMonthsRef.current.has(monthKey)) return;
+
+    const run = async () => {
+      materializingMonthsRef.current.add(monthKey);
+      try {
+        await ensureRecurringMovementsForMonth(monthKey);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("[FINANCE] recurring materialization error", error);
+      } finally {
+        materializingMonthsRef.current.delete(monthKey);
+      }
+    };
+
+    void run();
+  }, [filters.monthKey, isLoading]);
+
   const availableYears = useMemo(() => {
     const years = new Set<number>();
     const addYear = (monthKey?: string | null) => {
@@ -405,21 +468,13 @@ export default function FinanceModulePage() {
   );
 
   const projection = useMemo(
-    () => computeMonthProjection(movements, expenses, payments, filters.monthKey, filters.account),
-    [expenses, filters.account, filters.monthKey, movements, payments],
+    () => getMonthlyProjection(movements, expenses, payments, filters.monthKey),
+    [expenses, filters.monthKey, movements, payments],
   );
 
-  const monthlyCashFlow = useMemo(
-    () =>
-      computeCashFlow({
-        movements,
-        expenses,
-        payments,
-        transfers,
-        monthKey: filters.monthKey,
-        account: filters.account,
-      }),
-    [expenses, filters.account, filters.monthKey, movements, payments, transfers],
+  const monthlyStatusMetrics = useMemo(
+    () => getMonthlyStatusMetrics(movements, expenses, payments, transfers, filters.monthKey),
+    [expenses, filters.monthKey, movements, payments, transfers],
   );
 
   const selectedMonthInfo = useMemo(() => {
@@ -429,11 +484,6 @@ export default function FinanceModulePage() {
       month: Number(monthPart),
     };
   }, [filters.monthKey]);
-
-  const selectedPeriodo = useMemo(() => {
-    if (!selectedMonthInfo.year || !selectedMonthInfo.month) return "--/----";
-    return `${String(selectedMonthInfo.month).padStart(2, "0")}/${selectedMonthInfo.year}`;
-  }, [selectedMonthInfo.month, selectedMonthInfo.year]);
 
   const monthlySeries = useMemo(
     () => computeMonthlySeries(movements, expenses, payments, filters.monthKey, 12, filters.account),
@@ -578,11 +628,11 @@ export default function FinanceModulePage() {
       cashFlowLabel: "Flujo de caja",
       netLabel: "Utilidad neta",
       marginLabel: "Margen neto",
-      incomePaid: kpis.incomePaid,
-      expensesPaid: kpis.expensesPaid,
-      cashFlow: monthlyCashFlow.net,
-      netIncome: kpis.netIncome,
-      margin: kpis.margin,
+      incomePaid: monthlyStatusMetrics.incomePaid,
+      expensesPaid: monthlyStatusMetrics.expensesPaid,
+      cashFlow: monthlyStatusMetrics.cashFlow,
+      netIncome: monthlyStatusMetrics.netIncome,
+      margin: monthlyStatusMetrics.margin,
     };
   }, [
     annualCashFlow.net,
@@ -593,11 +643,11 @@ export default function FinanceModulePage() {
     annualYear,
     filters.monthKey,
     isAnnualView,
-    kpis.expensesPaid,
-    kpis.incomePaid,
-    kpis.margin,
-    kpis.netIncome,
-    monthlyCashFlow.net,
+    monthlyStatusMetrics.cashFlow,
+    monthlyStatusMetrics.expensesPaid,
+    monthlyStatusMetrics.incomePaid,
+    monthlyStatusMetrics.margin,
+    monthlyStatusMetrics.netIncome,
   ]);
 
   const alerts = useMemo(() => {
@@ -749,6 +799,43 @@ export default function FinanceModulePage() {
     URL.revokeObjectURL(url);
   };
 
+  const handleOpenCopyPreviousMonth = async () => {
+    try {
+      const data = await getPreviousMonthCopyCandidates(filters.monthKey);
+      setCopySourceData({ movements: data.movements, expenses: data.expenses, payments: data.payments });
+      setIsCopyModalOpen(true);
+    } catch (error) {
+      setToast({ message: "No se pudo cargar el mes anterior", tone: "error" });
+    }
+  };
+
+  const handleCopyPreviousMonth = async (payload: {
+    movementIds: string[];
+    expenseIds: string[];
+    paymentIds: string[];
+    keepStatus: boolean;
+  }) => {
+    try {
+      setIsCopyingMonthData(true);
+      const result = await copyItemsFromPreviousMonth({
+        currentMonthKey: filters.monthKey,
+        movementIds: payload.movementIds,
+        expenseIds: payload.expenseIds,
+        paymentIds: payload.paymentIds,
+        keepStatus: payload.keepStatus,
+      });
+      setToast({
+        message: `Copiados: Movimientos ${result.movements}, Gastos ${result.expenses}, Pagos ${result.payments}`,
+        tone: "success",
+      });
+      setIsCopyModalOpen(false);
+    } catch (error) {
+      setToast({ message: "Error al copiar elementos", tone: "error" });
+    } finally {
+      setIsCopyingMonthData(false);
+    }
+  };
+
   const openModal = (type: FinanceModalType) => {
     setModalType(type);
     setIsModalOpen(true);
@@ -806,13 +893,26 @@ export default function FinanceModulePage() {
             dayOfMonth: payload.recurringFreq === "monthly" ? payload.recurringDayOfMonth : null,
             startAt: payload.recurringStartAt || null,
             endAt: payload.recurringEndAt || null,
+            monthsCount: payload.recurringMonthsCount,
           },
+          recurrenceId:
+            payload.recurringEnabled
+              ? editingMovement?.recurrenceId ?? editingMovement?.id ?? crypto.randomUUID()
+              : null,
+          recurrenceSourceId: editingMovement?.recurrenceSourceId ?? null,
+          generatedForMonthKey: editingMovement?.generatedForMonthKey ?? null,
         };
         if (editingMovement) {
           await updateIncomeMovement(editingMovement.id, incomePayload);
+          if (payload.recurringEnabled && payload.recurringFreq === "monthly") {
+            await materializeRecurringMovementById(editingMovement.id);
+          }
           setToast({ message: "Ingreso actualizado", tone: "success" });
         } else {
-          await createIncomeMovement(incomePayload);
+          const created = await createIncomeMovement(incomePayload);
+          if (payload.recurringEnabled && payload.recurringFreq === "monthly") {
+            await materializeRecurringMovementById(created.id);
+          }
           setToast({ message: "Ingreso creado", tone: "success" });
         }
       }
@@ -875,6 +975,17 @@ export default function FinanceModulePage() {
           devolucionMonto: payload.requiereDevolucion ? payload.devolucionMonto : null,
           referencia: payload.referencia,
           notas: payload.notas,
+          recurrenceId:
+            payload.tipoGasto === "FIJO"
+              ? editingExpense?.recurrenceId ?? editingExpense?.id ?? crypto.randomUUID()
+              : null,
+          recurrenceSourceId: editingExpense?.recurrenceSourceId ?? null,
+          generatedForMonthKey: editingExpense?.generatedForMonthKey ?? null,
+          fixedStartAt:
+            payload.tipoGasto === "FIJO"
+              ? editingExpense?.fixedStartAt ?? payload.fechaGasto
+              : null,
+          fixedEndAt: payload.tipoGasto === "FIJO" ? editingExpense?.fixedEndAt ?? null : null,
         };
         if (editingExpense) {
           await updateExpense(editingExpense.id, expensePayload);
@@ -990,6 +1101,7 @@ export default function FinanceModulePage() {
         recurringDayOfMonth: editingMovement.recurring?.dayOfMonth ?? 1,
         recurringStartAt: formatDateOnly(editingMovement.recurring?.startAt) ?? "",
         recurringEndAt: formatDateOnly(editingMovement.recurring?.endAt) ?? "",
+        recurringMonthsCount: editingMovement.recurring?.monthsCount ?? 1,
       }
     : null;
 
@@ -1137,6 +1249,13 @@ export default function FinanceModulePage() {
                   Nuevo colaborador
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={handleOpenCopyPreviousMonth}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
+              >
+                Copiar mes anterior
+              </button>
               <button
                 type="button"
                 onClick={() =>
@@ -1311,11 +1430,11 @@ export default function FinanceModulePage() {
                   ) : (
                     <>
                       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                        <FinanceKpiCard title="Ingresos cobrados" value={kpis.incomePaid} tone="blue" />
+                        <FinanceKpiCard title="Ingresos cobrados" value={monthlyStatusMetrics.incomePaid} tone="blue" />
                         <FinanceKpiCard title="Pendiente por cobrar" value={kpis.incomePending} tone="amber" />
-                        <FinanceKpiCard title="Gastos pagados" value={kpis.expensesPaid} tone="rose" />
-                        <FinanceKpiCard title="Flujo de caja" value={monthlyCashFlow.net} tone="slate" />
-                        <FinanceKpiCard title="Utilidad neta" value={kpis.netIncome} tone="green" />
+                        <FinanceKpiCard title="Gastos pagados" value={monthlyStatusMetrics.expensesPaid} tone="rose" />
+                        <FinanceKpiCard title="Flujo de caja" value={monthlyStatusMetrics.cashFlow} tone="slate" />
+                        <FinanceKpiCard title="Utilidad neta" value={monthlyStatusMetrics.netIncome} tone="green" />
                       </div>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
@@ -1369,26 +1488,26 @@ export default function FinanceModulePage() {
 
                                 <div>
                                   <p className="font-semibold text-slate-600">INGRESOS</p>
-                                  <p>- Total ingresos del mes: {formatCurrency(projection.detail.ingresos.total)}</p>
-                                  <p>- Nº movimientos considerados: {projection.detail.ingresos.count}</p>
+                                  <p>- Total ingresos considerados: {formatCurrency(projection.detail.ingresos.total)}</p>
+                                  <p>- Cantidad de ingresos considerados: {projection.detail.ingresos.count}</p>
                                 </div>
 
                                 <div>
                                   <p className="font-semibold text-slate-600">EGRESOS</p>
                                   <p>
-                                    - Pagos a colaboradores (periodo {selectedPeriodo}): {" "}
+                                    - Pagos a colaboradores (periodo {projection.detail.colaboradores.periodKey}): {" "}
                                     {formatCurrency(projection.detail.colaboradores.total)}
                                   </p>
-                                  <p>- Nº pagos considerados: {projection.detail.colaboradores.count}</p>
+                                  <p>- Cantidad de pagos considerados: {projection.detail.colaboradores.count}</p>
                                   <p>- Gastos del mes: {formatCurrency(projection.detail.gastos.total)}</p>
-                                  <p>- Nº gastos considerados: {projection.detail.gastos.count}</p>
-                                  <p>- Total egresos: {formatCurrency(projection.expensesProjected)}</p>
+                                  <p>- Cantidad de gastos considerados: {projection.detail.gastos.count}</p>
+                                  <p>- Total egresos considerados: {formatCurrency(projection.expensesProjected)}</p>
                                 </div>
 
                                 <div>
-                                  <p className="font-semibold text-slate-600">UTILIDAD</p>
-                                  <p>- Fórmula aplicada: Ingresos - Egresos</p>
-                                  <p>- Resultado: {formatCurrency(projection.projectedNet)}</p>
+                                  <p className="font-semibold text-slate-600">UTILIDAD Y MARGEN</p>
+                                  <p>- Utilidad = Ingresos - Egresos: {formatCurrency(projection.projectedNet)}</p>
+                                  <p>- Margen = (Utilidad / Ingresos) × 100: {projection.projectedMargin.toFixed(1)}%</p>
                                 </div>
                               </div>
                             ) : null}
@@ -1612,6 +1731,17 @@ export default function FinanceModulePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredExpenses.length > 0 ? (
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+                          <td colSpan={4} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Total
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="font-semibold text-slate-900">{formatCurrency(visibleExpensesTotal)}</p>
+                          </td>
+                          <td className="px-4 py-3" />
+                        </tr>
+                      ) : null}
                       {filteredExpenses.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">
@@ -1686,6 +1816,17 @@ export default function FinanceModulePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredPayments.length > 0 ? (
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+                          <td colSpan={5} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Total
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="font-semibold text-slate-900">{formatCurrency(visiblePaymentsTotal)}</p>
+                          </td>
+                          <td className="px-4 py-3" />
+                        </tr>
+                      ) : null}
                       {filteredPayments.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
@@ -1755,6 +1896,21 @@ export default function FinanceModulePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredTransfers.length > 0 ? (
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+                          <td colSpan={5} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Total
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="text-xs text-slate-500">Entradas: {formatCurrency(visibleTransfersTotal.in)}</p>
+                            <p className="text-xs text-slate-500">Salidas: {formatCurrency(visibleTransfersTotal.out)}</p>
+                            <p className="font-semibold text-slate-900">
+                              Neto: {formatCurrency(visibleTransfersTotal.in - visibleTransfersTotal.out)}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3" />
+                        </tr>
+                      ) : null}
                       {filteredTransfers.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
@@ -1835,19 +1991,19 @@ export default function FinanceModulePage() {
                       <div className="mt-3 space-y-2 text-sm">
                         <div className="flex items-center justify-between">
                           <span>Ingresos cobrados</span>
-                          <span className="font-semibold">{formatCurrency(kpis.incomePaid)}</span>
+                          <span className="font-semibold">{formatCurrency(monthlyStatusMetrics.incomePaid)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span>Gastos pagados</span>
-                          <span className="font-semibold">{formatCurrency(kpis.expensesPaid)}</span>
+                          <span className="font-semibold">{formatCurrency(monthlyStatusMetrics.expensesPaid)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span>Utilidad neta</span>
-                          <span className="font-semibold">{formatCurrency(kpis.netIncome)}</span>
+                          <span className="font-semibold">{formatCurrency(monthlyStatusMetrics.netIncome)}</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span>Margen neto</span>
-                          <span className="font-semibold">{kpis.margin.toFixed(1)}%</span>
+                          <span className="font-semibold">{monthlyStatusMetrics.margin.toFixed(1)}%</span>
                         </div>
                       </div>
                     </div>
@@ -1889,26 +2045,26 @@ export default function FinanceModulePage() {
 
                             <div>
                               <p className="font-semibold text-slate-600">INGRESOS</p>
-                              <p>- Total ingresos del mes: {formatCurrency(projection.detail.ingresos.total)}</p>
-                              <p>- Nº movimientos considerados: {projection.detail.ingresos.count}</p>
+                              <p>- Total ingresos considerados: {formatCurrency(projection.detail.ingresos.total)}</p>
+                              <p>- Cantidad de ingresos considerados: {projection.detail.ingresos.count}</p>
                             </div>
 
                             <div>
                               <p className="font-semibold text-slate-600">EGRESOS</p>
                               <p>
-                                - Pagos a colaboradores (periodo {selectedPeriodo}): {" "}
+                                - Pagos a colaboradores (periodo {projection.detail.colaboradores.periodKey}): {" "}
                                 {formatCurrency(projection.detail.colaboradores.total)}
                               </p>
-                              <p>- Nº pagos considerados: {projection.detail.colaboradores.count}</p>
+                              <p>- Cantidad de pagos considerados: {projection.detail.colaboradores.count}</p>
                               <p>- Gastos del mes: {formatCurrency(projection.detail.gastos.total)}</p>
-                              <p>- Nº gastos considerados: {projection.detail.gastos.count}</p>
-                              <p>- Total egresos: {formatCurrency(projection.expensesProjected)}</p>
+                              <p>- Cantidad de gastos considerados: {projection.detail.gastos.count}</p>
+                              <p>- Total egresos considerados: {formatCurrency(projection.expensesProjected)}</p>
                             </div>
 
                             <div>
-                              <p className="font-semibold text-slate-600">UTILIDAD</p>
-                              <p>- Fórmula aplicada: Ingresos - Egresos</p>
-                              <p>- Resultado: {formatCurrency(projection.projectedNet)}</p>
+                              <p className="font-semibold text-slate-600">UTILIDAD Y MARGEN</p>
+                              <p>- Utilidad = Ingresos - Egresos: {formatCurrency(projection.projectedNet)}</p>
+                              <p>- Margen = (Utilidad / Ingresos) × 100: {projection.projectedMargin.toFixed(1)}%</p>
                             </div>
                           </div>
                         ) : null}
@@ -2065,6 +2221,17 @@ export default function FinanceModulePage() {
           </div>
         </div>
       ) : null}
+
+
+      <CopyPreviousMonthModal
+        isOpen={isCopyModalOpen}
+        onClose={() => setIsCopyModalOpen(false)}
+        onConfirm={handleCopyPreviousMonth}
+        movements={copySourceData.movements}
+        expenses={copySourceData.expenses}
+        payments={copySourceData.payments}
+        loading={isCopyingMonthData}
+      />
 
       <FinanceModal
         isOpen={isModalOpen}
