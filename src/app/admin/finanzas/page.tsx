@@ -4,14 +4,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import FinanceGate from "@/components/admin/FinanceGate";
 import { useAuth } from "@/components/auth/AuthProvider";
-import FinanceTabs from "@/components/finance/FinanceTabs";
 import FinanceHeroCard from "@/components/finance/FinanceHeroCard";
 import FinanceKpiCard from "@/components/finance/FinanceKpiCard";
-import FinanceFilterBar from "@/components/finance/FinanceFilterBar";
-import FinanceTable from "@/components/finance/FinanceTable";
 import CopyPreviousMonthModal from "@/components/finance/CopyPreviousMonthModal";
 import FinancePendingList from "@/components/finance/FinancePendingList";
-import FinanceStatusSelect from "@/components/finance/FinanceStatusSelect";
 import FinanceMonthlyChart from "@/components/finance/FinanceMonthlyChart";
 import FinanceModal, {
   type CollaboratorFormValues,
@@ -21,6 +17,15 @@ import FinanceModal, {
   type TransferFormValues,
 } from "@/components/finance/FinanceModal";
 import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
+import {
+  ExpensesTable,
+  FinanceFiltersBar,
+  FinanceKpisRow,
+  FinanceTabs,
+  MovementsTable,
+  PaymentsTable,
+  TransfersTable,
+} from "@/components/finance/module";
 import Card from "@/components/ui/Card";
 import {
   calcKpis,
@@ -78,7 +83,6 @@ import {
   materializeRecurringMovementById,
 } from "@/services/finance";
 import { db } from "@/services/firebase/client";
-import { Pencil, Trash2 } from "lucide-react";
 
 
 const parsePaymentPeriodToMonthKey = (periodo?: string | null) => {
@@ -403,6 +407,36 @@ export default function FinanceModulePage() {
     });
   }, [filters, transfers]);
 
+  const visiblePaymentsTotal = useMemo(
+    () => filteredPayments.reduce((sum, payment) => sum + payment.montoFinal, 0),
+    [filteredPayments],
+  );
+
+  const visibleExpensesTotal = useMemo(
+    () => filteredExpenses.reduce((sum, expense) => sum + expense.monto, 0),
+    [filteredExpenses],
+  );
+
+  const visibleTransfersTotal = useMemo(() => {
+    return filteredTransfers.reduce(
+      (totals, transfer) => {
+        if (transfer.tipoMovimiento === "SALIDA_CAJA") {
+          totals.out += transfer.monto;
+          return totals;
+        }
+        if (transfer.tipoMovimiento === "INGRESO_CAJA") {
+          totals.in += transfer.monto;
+          return totals;
+        }
+
+        totals.in += transfer.monto;
+        totals.out += transfer.monto;
+        return totals;
+      },
+      { in: 0, out: 0 },
+    );
+  }, [filteredTransfers]);
+
   const movementTableKpis = useMemo(() => {
     const total = filteredMovements.reduce((sum, movement) => sum + (movement.tax?.total ?? movement.amount), 0);
     const paid = filteredMovements.reduce(
@@ -419,7 +453,7 @@ export default function FinanceModulePage() {
   }, [filteredMovements]);
 
   const paymentTableKpis = useMemo(() => {
-    const total = filteredPayments.reduce((sum, payment) => sum + payment.montoFinal, 0);
+    const total = visiblePaymentsTotal;
     const paid = filteredPayments.reduce(
       (sum, payment) => sum + (payment.status !== "pending" ? payment.montoFinal : 0),
       0,
@@ -431,10 +465,10 @@ export default function FinanceModulePage() {
     const count = filteredPayments.length;
     const avg = count > 0 ? total / count : 0;
     return { total, paid, pending, count, avg };
-  }, [filteredPayments]);
+  }, [filteredPayments, visiblePaymentsTotal]);
 
   const expenseTableKpis = useMemo(() => {
-    const total = filteredExpenses.reduce((sum, expense) => sum + expense.monto, 0);
+    const total = visibleExpensesTotal;
     const paid = filteredExpenses.reduce(
       (sum, expense) => sum + (expense.status !== "pending" ? expense.monto : 0),
       0,
@@ -452,17 +486,11 @@ export default function FinanceModulePage() {
       0,
     );
     return { total, paid, pending, fixed, variable };
-  }, [filteredExpenses]);
+  }, [filteredExpenses, visibleExpensesTotal]);
 
   const cashTableKpis = useMemo(() => {
-    const entries = filteredTransfers.reduce(
-      (sum, transfer) => sum + (transfer.tipoMovimiento === "INGRESO_CAJA" ? transfer.monto : 0),
-      0,
-    );
-    const exits = filteredTransfers.reduce(
-      (sum, transfer) => sum + (transfer.tipoMovimiento === "SALIDA_CAJA" ? transfer.monto : 0),
-      0,
-    );
+    const entries = visibleTransfersTotal.in;
+    const exits = visibleTransfersTotal.out;
     const count = filteredTransfers.length;
     return {
       entries,
@@ -470,7 +498,7 @@ export default function FinanceModulePage() {
       net: entries - exits,
       count,
     };
-  }, [filteredTransfers]);
+  }, [filteredTransfers, visibleTransfersTotal]);
 
 
 
@@ -1334,7 +1362,7 @@ export default function FinanceModulePage() {
           ) : null}
 
           <FinanceTabs active={activeTab} onChange={(key) => setActiveTab(key)} />
-          <FinanceFilterBar
+          <FinanceFiltersBar
             filters={filters}
             onChange={(next) => {
               setFilters(next);
@@ -1695,299 +1723,92 @@ export default function FinanceModulePage() {
 
               {activeTab === "movimientos" ? (
                 <>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                    <FinanceKpiCard title="Total" value={movementTableKpis.total} tone="slate" />
-                    <FinanceKpiCard title="Cobrado" value={movementTableKpis.paid} tone="green" />
-                    <FinanceKpiCard title="Pendiente" value={movementTableKpis.pending} tone="amber" />
-                    <FinanceKpiCard title="IGV" value={movementTableKpis.igv} tone="blue" />
-                    <FinanceKpiCard title="Neto" value={movementTableKpis.net} tone="rose" />
-                  </div>
-                  <FinanceTable
+                  <FinanceKpisRow
+                    items={[
+                      { title: "Total", value: movementTableKpis.total, tone: "slate" },
+                      { title: "Cobrado", value: movementTableKpis.paid, tone: "green" },
+                      { title: "Pendiente", value: movementTableKpis.pending, tone: "amber" },
+                      { title: "IGV", value: movementTableKpis.igv, tone: "blue" },
+                      { title: "Neto", value: movementTableKpis.net, tone: "rose" },
+                    ]}
+                  />
+                  <MovementsTable
                     movements={filteredMovements}
                     onStatusChange={handleStatusChange}
                     onDelete={handleDeleteMovement}
                     onEdit={handleEditMovement}
-                    disabled={isSubmitting}
+                    isSubmitting={isSubmitting}
                   />
                 </>
               ) : null}
 
               {activeTab === "gastos" ? (
                 <>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                    <FinanceKpiCard title="Total" value={expenseTableKpis.total} tone="slate" />
-                    <FinanceKpiCard title="Pagado" value={expenseTableKpis.paid} tone="green" />
-                    <FinanceKpiCard title="Pendiente" value={expenseTableKpis.pending} tone="amber" />
-                    <FinanceKpiCard title="Fijos" value={expenseTableKpis.fixed} tone="blue" />
-                    <FinanceKpiCard title="Variables" value={expenseTableKpis.variable} tone="rose" />
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                    <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
-                      <tr>
-                        <th className="px-4 py-3">Fecha</th>
-                        <th className="px-4 py-3">Descripción</th>
-                        <th className="px-4 py-3">Categoría</th>
-                        <th className="px-4 py-3">Estado</th>
-                        <th className="px-4 py-3 text-right">Monto</th>
-                        <th className="px-4 py-3 text-right">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredExpenses.map((expense) => (
-                        <tr key={expense.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {formatShortDate(expense.fechaGasto)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <p className="font-semibold text-slate-900">{expense.descripcion}</p>
-                            <p className="text-xs text-slate-500">{expense.referencia ?? "-"}</p>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{expense.categoria}</td>
-                          <td className="px-4 py-3">
-                            <FinanceStatusSelect
-                              status={expense.status}
-                              onChange={(status) => handleExpenseStatusChange(expense.id, status)}
-                              disabled={isSubmitting}
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                            {formatCurrency(expense.monto)}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
-                                onClick={() => handleEditExpense(expense)}
-                                disabled={isSubmitting}
-                                aria-label="Editar"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
-                                onClick={() => handleDeleteExpense(expense.id)}
-                                disabled={isSubmitting}
-                                aria-label="Eliminar"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {filteredExpenses.length > 0 ? (
-                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
-                          <td colSpan={4} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                            Total
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <p className="font-semibold text-slate-900">{formatCurrency(visibleExpensesTotal)}</p>
-                          </td>
-                          <td className="px-4 py-3" />
-                        </tr>
-                      ) : null}
-                      {filteredExpenses.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">
-                            Sin gastos registrados en este mes.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                    </table>
-                  </div>
+                  <FinanceKpisRow
+                    items={[
+                      { title: "Total", value: expenseTableKpis.total, tone: "slate" },
+                      { title: "Pagado", value: expenseTableKpis.paid, tone: "green" },
+                      { title: "Pendiente", value: expenseTableKpis.pending, tone: "amber" },
+                      { title: "Fijos", value: expenseTableKpis.fixed, tone: "blue" },
+                      { title: "Variables", value: expenseTableKpis.variable, tone: "rose" },
+                    ]}
+                  />
+                  <ExpensesTable
+                    expenses={filteredExpenses}
+                    total={visibleExpensesTotal}
+                    isSubmitting={isSubmitting}
+                    onStatusChange={handleExpenseStatusChange}
+                    onEdit={handleEditExpense}
+                    onDelete={handleDeleteExpense}
+                  />
                 </>
               ) : null}
 
               {activeTab === "pagos" ? (
                 <>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                    <FinanceKpiCard title="Total" value={paymentTableKpis.total} tone="slate" />
-                    <FinanceKpiCard title="Pagado" value={paymentTableKpis.paid} tone="green" />
-                    <FinanceKpiCard title="Pendiente" value={paymentTableKpis.pending} tone="amber" />
-                    <FinanceKpiCard title="# Pagos" value={paymentTableKpis.count} tone="blue" />
-                    <FinanceKpiCard title="Promedio" value={paymentTableKpis.avg} tone="rose" />
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                    <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
-                      <tr>
-                        <th className="px-4 py-3">Periodo</th>
-                        <th className="px-4 py-3">Colaborador</th>
-                        <th className="px-4 py-3">Fecha de pago</th>
-                        <th className="px-4 py-3">Cuenta</th>
-                        <th className="px-4 py-3">Estado</th>
-                        <th className="px-4 py-3 text-right">Monto</th>
-                        <th className="px-4 py-3 text-right">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredPayments.map((payment) => (
-                        <tr key={payment.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3 text-xs text-slate-500">{payment.periodo}</td>
-                          <td className="px-4 py-3">
-                            <p className="font-semibold text-slate-900">
-                              {collaboratorLookup.get(payment.colaboradorId) ?? "Colaborador"}
-                            </p>
-                            <p className="text-xs text-slate-500">{payment.referencia ?? "-"}</p>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {formatShortDate(payment.fechaPago)}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{payment.cuentaOrigen}</td>
-                          <td className="px-4 py-3">
-                            <FinanceStatusSelect
-                              status={payment.status}
-                              onChange={(status) => handlePaymentStatusChange(payment.id, status)}
-                              disabled={isSubmitting}
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                            {formatCurrency(payment.montoFinal)}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
-                                onClick={() => handleEditPayment(payment)}
-                                disabled={isSubmitting}
-                                aria-label="Editar"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
-                                onClick={() => handleDeletePayment(payment.id)}
-                                disabled={isSubmitting}
-                                aria-label="Eliminar"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {filteredPayments.length > 0 ? (
-                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
-                          <td colSpan={5} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                            Total
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <p className="font-semibold text-slate-900">{formatCurrency(visiblePaymentsTotal)}</p>
-                          </td>
-                          <td className="px-4 py-3" />
-                        </tr>
-                      ) : null}
-                      {filteredPayments.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
-                            Sin pagos registrados en este mes.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                    </table>
-                  </div>
+                  <FinanceKpisRow
+                    items={[
+                      { title: "Total", value: paymentTableKpis.total, tone: "slate" },
+                      { title: "Pagado", value: paymentTableKpis.paid, tone: "green" },
+                      { title: "Pendiente", value: paymentTableKpis.pending, tone: "amber" },
+                      { title: "# Pagos", value: paymentTableKpis.count, tone: "blue" },
+                      { title: "Promedio", value: paymentTableKpis.avg, tone: "rose" },
+                    ]}
+                  />
+                  <PaymentsTable
+                    payments={filteredPayments}
+                    collaboratorLookup={collaboratorLookup}
+                    total={visiblePaymentsTotal}
+                    isSubmitting={isSubmitting}
+                    onStatusChange={handlePaymentStatusChange}
+                    onEdit={handleEditPayment}
+                    onDelete={handleDeletePayment}
+                  />
                 </>
               ) : null}
 
               {activeTab === "cuentas" ? (
                 <>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                    <FinanceKpiCard title="Entradas" value={cashTableKpis.entries} tone="green" />
-                    <FinanceKpiCard title="Salidas" value={cashTableKpis.exits} tone="rose" />
-                    <FinanceKpiCard title="Neto" value={cashTableKpis.net} tone="slate" />
-                    <FinanceKpiCard title="# Movimientos" value={cashTableKpis.count} tone="blue" />
-                    <FinanceKpiCard title="Saldo" value={cashTableKpis.net} tone="amber" />
-                  </div>
-                  <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                    <table className="w-full text-left text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-[0.2em] text-slate-400">
-                      <tr>
-                        <th className="px-4 py-3">Fecha</th>
-                        <th className="px-4 py-3">Tipo</th>
-                        <th className="px-4 py-3">Cuenta origen</th>
-                        <th className="px-4 py-3">Cuenta destino</th>
-                        <th className="px-4 py-3">Estado</th>
-                        <th className="px-4 py-3 text-right">Monto</th>
-                        <th className="px-4 py-3 text-right">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredTransfers.map((transfer) => (
-                        <tr key={transfer.id} className="border-t border-slate-100">
-                          <td className="px-4 py-3 text-xs text-slate-500">
-                            {formatShortDate(transfer.fecha)}
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{transfer.tipoMovimiento}</td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{transfer.cuentaOrigen ?? "—"}</td>
-                          <td className="px-4 py-3 text-xs text-slate-500">{transfer.cuentaDestino ?? "—"}</td>
-                          <td className="px-4 py-3">
-                            <FinanceStatusSelect
-                              status={transfer.status}
-                              onChange={(status) => handleTransferStatusChange(transfer.id, status)}
-                              disabled={isSubmitting}
-                            />
-                          </td>
-                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
-                            {formatCurrency(transfer.monto)}
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <div className="flex justify-end gap-2">
-                              <button
-                                type="button"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
-                                onClick={() => handleEditTransfer(transfer)}
-                                disabled={isSubmitting}
-                                aria-label="Editar"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
-                                onClick={() => handleDeleteTransfer(transfer.id)}
-                                disabled={isSubmitting}
-                                aria-label="Eliminar"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {filteredTransfers.length > 0 ? (
-                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
-                          <td colSpan={5} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                            Total
-                          </td>
-                          <td className="px-4 py-3 text-right">
-                            <p className="text-xs text-slate-500">Entradas: {formatCurrency(visibleTransfersTotal.in)}</p>
-                            <p className="text-xs text-slate-500">Salidas: {formatCurrency(visibleTransfersTotal.out)}</p>
-                            <p className="font-semibold text-slate-900">
-                              Neto: {formatCurrency(visibleTransfersTotal.in - visibleTransfersTotal.out)}
-                            </p>
-                          </td>
-                          <td className="px-4 py-3" />
-                        </tr>
-                      ) : null}
-                      {filteredTransfers.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
-                            Sin transferencias registradas en este mes.
-                          </td>
-                        </tr>
-                      ) : null}
-                    </tbody>
-                    </table>
-                  </div>
+                  <FinanceKpisRow
+                    items={[
+                      { title: "Entradas", value: cashTableKpis.entries, tone: "green" },
+                      { title: "Salidas", value: cashTableKpis.exits, tone: "rose" },
+                      { title: "Neto", value: cashTableKpis.net, tone: "slate" },
+                      { title: "# Movimientos", value: cashTableKpis.count, tone: "blue" },
+                      { title: "Saldo", value: cashTableKpis.net, tone: "amber" },
+                    ]}
+                  />
+                  <TransfersTable
+                    transfers={filteredTransfers}
+                    totals={visibleTransfersTotal}
+                    isSubmitting={isSubmitting}
+                    onStatusChange={handleTransferStatusChange}
+                    onEdit={handleEditTransfer}
+                    onDelete={handleDeleteTransfer}
+                  />
                 </>
               ) : null}
+
             </div>
           )}
         </div>
