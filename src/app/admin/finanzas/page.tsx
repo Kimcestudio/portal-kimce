@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import FinanceGate from "@/components/admin/FinanceGate";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -100,6 +100,26 @@ const parsePaymentPeriodToMonthKey = (periodo?: string | null) => {
   return null;
 };
 
+const getLastDayOfMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
+
+const buildDateForMonth = (monthKey: string, preferredDay: number) => {
+  const [yearPart, monthPart] = monthKey.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  if (Number.isNaN(year) || Number.isNaN(month)) return null;
+  const lastDay = getLastDayOfMonth(year, month);
+  const day = Math.max(1, Math.min(preferredDay, lastDay));
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+const monthInRange = (targetMonthKey: string, startDate?: string | null, endDate?: string | null) => {
+  const startMonthKey = startDate ? getMonthKeyFromDate(startDate) : null;
+  const endMonthKey = endDate ? getMonthKeyFromDate(endDate) : null;
+  if (startMonthKey && targetMonthKey < startMonthKey) return false;
+  if (endMonthKey && targetMonthKey > endMonthKey) return false;
+  return true;
+};
+
 const tabLabels: Record<FinanceTabKey, string> = {
   dashboard: "Dashboard",
   movimientos: "Movimientos",
@@ -149,6 +169,7 @@ export default function FinanceModulePage() {
     category: "all",
     includeCancelled: true,
   });
+  const materializingMonthsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let movementsLoaded = false;
@@ -369,6 +390,139 @@ export default function FinanceModulePage() {
       return true;
     });
   }, [filters, transfers]);
+
+  const visibleExpensesTotal = useMemo(
+    () => filteredExpenses.reduce((sum, expense) => sum + expense.monto, 0),
+    [filteredExpenses],
+  );
+
+  const visiblePaymentsTotal = useMemo(
+    () => filteredPayments.reduce((sum, payment) => sum + payment.montoFinal, 0),
+    [filteredPayments],
+  );
+
+  const visibleTransfersTotal = useMemo(() => {
+    return filteredTransfers.reduce(
+      (totals, transfer) => {
+        if (transfer.tipoMovimiento === "INGRESO_CAJA") {
+          totals.in += transfer.monto;
+        }
+        if (transfer.tipoMovimiento === "SALIDA_CAJA") {
+          totals.out += transfer.monto;
+        }
+        return totals;
+      },
+      { in: 0, out: 0 },
+    );
+  }, [filteredTransfers]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    const monthKey = filters.monthKey;
+    if (!monthKey) return;
+    if (materializingMonthsRef.current.has(monthKey)) return;
+
+    const materializeMonthData = async () => {
+      materializingMonthsRef.current.add(monthKey);
+      try {
+        const movementsToCreate = movements
+          .filter((movement) => movement.recurring?.enabled && !movement.recurrenceSourceId)
+          .filter((movement) =>
+            monthInRange(
+              monthKey,
+              movement.recurring?.startAt ?? movement.incomeDate,
+              movement.recurring?.endAt ?? null,
+            ),
+          )
+          .filter((movement) => {
+            const sourceId = movement.recurrenceId ?? movement.id;
+            return !movements.some((item) => {
+              const itemSourceId = item.recurrenceSourceId ?? item.recurrenceId ?? item.id;
+              return itemSourceId === sourceId && item.monthKey === monthKey;
+            });
+          });
+
+        const fixedExpensesToCreate = expenses
+          .filter((expense) => expense.tipoGasto === "FIJO" && !expense.recurrenceSourceId)
+          .filter((expense) =>
+            monthInRange(
+              monthKey,
+              expense.fixedStartAt ?? expense.fechaGasto,
+              expense.fixedEndAt ?? null,
+            ),
+          )
+          .filter((expense) => {
+            const sourceId = expense.recurrenceId ?? expense.id;
+            return !expenses.some((item) => {
+              const itemSourceId = item.recurrenceSourceId ?? item.recurrenceId ?? item.id;
+              const itemMonthKey = item.monthKey ?? getMonthKeyFromDate(item.fechaGasto);
+              return itemSourceId === sourceId && itemMonthKey === monthKey;
+            });
+          });
+
+        await Promise.all([
+          ...movementsToCreate.map((movement) => {
+            const sourceId = movement.recurrenceId ?? movement.id;
+            const preferredDay = (movement.recurring?.dayOfMonth ?? Number(movement.incomeDate.split("-")[2])) || 1;
+            const incomeDate = buildDateForMonth(monthKey, preferredDay) ?? movement.incomeDate;
+            return createIncomeMovement({
+              clientName: movement.clientName,
+              projectService: movement.projectService ?? "",
+              amount: movement.tax?.base ?? movement.amount,
+              incomeDate,
+              expectedPayDate: movement.expectedPayDate ?? null,
+              accountDestination: movement.accountDestination,
+              status: "pending",
+              reference: movement.reference ?? "",
+              notes: movement.notes ?? "",
+              tax: movement.tax,
+              recurring: {
+                enabled: false,
+                freq: movement.recurring?.freq ?? "monthly",
+                dayOfMonth: movement.recurring?.dayOfMonth ?? null,
+                startAt: null,
+                endAt: null,
+              },
+              recurrenceId: sourceId,
+              recurrenceSourceId: sourceId,
+              generatedForMonthKey: monthKey,
+            });
+          }),
+          ...fixedExpensesToCreate.map((expense) => {
+            const sourceId = expense.recurrenceId ?? expense.id;
+            const expenseDay = Number((expense.fechaGasto ?? "").split("-")[2]) || 1;
+            const fechaGasto = buildDateForMonth(monthKey, expenseDay) ?? expense.fechaGasto;
+            return createExpense({
+              tipoGasto: expense.tipoGasto,
+              categoria: expense.categoria,
+              descripcion: expense.descripcion,
+              monto: expense.monto,
+              fechaGasto,
+              monthKey,
+              recurrenceId: sourceId,
+              recurrenceSourceId: sourceId,
+              generatedForMonthKey: monthKey,
+              fixedStartAt: expense.fixedStartAt ?? expense.fechaGasto,
+              fixedEndAt: expense.fixedEndAt ?? null,
+              cuentaOrigen: expense.cuentaOrigen,
+              status: "pending",
+              requiereDevolucion: expense.requiereDevolucion,
+              devolucionMonto: expense.devolucionMonto ?? null,
+              referencia: expense.referencia ?? null,
+              notas: expense.notas ?? null,
+            });
+          }),
+        ]);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("[FINANCE] recurrence materialization error", error);
+      } finally {
+        materializingMonthsRef.current.delete(monthKey);
+      }
+    };
+
+    void materializeMonthData();
+  }, [expenses, filters.monthKey, isLoading, movements]);
 
   const availableYears = useMemo(() => {
     const years = new Set<number>();
@@ -795,6 +949,12 @@ export default function FinanceModulePage() {
             startAt: payload.recurringStartAt || null,
             endAt: payload.recurringEndAt || null,
           },
+          recurrenceId:
+            payload.recurringEnabled
+              ? editingMovement?.recurrenceId ?? editingMovement?.id ?? crypto.randomUUID()
+              : null,
+          recurrenceSourceId: editingMovement?.recurrenceSourceId ?? null,
+          generatedForMonthKey: editingMovement?.generatedForMonthKey ?? null,
         };
         if (editingMovement) {
           await updateIncomeMovement(editingMovement.id, incomePayload);
@@ -863,6 +1023,17 @@ export default function FinanceModulePage() {
           devolucionMonto: payload.requiereDevolucion ? payload.devolucionMonto : null,
           referencia: payload.referencia,
           notas: payload.notas,
+          recurrenceId:
+            payload.tipoGasto === "FIJO"
+              ? editingExpense?.recurrenceId ?? editingExpense?.id ?? crypto.randomUUID()
+              : null,
+          recurrenceSourceId: editingExpense?.recurrenceSourceId ?? null,
+          generatedForMonthKey: editingExpense?.generatedForMonthKey ?? null,
+          fixedStartAt:
+            payload.tipoGasto === "FIJO"
+              ? editingExpense?.fixedStartAt ?? payload.fechaGasto
+              : null,
+          fixedEndAt: payload.tipoGasto === "FIJO" ? editingExpense?.fixedEndAt ?? null : null,
         };
         if (editingExpense) {
           await updateExpense(editingExpense.id, expensePayload);
@@ -1600,6 +1771,17 @@ export default function FinanceModulePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredExpenses.length > 0 ? (
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+                          <td colSpan={4} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Total
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="font-semibold text-slate-900">{formatCurrency(visibleExpensesTotal)}</p>
+                          </td>
+                          <td className="px-4 py-3" />
+                        </tr>
+                      ) : null}
                       {filteredExpenses.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">
@@ -1674,6 +1856,17 @@ export default function FinanceModulePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredPayments.length > 0 ? (
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+                          <td colSpan={5} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Total
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="font-semibold text-slate-900">{formatCurrency(visiblePaymentsTotal)}</p>
+                          </td>
+                          <td className="px-4 py-3" />
+                        </tr>
+                      ) : null}
                       {filteredPayments.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
@@ -1743,6 +1936,21 @@ export default function FinanceModulePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredTransfers.length > 0 ? (
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+                          <td colSpan={5} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Total
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="text-xs text-slate-500">Entradas: {formatCurrency(visibleTransfersTotal.in)}</p>
+                            <p className="text-xs text-slate-500">Salidas: {formatCurrency(visibleTransfersTotal.out)}</p>
+                            <p className="font-semibold text-slate-900">
+                              Neto: {formatCurrency(visibleTransfersTotal.in - visibleTransfersTotal.out)}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3" />
+                        </tr>
+                      ) : null}
                       {filteredTransfers.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
