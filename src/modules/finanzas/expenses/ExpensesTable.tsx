@@ -74,17 +74,6 @@ export default function ExpensesTable({
               </td>
             </tr>
           ))}
-          {expenses.length > 0 ? (
-            <tr className="border-t-2 border-slate-200 bg-slate-50/80">
-              <td colSpan={4} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Total
-              </td>
-              <td className="px-4 py-3 text-right">
-                <p className="font-semibold text-slate-900">{formatCurrency(total)}</p>
-              </td>
-              <td className="px-4 py-3" />
-            </tr>
-          ) : null}
           {expenses.length === 0 ? (
             <tr>
               <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">

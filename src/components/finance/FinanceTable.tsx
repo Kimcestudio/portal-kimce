@@ -18,8 +18,6 @@ export default function FinanceTable({
   onEdit,
   disabled,
 }: FinanceTableProps) {
-  const totalVisible = movements.reduce((sum, movement) => sum + movement.amount, 0);
-
   return (
     <div className="rounded-2xl border border-slate-200/60 bg-white shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
       <table className="w-full text-left text-sm">
@@ -78,19 +76,6 @@ export default function FinanceTable({
               </td>
             </tr>
           ))}
-          {movements.length > 0 ? (
-            <tr className="border-t-2 border-slate-200 bg-slate-50/80">
-              <td colSpan={4} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Total
-              </td>
-              <td className="px-4 py-3 text-right">
-                <p className="text-xs text-slate-500">Ingresos visibles</p>
-                <p className="font-semibold text-slate-900">{formatCurrency(totalVisible)}</p>
-                <p className="text-xs text-slate-500">Neto visible: {formatCurrency(totalVisible)}</p>
-              </td>
-              <td className="px-4 py-3" />
-            </tr>
-          ) : null}
         </tbody>
       </table>
     </div>

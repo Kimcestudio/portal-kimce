@@ -73,19 +73,6 @@ export default function TransfersTable({
               </td>
             </tr>
           ))}
-          {transfers.length > 0 ? (
-            <tr className="border-t-2 border-slate-200 bg-slate-50/80">
-              <td colSpan={5} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                Total
-              </td>
-              <td className="px-4 py-3 text-right">
-                <p className="text-xs text-slate-500">Entradas: {formatCurrency(totals.in)}</p>
-                <p className="text-xs text-slate-500">Salidas: {formatCurrency(totals.out)}</p>
-                <p className="font-semibold text-slate-900">Neto: {formatCurrency(totals.in - totals.out)}</p>
-              </td>
-              <td className="px-4 py-3" />
-            </tr>
-          ) : null}
           {transfers.length === 0 ? (
             <tr>
               <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
