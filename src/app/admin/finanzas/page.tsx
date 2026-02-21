@@ -18,13 +18,12 @@ import FinanceModal, {
 } from "@/components/finance/FinanceModal";
 import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
 import {
-  ExpensesTable,
+  AccountsTab,
+  ExpensesTab,
   FinanceFiltersBar,
-  FinanceKpisRow,
   FinanceTabs,
-  MovementsTable,
-  PaymentsTable,
-  TransfersTable,
+  IncomeTab,
+  PaymentsTab,
 } from "@/components/finance/module";
 import Card from "@/components/ui/Card";
 import {
@@ -406,102 +405,6 @@ export default function FinanceModulePage() {
       return true;
     });
   }, [filters, transfers]);
-
-  const visiblePaymentsTotal = useMemo(
-    () => filteredPayments.reduce((sum, payment) => sum + payment.montoFinal, 0),
-    [filteredPayments],
-  );
-
-  const visibleExpensesTotal = useMemo(
-    () => filteredExpenses.reduce((sum, expense) => sum + expense.monto, 0),
-    [filteredExpenses],
-  );
-
-  const visibleTransfersTotal = useMemo(() => {
-    return filteredTransfers.reduce(
-      (totals, transfer) => {
-        if (transfer.tipoMovimiento === "SALIDA_CAJA") {
-          totals.out += transfer.monto;
-          return totals;
-        }
-        if (transfer.tipoMovimiento === "INGRESO_CAJA") {
-          totals.in += transfer.monto;
-          return totals;
-        }
-
-        totals.in += transfer.monto;
-        totals.out += transfer.monto;
-        return totals;
-      },
-      { in: 0, out: 0 },
-    );
-  }, [filteredTransfers]);
-
-  const movementTableKpis = useMemo(() => {
-    const total = filteredMovements.reduce((sum, movement) => sum + (movement.tax?.total ?? movement.amount), 0);
-    const paid = filteredMovements.reduce(
-      (sum, movement) => sum + (movement.status !== "pending" ? movement.tax?.total ?? movement.amount : 0),
-      0,
-    );
-    const pending = filteredMovements.reduce(
-      (sum, movement) => sum + (movement.status === "pending" ? movement.tax?.total ?? movement.amount : 0),
-      0,
-    );
-    const igv = filteredMovements.reduce((sum, movement) => sum + (movement.tax?.igv ?? 0), 0);
-    const net = total - igv;
-    return { total, paid, pending, igv, net };
-  }, [filteredMovements]);
-
-  const paymentTableKpis = useMemo(() => {
-    const total = visiblePaymentsTotal;
-    const paid = filteredPayments.reduce(
-      (sum, payment) => sum + (payment.status !== "pending" ? payment.montoFinal : 0),
-      0,
-    );
-    const pending = filteredPayments.reduce(
-      (sum, payment) => sum + (payment.status === "pending" ? payment.montoFinal : 0),
-      0,
-    );
-    const count = filteredPayments.length;
-    const avg = count > 0 ? total / count : 0;
-    return { total, paid, pending, count, avg };
-  }, [filteredPayments, visiblePaymentsTotal]);
-
-  const expenseTableKpis = useMemo(() => {
-    const total = visibleExpensesTotal;
-    const paid = filteredExpenses.reduce(
-      (sum, expense) => sum + (expense.status !== "pending" ? expense.monto : 0),
-      0,
-    );
-    const pending = filteredExpenses.reduce(
-      (sum, expense) => sum + (expense.status === "pending" ? expense.monto : 0),
-      0,
-    );
-    const fixed = filteredExpenses.reduce(
-      (sum, expense) => sum + (expense.tipoGasto === "FIJO" ? expense.monto : 0),
-      0,
-    );
-    const variable = filteredExpenses.reduce(
-      (sum, expense) => sum + (expense.tipoGasto === "VARIABLE" ? expense.monto : 0),
-      0,
-    );
-    return { total, paid, pending, fixed, variable };
-  }, [filteredExpenses, visibleExpensesTotal]);
-
-  const cashTableKpis = useMemo(() => {
-    const entries = visibleTransfersTotal.in;
-    const exits = visibleTransfersTotal.out;
-    const count = filteredTransfers.length;
-    return {
-      entries,
-      exits,
-      net: entries - exits,
-      count,
-    };
-  }, [filteredTransfers, visibleTransfersTotal]);
-
-
-
 
   useEffect(() => {
     if (isLoading) return;
@@ -1722,91 +1625,44 @@ export default function FinanceModulePage() {
               ) : null}
 
               {activeTab === "movimientos" ? (
-                <>
-                  <FinanceKpisRow
-                    items={[
-                      { title: "Total", value: movementTableKpis.total, tone: "slate" },
-                      { title: "Cobrado", value: movementTableKpis.paid, tone: "green" },
-                      { title: "Pendiente", value: movementTableKpis.pending, tone: "amber" },
-                      { title: "IGV", value: movementTableKpis.igv, tone: "blue" },
-                      { title: "Neto", value: movementTableKpis.net, tone: "rose" },
-                    ]}
-                  />
-                  <MovementsTable
-                    movements={filteredMovements}
-                    onStatusChange={handleStatusChange}
-                    onDelete={handleDeleteMovement}
-                    onEdit={handleEditMovement}
-                    isSubmitting={isSubmitting}
-                  />
-                </>
+                <IncomeTab
+                  movements={filteredMovements}
+                  onStatusChange={handleStatusChange}
+                  onDelete={handleDeleteMovement}
+                  onEdit={handleEditMovement}
+                  isSubmitting={isSubmitting}
+                />
               ) : null}
 
               {activeTab === "gastos" ? (
-                <>
-                  <FinanceKpisRow
-                    items={[
-                      { title: "Total", value: expenseTableKpis.total, tone: "slate" },
-                      { title: "Pagado", value: expenseTableKpis.paid, tone: "green" },
-                      { title: "Pendiente", value: expenseTableKpis.pending, tone: "amber" },
-                      { title: "Fijos", value: expenseTableKpis.fixed, tone: "blue" },
-                      { title: "Variables", value: expenseTableKpis.variable, tone: "rose" },
-                    ]}
-                  />
-                  <ExpensesTable
-                    expenses={filteredExpenses}
-                    total={visibleExpensesTotal}
-                    isSubmitting={isSubmitting}
-                    onStatusChange={handleExpenseStatusChange}
-                    onEdit={handleEditExpense}
-                    onDelete={handleDeleteExpense}
-                  />
-                </>
+                <ExpensesTab
+                  expenses={filteredExpenses}
+                  isSubmitting={isSubmitting}
+                  onStatusChange={handleExpenseStatusChange}
+                  onEdit={handleEditExpense}
+                  onDelete={handleDeleteExpense}
+                />
               ) : null}
 
               {activeTab === "pagos" ? (
-                <>
-                  <FinanceKpisRow
-                    items={[
-                      { title: "Total", value: paymentTableKpis.total, tone: "slate" },
-                      { title: "Pagado", value: paymentTableKpis.paid, tone: "green" },
-                      { title: "Pendiente", value: paymentTableKpis.pending, tone: "amber" },
-                      { title: "# Pagos", value: paymentTableKpis.count, tone: "blue" },
-                      { title: "Promedio", value: paymentTableKpis.avg, tone: "rose" },
-                    ]}
-                  />
-                  <PaymentsTable
-                    payments={filteredPayments}
-                    collaboratorLookup={collaboratorLookup}
-                    total={visiblePaymentsTotal}
-                    isSubmitting={isSubmitting}
-                    onStatusChange={handlePaymentStatusChange}
-                    onEdit={handleEditPayment}
-                    onDelete={handleDeletePayment}
-                  />
-                </>
+                <PaymentsTab
+                  payments={filteredPayments}
+                  collaboratorLookup={collaboratorLookup}
+                  isSubmitting={isSubmitting}
+                  onStatusChange={handlePaymentStatusChange}
+                  onEdit={handleEditPayment}
+                  onDelete={handleDeletePayment}
+                />
               ) : null}
 
               {activeTab === "cuentas" ? (
-                <>
-                  <FinanceKpisRow
-                    items={[
-                      { title: "Entradas", value: cashTableKpis.entries, tone: "green" },
-                      { title: "Salidas", value: cashTableKpis.exits, tone: "rose" },
-                      { title: "Neto", value: cashTableKpis.net, tone: "slate" },
-                      { title: "# Movimientos", value: cashTableKpis.count, tone: "blue" },
-                      { title: "Saldo", value: cashTableKpis.net, tone: "amber" },
-                    ]}
-                  />
-                  <TransfersTable
-                    transfers={filteredTransfers}
-                    totals={visibleTransfersTotal}
-                    isSubmitting={isSubmitting}
-                    onStatusChange={handleTransferStatusChange}
-                    onEdit={handleEditTransfer}
-                    onDelete={handleDeleteTransfer}
-                  />
-                </>
+                <AccountsTab
+                  transfers={filteredTransfers}
+                  isSubmitting={isSubmitting}
+                  onStatusChange={handleTransferStatusChange}
+                  onEdit={handleEditTransfer}
+                  onDelete={handleDeleteTransfer}
+                />
               ) : null}
 
             </div>
