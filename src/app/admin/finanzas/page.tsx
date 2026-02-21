@@ -105,6 +105,26 @@ const parsePaymentPeriodToMonthKey = (periodo?: string | null) => {
   return null;
 };
 
+const getLastDayOfMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
+
+const buildDateForMonth = (monthKey: string, preferredDay: number) => {
+  const [yearPart, monthPart] = monthKey.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  if (Number.isNaN(year) || Number.isNaN(month)) return null;
+  const lastDay = getLastDayOfMonth(year, month);
+  const day = Math.max(1, Math.min(preferredDay, lastDay));
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+};
+
+const monthInRange = (targetMonthKey: string, startDate?: string | null, endDate?: string | null) => {
+  const startMonthKey = startDate ? getMonthKeyFromDate(startDate) : null;
+  const endMonthKey = endDate ? getMonthKeyFromDate(endDate) : null;
+  if (startMonthKey && targetMonthKey < startMonthKey) return false;
+  if (endMonthKey && targetMonthKey > endMonthKey) return false;
+  return true;
+};
+
 const tabLabels: Record<FinanceTabKey, string> = {
   dashboard: "Dashboard",
   movimientos: "Movimientos",
@@ -162,6 +182,7 @@ export default function FinanceModulePage() {
     category: "all",
     includeCancelled: true,
   });
+  const materializingMonthsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let movementsLoaded = false;
@@ -1758,6 +1779,17 @@ export default function FinanceModulePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredExpenses.length > 0 ? (
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+                          <td colSpan={4} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Total
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="font-semibold text-slate-900">{formatCurrency(visibleExpensesTotal)}</p>
+                          </td>
+                          <td className="px-4 py-3" />
+                        </tr>
+                      ) : null}
                       {filteredExpenses.length === 0 ? (
                         <tr>
                           <td colSpan={6} className="px-4 py-6 text-center text-xs text-slate-400">
@@ -1841,6 +1873,17 @@ export default function FinanceModulePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredPayments.length > 0 ? (
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+                          <td colSpan={5} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Total
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="font-semibold text-slate-900">{formatCurrency(visiblePaymentsTotal)}</p>
+                          </td>
+                          <td className="px-4 py-3" />
+                        </tr>
+                      ) : null}
                       {filteredPayments.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
@@ -1919,6 +1962,21 @@ export default function FinanceModulePage() {
                           </td>
                         </tr>
                       ))}
+                      {filteredTransfers.length > 0 ? (
+                        <tr className="border-t-2 border-slate-200 bg-slate-50/80">
+                          <td colSpan={5} className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                            Total
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <p className="text-xs text-slate-500">Entradas: {formatCurrency(visibleTransfersTotal.in)}</p>
+                            <p className="text-xs text-slate-500">Salidas: {formatCurrency(visibleTransfersTotal.out)}</p>
+                            <p className="font-semibold text-slate-900">
+                              Neto: {formatCurrency(visibleTransfersTotal.in - visibleTransfersTotal.out)}
+                            </p>
+                          </td>
+                          <td className="px-4 py-3" />
+                        </tr>
+                      ) : null}
                       {filteredTransfers.length === 0 ? (
                         <tr>
                           <td colSpan={7} className="px-4 py-6 text-center text-xs text-slate-400">
