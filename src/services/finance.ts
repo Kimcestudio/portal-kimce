@@ -263,6 +263,144 @@ export async function ensureRecurringMovementsForMonth(targetMonthKey: string) {
   );
 }
 
+function getPreviousMonthKey(monthKey: string) {
+  const [yearPart, monthPart] = monthKey.split("-");
+  const year = Number(yearPart);
+  const month = Number(monthPart);
+  if (Number.isNaN(year) || Number.isNaN(month)) return monthKey;
+  const base = new Date(year, month - 2, 1);
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function toPeriodo(monthKey: string) {
+  const [year, month] = monthKey.split("-");
+  return `${month}/${year}`;
+}
+
+export async function getPreviousMonthCopyCandidates(currentMonthKey: string) {
+  const previousMonthKey = getPreviousMonthKey(currentMonthKey);
+  const previousPeriodo = toPeriodo(previousMonthKey);
+
+  const [movementsSnapshot, expensesSnapshot, paymentsByPeriodoSnapshot, paymentsByMonthKeySnapshot] = await Promise.all([
+    getDocs(query(financeRefs.movementsRef, where("monthKey", "==", previousMonthKey))),
+    getDocs(query(financeRefs.expensesRef, where("monthKey", "==", previousMonthKey))),
+    getDocs(query(financeRefs.collaboratorPaymentsRef, where("periodo", "==", previousPeriodo))),
+    getDocs(query(financeRefs.collaboratorPaymentsRef, where("monthKey", "==", previousMonthKey))),
+  ]);
+
+  const paymentMap = new Map<string, CollaboratorPayment>();
+  [...paymentsByPeriodoSnapshot.docs, ...paymentsByMonthKeySnapshot.docs].forEach((item) => {
+    paymentMap.set(item.id, normalizeCollaboratorPayment({ ...item.data(), id: item.id }));
+  });
+
+  return {
+    previousMonthKey,
+    movements: movementsSnapshot.docs.map((item) => normalizeMovement({ ...item.data(), id: item.id })),
+    expenses: expensesSnapshot.docs.map((item) => normalizeExpense({ ...item.data(), id: item.id })),
+    payments: Array.from(paymentMap.values()),
+  };
+}
+
+export async function copyItemsFromPreviousMonth({
+  currentMonthKey,
+  movementIds,
+  expenseIds,
+  paymentIds,
+  keepStatus,
+}: {
+  currentMonthKey: string;
+  movementIds: string[];
+  expenseIds: string[];
+  paymentIds: string[];
+  keepStatus: boolean;
+}) {
+  const { previousMonthKey, movements, expenses, payments } = await getPreviousMonthCopyCandidates(currentMonthKey);
+  const targetPeriodo = toPeriodo(currentMonthKey);
+  const copied = { movements: 0, expenses: 0, payments: 0 };
+
+  await Promise.all(
+    movementIds.map(async (id) => {
+      const source = movements.find((item) => item.id === id);
+      if (!source) return;
+      const existing = await getDocs(query(financeRefs.movementsRef, where("copiedFromId", "==", source.id)));
+      if (existing.docs.some((docSnap) => (docSnap.data().monthKey ?? "") === currentMonthKey)) return;
+
+      const day = Number(source.incomeDate.split("-")[2]) || 1;
+      const incomeDate = buildDateForMonth(currentMonthKey, day) ?? source.incomeDate;
+      const now = new Date().toISOString();
+      const payload: Omit<FinanceMovement, "id"> = {
+        ...source,
+        incomeDate,
+        monthKey: currentMonthKey,
+        status: keepStatus ? source.status : "pending",
+        copiedFromId: source.id,
+        copiedFromMonthKey: previousMonthKey,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await addDoc(financeRefs.movementsRef, payload);
+      copied.movements += 1;
+    }),
+  );
+
+  await Promise.all(
+    expenseIds.map(async (id) => {
+      const source = expenses.find((item) => item.id === id);
+      if (!source) return;
+      const existing = await getDocs(query(financeRefs.expensesRef, where("copiedFromId", "==", source.id)));
+      if (
+        existing.docs.some((docSnap) => {
+          const data = docSnap.data();
+          const monthKey = data.monthKey ?? getMonthKeyFromDate(data.fechaGasto);
+          return monthKey === currentMonthKey;
+        })
+      ) {
+        return;
+      }
+      const day = Number(source.fechaGasto.split("-")[2]) || 1;
+      const fechaGasto = buildDateForMonth(currentMonthKey, day) ?? source.fechaGasto;
+      const now = new Date().toISOString();
+      const payload: Omit<Expense, "id"> = {
+        ...source,
+        fechaGasto,
+        monthKey: currentMonthKey,
+        status: keepStatus ? source.status : "pending",
+        copiedFromId: source.id,
+        copiedFromMonthKey: previousMonthKey,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await addDoc(financeRefs.expensesRef, payload);
+      copied.expenses += 1;
+    }),
+  );
+
+  await Promise.all(
+    paymentIds.map(async (id) => {
+      const source = payments.find((item) => item.id === id);
+      if (!source) return;
+      const existing = await getDocs(query(financeRefs.collaboratorPaymentsRef, where("copiedFromId", "==", source.id)));
+      if (existing.docs.some((docSnap) => (docSnap.data().periodo ?? "") === targetPeriodo)) return;
+      const now = new Date().toISOString();
+      const payload: Omit<CollaboratorPayment, "id"> = {
+        ...source,
+        periodo: targetPeriodo,
+        fechaPago: "",
+        monthKey: currentMonthKey,
+        status: keepStatus ? source.status : "pending",
+        copiedFromId: source.id,
+        copiedFromMonthKey: previousMonthKey,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await addDoc(financeRefs.collaboratorPaymentsRef, payload);
+      copied.payments += 1;
+    }),
+  );
+
+  return copied;
+}
+
 export async function createCollaborator(input: Omit<Collaborator, "id" | "createdAt" | "updatedAt">) {
   const now = new Date().toISOString();
   const collaborator: Omit<Collaborator, "id"> = {

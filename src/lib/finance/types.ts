@@ -42,6 +42,8 @@ export interface FinanceMovement {
   recurrenceSourceId?: string | null;
   generatedForMonthKey?: string | null;
   generatedFromId?: string | null;
+  copiedFromId?: string | null;
+  copiedFromMonthKey?: string | null;
   monthKey: string;
   createdAt: string;
   updatedAt: string;
@@ -63,6 +65,9 @@ export interface Collaborator {
   finContrato?: string | null;
   activo: boolean;
   notas?: string | null;
+  isRecurring?: boolean | null;
+  copiedFromId?: string | null;
+  copiedFromMonthKey?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -82,6 +87,9 @@ export interface CollaboratorPayment {
   status: FinanceStatus;
   referencia?: string | null;
   notas?: string | null;
+  isRecurring?: boolean | null;
+  copiedFromId?: string | null;
+  copiedFromMonthKey?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -115,6 +123,9 @@ export interface Expense {
   devolucionMonto?: number | null;
   referencia?: string | null;
   notas?: string | null;
+  isRecurring?: boolean | null;
+  copiedFromId?: string | null;
+  copiedFromMonthKey?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -134,6 +145,9 @@ export interface TransferMovement {
   status: FinanceStatus;
   referencia?: string | null;
   notas?: string | null;
+  isRecurring?: boolean | null;
+  copiedFromId?: string | null;
+  copiedFromMonthKey?: string | null;
   createdAt: string;
   updatedAt: string;
 }

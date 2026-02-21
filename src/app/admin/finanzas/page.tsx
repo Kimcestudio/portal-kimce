@@ -9,6 +9,7 @@ import FinanceHeroCard from "@/components/finance/FinanceHeroCard";
 import FinanceKpiCard from "@/components/finance/FinanceKpiCard";
 import FinanceFilterBar from "@/components/finance/FinanceFilterBar";
 import FinanceTable from "@/components/finance/FinanceTable";
+import CopyPreviousMonthModal from "@/components/finance/CopyPreviousMonthModal";
 import FinancePendingList from "@/components/finance/FinancePendingList";
 import FinanceStatusSelect from "@/components/finance/FinanceStatusSelect";
 import FinanceMonthlyChart from "@/components/finance/FinanceMonthlyChart";
@@ -71,7 +72,8 @@ import {
   updateIncomeMovement,
   updateTransfer,
   updateTransferStatus,
-  ensureRecurringMovementsForMonth,
+  getPreviousMonthCopyCandidates,
+  copyItemsFromPreviousMonth,
 } from "@/services/finance";
 import { db } from "@/services/firebase/client";
 import { Pencil, Trash2 } from "lucide-react";
@@ -150,6 +152,13 @@ export default function FinanceModulePage() {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isProjectionDetailOpen, setIsProjectionDetailOpen] = useState(false);
   const [isDetailModalProjectionOpen, setIsDetailModalProjectionOpen] = useState(false);
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [isCopyingMonthData, setIsCopyingMonthData] = useState(false);
+  const [copySourceData, setCopySourceData] = useState<{
+    movements: FinanceMovement[];
+    expenses: Expense[];
+    payments: CollaboratorPayment[];
+  }>({ movements: [], expenses: [], payments: [] });
   const [detailTab, setDetailTab] = useState<
     "summary" | "income" | "expenses" | "payments" | "accounts"
   >("summary");
@@ -417,26 +426,7 @@ export default function FinanceModulePage() {
     );
   }, [filteredTransfers]);
 
-  useEffect(() => {
-    if (isLoading) return;
-    const monthKey = filters.monthKey;
-    if (!monthKey) return;
-    if (materializingMonthsRef.current.has(monthKey)) return;
 
-    const materializeMonthData = async () => {
-      materializingMonthsRef.current.add(monthKey);
-      try {
-        await ensureRecurringMovementsForMonth(monthKey);
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error("[FINANCE] recurring movements materialization error", error);
-      } finally {
-        materializingMonthsRef.current.delete(monthKey);
-      }
-    };
-
-    void materializeMonthData();
-  }, [filters.monthKey, isLoading]);
 
   const availableYears = useMemo(() => {
     const years = new Set<number>();
@@ -803,6 +793,43 @@ export default function FinanceModulePage() {
     link.download = `desglose-finanzas-${filters.monthKey}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleOpenCopyPreviousMonth = async () => {
+    try {
+      const data = await getPreviousMonthCopyCandidates(filters.monthKey);
+      setCopySourceData({ movements: data.movements, expenses: data.expenses, payments: data.payments });
+      setIsCopyModalOpen(true);
+    } catch (error) {
+      setToast({ message: "No se pudo cargar el mes anterior", tone: "error" });
+    }
+  };
+
+  const handleCopyPreviousMonth = async (payload: {
+    movementIds: string[];
+    expenseIds: string[];
+    paymentIds: string[];
+    keepStatus: boolean;
+  }) => {
+    try {
+      setIsCopyingMonthData(true);
+      const result = await copyItemsFromPreviousMonth({
+        currentMonthKey: filters.monthKey,
+        movementIds: payload.movementIds,
+        expenseIds: payload.expenseIds,
+        paymentIds: payload.paymentIds,
+        keepStatus: payload.keepStatus,
+      });
+      setToast({
+        message: `Copiados: Movimientos ${result.movements}, Gastos ${result.expenses}, Pagos ${result.payments}`,
+        tone: "success",
+      });
+      setIsCopyModalOpen(false);
+    } catch (error) {
+      setToast({ message: "Error al copiar elementos", tone: "error" });
+    } finally {
+      setIsCopyingMonthData(false);
+    }
   };
 
   const openModal = (type: FinanceModalType) => {
@@ -1212,6 +1239,13 @@ export default function FinanceModulePage() {
                   Nuevo colaborador
                 </button>
               ) : null}
+              <button
+                type="button"
+                onClick={handleOpenCopyPreviousMonth}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600"
+              >
+                Copiar mes anterior
+              </button>
               <button
                 type="button"
                 onClick={() =>
@@ -2177,6 +2211,17 @@ export default function FinanceModulePage() {
           </div>
         </div>
       ) : null}
+
+
+      <CopyPreviousMonthModal
+        isOpen={isCopyModalOpen}
+        onClose={() => setIsCopyModalOpen(false)}
+        onConfirm={handleCopyPreviousMonth}
+        movements={copySourceData.movements}
+        expenses={copySourceData.expenses}
+        payments={copySourceData.payments}
+        loading={isCopyingMonthData}
+      />
 
       <FinanceModal
         isOpen={isModalOpen}
