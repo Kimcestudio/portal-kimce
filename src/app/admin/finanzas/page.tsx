@@ -22,9 +22,9 @@ import {
   ExpensesTab,
   FinanceFiltersBar,
   FinanceTabs,
-  IncomeTab,
+  MovementsTab,
   PaymentsTab,
-} from "@/components/finance/module";
+} from "@/modules/finanzas";
 import Card from "@/components/ui/Card";
 import {
   calcKpis,
@@ -1625,7 +1625,7 @@ export default function FinanceModulePage() {
               ) : null}
 
               {activeTab === "movimientos" ? (
-                <IncomeTab
+                <MovementsTab
                   movements={filteredMovements}
                   onStatusChange={handleStatusChange}
                   onDelete={handleDeleteMovement}
