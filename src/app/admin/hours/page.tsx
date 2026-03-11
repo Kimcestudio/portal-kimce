@@ -11,6 +11,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -411,14 +412,21 @@ export default function AdminHoursPage() {
   const globalChartData = useMemo(
     () =>
       summaries
-        .map((item) => ({
-          uid: item.user.uid,
-          name: getUserDisplayName(item.user),
-          workedHours: Math.round((item.totalMinutes / 60) * 10) / 10,
-          expectedHours: Math.round((item.expectedMinutes / 60) * 10) / 10,
-          workedLabel: minutesToHHMM(item.totalMinutes),
-          expectedLabel: minutesToHHMM(item.expectedMinutes),
-        }))
+        .map((item) => {
+          const completion = item.expectedMinutes > 0
+            ? Math.round((item.totalMinutes / item.expectedMinutes) * 100)
+            : 0;
+          return {
+            uid: item.user.uid,
+            name: getUserDisplayName(item.user),
+            workedHours: Math.round((item.totalMinutes / 60) * 10) / 10,
+            expectedHours: Math.round((item.expectedMinutes / 60) * 10) / 10,
+            workedLabel: minutesToHHMM(item.totalMinutes),
+            expectedLabel: minutesToHHMM(item.expectedMinutes),
+            completionRate: completion,
+            workedColor: completion >= 100 ? "#10b981" : completion >= 70 ? "#4f46e5" : "#f59e0b",
+          };
+        })
         .sort((a, b) => b.workedHours - a.workedHours)
         .slice(0, 10),
     [summaries],
@@ -640,23 +648,30 @@ export default function AdminHoursPage() {
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
-            <p className="text-xs text-slate-500">Colaboradores evaluados</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{globalKpis.totalCollaborators}</p>
-            <p className="text-xs text-slate-500">Semana {formatISODate(weekStart)}</p>
+          <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4">
+            <p className="text-xs text-indigo-700">Colaboradores evaluados</p>
+            <p className="mt-1 text-2xl font-semibold text-indigo-950">{globalKpis.totalCollaborators}</p>
+            <p className="text-xs text-indigo-600">Semana {formatISODate(weekStart)}</p>
           </div>
-          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
-            <p className="text-xs text-slate-500">Cumpliendo meta semanal</p>
+          <div className="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4">
+            <p className="text-xs text-emerald-700">Cumpliendo meta semanal</p>
             <p className="mt-1 text-2xl font-semibold text-emerald-700">{globalKpis.onTrackCount}</p>
-            <p className="text-xs text-slate-500">{globalKpis.pendingCount} con horas pendientes</p>
+            <p className="text-xs text-emerald-600">{globalKpis.pendingCount} con horas pendientes</p>
           </div>
-          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
-            <p className="text-xs text-slate-500">Horas registradas globales</p>
+          <div className="rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white p-4">
+            <p className="text-xs text-sky-700">Horas registradas globales</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">{minutesToHHMM(globalKpis.totalWorkedMinutes)}</p>
             <p className="text-xs text-slate-500">Objetivo {minutesToHHMM(globalKpis.totalExpectedMinutes)}</p>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-sky-100">
+              <div
+                className={`h-full rounded-full transition-all ${globalKpis.completionRate >= 100 ? "bg-emerald-500" : globalKpis.completionRate >= 70 ? "bg-indigo-500" : "bg-amber-500"}`}
+                style={{ width: `${Math.min(globalKpis.completionRate, 100)}%` }}
+              />
+            </div>
+            <p className="mt-1 text-xs font-medium text-sky-700">Avance semanal {globalKpis.completionRate}%</p>
           </div>
-          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
-            <p className="text-xs text-slate-500">Balance global</p>
+          <div className="rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4">
+            <p className="text-xs text-amber-700">Balance global</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">
               {globalKpis.totalDiffMinutes < 0 ? "Deben" : "A favor"} {minutesToHHMM(Math.abs(globalKpis.totalDiffMinutes))}
             </p>
@@ -678,8 +693,12 @@ export default function AdminHoursPage() {
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-18} textAnchor="end" height={46} />
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip content={<GlobalHoursTooltip />} />
-                  <Bar dataKey="expectedHours" fill="#cbd5e1" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="workedHours" fill="#4f46e5" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="expectedHours" fill="#dbeafe" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="workedHours" radius={[6, 6, 0, 0]}>
+                    {globalChartData.map((entry) => (
+                      <Cell key={`${entry.uid}-worked`} fill={entry.workedColor} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
