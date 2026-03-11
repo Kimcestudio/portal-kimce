@@ -1,43 +1,59 @@
 "use client";
 
-import PageHeader from "@/components/PageHeader";
+import TeamCard from "@/components/home/TeamCard";
+import EventsCard from "@/components/home/EventsCard";
+import ActionsCard from "@/components/home/ActionsCard";
+import RequestsCard from "@/components/home/RequestsCard";
+import WelcomeHeader from "@/components/home/WelcomeHeader";
+import NewEmployeesCard from "@/components/home/NewEmployeesCard";
+import CelebrationsCard from "@/components/home/CelebrationsCard";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { formatISODate, getWeekStartMonday, minutesToHHMM } from "@/lib/attendanceUtils";
 import { listAllRecords } from "@/lib/storage/attendanceStorage";
-import { minutesToHHMM } from "@/lib/attendanceUtils";
-import { listRequests } from "@/services/firebase/db";
+import {
+  homeEvents,
+  homeRequests,
+  homeTeamMembers,
+  homeCelebrations,
+  homeQuickActions,
+  homeNewEmployees,
+} from "@/lib/homeDashboardMocks";
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const records = user ? listAllRecords(user.uid) : [];
-  const totalMinutes = records.reduce((sum, record) => sum + record.totalMinutes, 0);
-  const pendingRequests = user
-    ? listRequests().filter((item) => item.status === "PENDING" && item.createdBy === user.uid).length
-    : 0;
+  const weekStart = formatISODate(getWeekStartMonday(new Date()));
+
+  const weeklyMinutes = records
+    .filter((record) => record.date >= weekStart)
+    .reduce((sum, record) => sum + record.totalMinutes, 0);
+
+  const historicMinutes = records.reduce((sum, record) => sum + record.totalMinutes, 0);
+
+  const userName = user?.displayName ?? user?.email ?? "Colaborador";
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl bg-white p-5 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-          <p className="text-xs text-slate-500">Horas registradas</p>
-          <p className="text-2xl font-semibold text-slate-900">{minutesToHHMM(totalMinutes)}</p>
+      <WelcomeHeader
+        userName={userName}
+        weeklyMinutes={weeklyMinutes}
+        historicMinutes={historicMinutes}
+        formatMinutes={minutesToHHMM}
+      />
+
+      <section className="grid gap-4 xl:grid-cols-12">
+        <div className="space-y-4 xl:col-span-8">
+          <TeamCard members={homeTeamMembers} />
+          <NewEmployeesCard items={homeNewEmployees} />
+          <EventsCard items={homeEvents} />
         </div>
-        <div className="rounded-2xl bg-white p-5 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-          <p className="text-xs text-slate-500">Jornadas</p>
-          <p className="text-2xl font-semibold text-slate-900">{records.length}</p>
+
+        <div className="space-y-4 xl:col-span-4">
+          <CelebrationsCard items={homeCelebrations} />
+          <ActionsCard items={homeQuickActions} />
+          <RequestsCard items={homeRequests} />
         </div>
-        <div className="rounded-2xl bg-white p-5 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-          <p className="text-xs text-slate-500">Solicitudes pendientes</p>
-          <p className="text-2xl font-semibold text-slate-900">{pendingRequests}</p>
-        </div>
-      </div>
-      <div className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-        <h2 className="text-base font-semibold text-slate-900">Panel personal</h2>
-        <p className="text-xs text-slate-500">Resumen rápido de tu actividad.</p>
-        <div className="mt-4 rounded-xl border border-dashed border-slate-200/70 p-6 text-sm text-slate-500">
-          Próximamente: alertas, recordatorios y métricas.
-        </div>
-      </div>
+      </section>
     </div>
   );
 }
