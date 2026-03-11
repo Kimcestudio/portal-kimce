@@ -424,44 +424,6 @@ export default function AdminHoursPage() {
     [summaries],
   );
 
-  const globalKpis = useMemo(() => {
-    const totalCollaborators = summaries.length;
-    const pendingCount = summaries.filter((item) => item.diffMinutes < 0).length;
-    const onTrackCount = totalCollaborators - pendingCount;
-    const totalWorkedMinutes = summaries.reduce((sum, item) => sum + item.totalMinutes, 0);
-    const totalExpectedMinutes = summaries.reduce((sum, item) => sum + item.expectedMinutes, 0);
-    const totalDiffMinutes = totalWorkedMinutes - totalExpectedMinutes;
-    const completionRate = totalExpectedMinutes > 0
-      ? Math.round((totalWorkedMinutes / totalExpectedMinutes) * 100)
-      : 0;
-
-    return {
-      totalCollaborators,
-      pendingCount,
-      onTrackCount,
-      totalWorkedMinutes,
-      totalExpectedMinutes,
-      totalDiffMinutes,
-      completionRate,
-    };
-  }, [summaries]);
-
-  const globalChartData = useMemo(
-    () =>
-      summaries
-        .map((item) => ({
-          uid: item.user.uid,
-          name: getUserDisplayName(item.user),
-          workedHours: Math.round((item.totalMinutes / 60) * 10) / 10,
-          expectedHours: Math.round((item.expectedMinutes / 60) * 10) / 10,
-          workedLabel: minutesToHHMM(item.totalMinutes),
-          expectedLabel: minutesToHHMM(item.expectedMinutes),
-        }))
-        .sort((a, b) => b.workedHours - a.workedHours)
-        .slice(0, 10),
-    [summaries],
-  );
-
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return;
 
@@ -549,6 +511,10 @@ export default function AdminHoursPage() {
         })
     : [];
 
+  const detailProgressRate = detailExpectedMinutesWeek > 0
+    ? Math.round((detailWorkedMinutesWeek / detailExpectedMinutesWeek) * 100)
+    : 0;
+  const detailRecordedDays = detailRecords.filter((record) => record.totalMinutes > 0).length;
 
   const handleSelectCollaboratorFromHours = (clickedUid: string) => {
     setDetailUserId(clickedUid);
@@ -880,11 +846,11 @@ export default function AdminHoursPage() {
 
       {/* ----------------------- DETALLE ----------------------- */}
       {detailUser ? (
-        <div ref={detailSectionRef} className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+        <div ref={detailSectionRef} className="rounded-2xl border border-indigo-100 bg-gradient-to-b from-white to-indigo-50/30 p-6 shadow-[0_10px_28px_rgba(79,70,229,0.12)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Detalle semanal</h3>
-              <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+              <div className="mt-1 flex items-center gap-2 text-xs text-slate-600">
                 <UserAvatar
                   name={getUserDisplayName(detailUser)}
                   photoURL={detailUser.photoURL}
@@ -897,7 +863,7 @@ export default function AdminHoursPage() {
               </div>
             </div>
             <button
-              className="rounded-full border border-slate-200/60 px-3 py-1 text-xs font-semibold text-slate-500"
+              className="rounded-full border border-indigo-200 bg-white px-3 py-1 text-xs font-semibold text-indigo-600"
               onClick={() => setDetailUserId(null)}
               type="button"
             >
@@ -905,57 +871,98 @@ export default function AdminHoursPage() {
             </button>
           </div>
 
-          <div className="mt-4 space-y-3">
-            {weekDates.map((date) => {
-              const dateISO = formatISODate(date);
-              const dayRecords = detailRecords.filter((item) => item.date === dateISO);
-
-              if (dayRecords.length === 0) {
-                return (
-                  <div
-                    key={dateISO}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200/60 px-4 py-3 text-sm"
-                  >
-                    <div>
-                      <p className="font-semibold text-slate-900">{dateISO}</p>
-                      <p className="text-xs text-slate-500">Sin registros</p>
-                    </div>
-                  </div>
-                );
-              }
-
-              return dayRecords.map((record, index) => {
-                const breakMinutes = computeBreakMinutes(record);
-                return (
-                  <div
-                    key={`${dateISO}-${record.id}-${index}`}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
-                  >
-                    <div>
-                      <p className="font-semibold text-slate-900">{dateISO}</p>
-                      <p className="text-xs text-slate-500">
-                        Entrada {formatTime(record?.checkInAt ?? null)} · Salida {formatTime(record?.checkOutAt ?? null)}
-                      </p>
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Descanso {minutesToHHMM(breakMinutes)} · Total {minutesToHHMM(record?.totalMinutes ?? 0)}
-                    </div>
-                    <span className="text-xs text-slate-500">{record?.notes ?? "Sin notas"}</span>
-                  </div>
-                );
-              });
-            })}
+          <div className="mt-5">
+            <CollaboratorDashboard
+              collaboratorName={getUserDisplayName(detailUser)}
+              workedMinutes={detailWorkedMinutesWeek}
+              expectedMinutes={detailExpectedMinutesWeek}
+              diffMinutes={detailDiffMinutesWeek}
+              completedDays={detailCompletedDays}
+              totalBalanceMinutes={detailTotalBalanceMinutes}
+              chartData={detailChartData}
+            />
           </div>
 
-          <CollaboratorDashboard
-            collaboratorName={getUserDisplayName(detailUser)}
-            workedMinutes={detailWorkedMinutesWeek}
-            expectedMinutes={detailExpectedMinutesWeek}
-            diffMinutes={detailDiffMinutesWeek}
-            completedDays={detailCompletedDays}
-            totalBalanceMinutes={detailTotalBalanceMinutes}
-            chartData={detailChartData}
-          />
+          <section className="mt-6 rounded-2xl border border-indigo-100 bg-white/80 p-4 shadow-[0_8px_24px_rgba(99,102,241,0.08)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">Desglose por semana</h4>
+                <p className="text-xs text-slate-500">Resumen de horas trabajadas y detalle diario.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
+                <span className="rounded-full bg-indigo-100 px-3 py-1 text-indigo-700">
+                  Trabajadas {minutesToHHMM(detailWorkedMinutesWeek)}
+                </span>
+                <span className="rounded-full bg-cyan-100 px-3 py-1 text-cyan-700">
+                  Objetivo {minutesToHHMM(detailExpectedMinutesWeek)}
+                </span>
+                <span className={`rounded-full px-3 py-1 ${detailDiffMinutesWeek >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                  {detailDiffMinutesWeek >= 0 ? "Superávit" : "Pendiente"} {minutesToHHMM(Math.abs(detailDiffMinutesWeek))}
+                </span>
+                <span className="rounded-full bg-violet-100 px-3 py-1 text-violet-700">
+                  Progreso {detailProgressRate}%
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+                <p className="text-xs text-indigo-700">Horas base</p>
+                <p className="text-lg font-semibold text-indigo-900">{minutesToHHMM(detailWorkedMinutesWeekBase)}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3">
+                <p className="text-xs text-emerald-700">Extras aprobadas</p>
+                <p className="text-lg font-semibold text-emerald-900">{minutesToHHMM(detailApprovedExtraMinutesWeek)}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                <p className="text-xs text-slate-600">Días con registros</p>
+                <p className="text-lg font-semibold text-slate-900">{detailRecordedDays}/{weekDates.length}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {weekDates.map((date) => {
+                const dateISO = formatISODate(date);
+                const dayRecords = detailRecords.filter((item) => item.date === dateISO);
+
+                if (dayRecords.length === 0) {
+                  return (
+                    <div
+                      key={dateISO}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-white px-4 py-3 text-sm"
+                    >
+                      <div>
+                        <p className="font-semibold text-slate-900">{dateISO}</p>
+                        <p className="text-xs text-slate-500">Sin registros</p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return dayRecords.map((record, index) => {
+                  const breakMinutes = computeBreakMinutes(record);
+                  return (
+                    <div
+                      key={`${dateISO}-${record.id}-${index}`}
+                      className="grid gap-2 rounded-xl border border-indigo-100 bg-white px-4 py-3 text-sm md:grid-cols-[1.3fr_1fr_1fr] md:items-center"
+                    >
+                      <div>
+                        <p className="font-semibold text-slate-900">{dateISO}</p>
+                        <p className="text-xs text-slate-500">
+                          Entrada {formatTime(record?.checkInAt ?? null)} · Salida {formatTime(record?.checkOutAt ?? null)}
+                        </p>
+                      </div>
+                      <div className="text-xs text-slate-600">
+                        <p>Descanso {minutesToHHMM(breakMinutes)}</p>
+                        <p className="font-semibold text-indigo-700">Total {minutesToHHMM(record?.totalMinutes ?? 0)}</p>
+                      </div>
+                      <span className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">{record?.notes ?? "Sin notas"}</span>
+                    </div>
+                  );
+                });
+              })}
+            </div>
+          </section>
         </div>
       ) : null}
 
