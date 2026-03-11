@@ -7,6 +7,15 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import PageHeader from "@/components/PageHeader";
 import UserAvatar from "@/components/common/UserAvatar";
 import CollaboratorDashboard from "@/components/dashboard/CollaboratorDashboard";
@@ -50,6 +59,22 @@ type TimeEntryEvent = {
   totalMinutes?: number;
 };
 
+type DeleteMode = "ALL" | "TIME_ONLY" | "REQUESTS_ONLY";
+
+const GlobalHoursTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  if (!row) return null;
+
+  return (
+    <div className="rounded-xl bg-slate-900 px-3 py-2 text-xs text-white shadow-xl">
+      <p className="font-semibold">{row.name}</p>
+      <p className="text-white/80">Trabajadas: {row.workedLabel}</p>
+      <p className="text-white/80">Objetivo: {row.expectedLabel}</p>
+    </div>
+  );
+};
+
 
 const normalizeTimestamp = (value: unknown) => {
   if (!value) return null;
@@ -83,8 +108,11 @@ export default function AdminHoursPage() {
   const [users, setUsers] = useState<FirestoreUser[]>([]);
   const [workSchedules, setWorkSchedules] = useState<WorkSchedule[]>([]);
   const [records, setRecords] = useState<HourRecord[]>([]);
+  const [approvedExtraActivities, setApprovedExtraActivities] = useState<{ uid: string; date: string; minutes: number }[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingCollaboratorData, setDeletingCollaboratorData] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteMode, setDeleteMode] = useState<DeleteMode>("ALL");
   const detailSectionRef = useRef<HTMLDivElement | null>(null);
 
   const scheduleOptions = workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES;
@@ -279,6 +307,45 @@ export default function AdminHoursPage() {
     return () => unsubscribe();
   }, [user?.role]);
 
+  useEffect(() => {
+    if (user?.role !== "admin") return;
+
+    const extraActivitiesRef = collection(db, "extraActivities");
+    const unsubscribe = onSnapshot(
+      extraActivitiesRef,
+      (snapshot) => {
+        const approved = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data() as DocumentData;
+            const status = typeof data.status === "string" ? data.status.toLowerCase() : "";
+            if (status !== "approved") return null;
+
+            const uid = (data.uid ?? data.userId) as string | undefined;
+            const dateValue =
+              (typeof data.date === "string" ? data.date : "") ||
+              (normalizeTimestamp(data.createdAt)?.slice(0, 10) ?? "");
+            const minutes =
+              typeof data.minutes === "number"
+                ? data.minutes
+                : typeof data.hours === "number"
+                  ? Math.round(data.hours * 60)
+                  : 0;
+
+            if (!uid || !dateValue) return null;
+            return { uid, date: dateValue, minutes };
+          })
+          .filter(Boolean) as { uid: string; date: string; minutes: number }[];
+
+        setApprovedExtraActivities(approved);
+      },
+      (error) => {
+        console.error("[admin/hours] Error loading approved extra activities", error);
+      },
+    );
+
+    return () => unsubscribe();
+  }, [user?.role]);
+
   const collaboratorUsers = useMemo(() => users.filter((item) => item.role !== "admin"), [users]);
 
   const filteredRecords = useMemo(
@@ -296,7 +363,11 @@ export default function AdminHoursPage() {
     return scopedUsers.map((item) => {
       const schedule = scheduleById.get(item.workScheduleId ?? "") ?? scheduleOptions[0];
       const weekRecords = filteredRecords.filter((record) => record.userId === item.uid);
-      const totalMinutes = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
+      const baseWorkedMinutes = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
+      const approvedExtraMinutes = approvedExtraActivities
+        .filter((extra) => extra.uid === item.uid && weekDateSet.has(extra.date))
+        .reduce((total, extra) => total + extra.minutes, 0);
+      const totalMinutes = baseWorkedMinutes + approvedExtraMinutes;
 
       const expectedMinutes = weekDates.reduce((total, date) => total + expectedMinutesForDate(date, schedule), 0);
       const diffMinutes = totalMinutes - expectedMinutes;
@@ -310,9 +381,48 @@ export default function AdminHoursPage() {
         diffMinutes,
         status,
         schedule,
+        approvedExtraMinutes,
       };
     });
-  }, [collaboratorUsers, filteredRecords, scheduleById, scheduleOptions, selectedUserId, weekDates]);
+  }, [approvedExtraActivities, collaboratorUsers, filteredRecords, scheduleById, scheduleOptions, selectedUserId, weekDateSet, weekDates]);
+
+  const globalKpis = useMemo(() => {
+    const totalCollaborators = summaries.length;
+    const pendingCount = summaries.filter((item) => item.diffMinutes < 0).length;
+    const onTrackCount = totalCollaborators - pendingCount;
+    const totalWorkedMinutes = summaries.reduce((sum, item) => sum + item.totalMinutes, 0);
+    const totalExpectedMinutes = summaries.reduce((sum, item) => sum + item.expectedMinutes, 0);
+    const totalDiffMinutes = totalWorkedMinutes - totalExpectedMinutes;
+    const completionRate = totalExpectedMinutes > 0
+      ? Math.round((totalWorkedMinutes / totalExpectedMinutes) * 100)
+      : 0;
+
+    return {
+      totalCollaborators,
+      pendingCount,
+      onTrackCount,
+      totalWorkedMinutes,
+      totalExpectedMinutes,
+      totalDiffMinutes,
+      completionRate,
+    };
+  }, [summaries]);
+
+  const globalChartData = useMemo(
+    () =>
+      summaries
+        .map((item) => ({
+          uid: item.user.uid,
+          name: getUserDisplayName(item.user),
+          workedHours: Math.round((item.totalMinutes / 60) * 10) / 10,
+          expectedHours: Math.round((item.expectedMinutes / 60) * 10) / 10,
+          workedLabel: minutesToHHMM(item.totalMinutes),
+          expectedLabel: minutesToHHMM(item.expectedMinutes),
+        }))
+        .sort((a, b) => b.workedHours - a.workedHours)
+        .slice(0, 10),
+    [summaries],
+  );
 
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return;
@@ -355,7 +465,13 @@ export default function AdminHoursPage() {
     ? weekDates.reduce((total, date) => total + expectedMinutesForDate(date, detailSchedule), 0)
     : 0;
 
-  const detailWorkedMinutesWeek = detailRecords.reduce((total, record) => total + record.totalMinutes, 0);
+  const detailWorkedMinutesWeekBase = detailRecords.reduce((total, record) => total + record.totalMinutes, 0);
+  const detailApprovedExtraMinutesWeek = detailUser
+    ? approvedExtraActivities
+        .filter((extra) => extra.uid === detailUser.uid && weekDateSet.has(extra.date))
+        .reduce((sum, extra) => sum + extra.minutes, 0)
+    : 0;
+  const detailWorkedMinutesWeek = detailWorkedMinutesWeekBase + detailApprovedExtraMinutesWeek;
   const detailDiffMinutesWeek = detailWorkedMinutesWeek - detailExpectedMinutesWeek;
 
   const detailCompletedDays = detailRecords.filter((record) => {
@@ -369,7 +485,9 @@ export default function AdminHoursPage() {
         .reduce((sum, record) => {
           const recordDate = new Date(`${record.date}T00:00:00`);
           return sum + (record.totalMinutes - expectedMinutesForDate(recordDate, detailSchedule));
-        }, 0)
+        }, 0) + approvedExtraActivities
+          .filter((extra) => extra.uid === detailUser.uid)
+          .reduce((sum, extra) => sum + extra.minutes, 0)
     : 0;
 
   const detailChartData = detailSchedule
@@ -379,10 +497,15 @@ export default function AdminHoursPage() {
           const dateISO = formatISODate(date);
           const record = detailRecords.find((item) => item.date === dateISO);
           const targetHours = expectedMinutesForDate(date, detailSchedule) / 60;
+          const approvedExtraMinutes = detailUser
+            ? approvedExtraActivities
+                .filter((extra) => extra.uid === detailUser.uid && extra.date === dateISO)
+                .reduce((sum, extra) => sum + extra.minutes, 0)
+            : 0;
 
           return {
             label: date.toLocaleDateString("es-ES", { weekday: "short" }),
-            hours: record ? Math.round((record.totalMinutes / 60) * 10) / 10 : 0,
+            hours: Math.round((((record?.totalMinutes ?? 0) + approvedExtraMinutes) / 60) * 10) / 10,
             target: targetHours,
           };
         })
@@ -405,7 +528,14 @@ export default function AdminHoursPage() {
     });
   };
 
-  const handleDeleteCollaboratorData = async () => {
+  const getDeleteModeLabel = (mode: DeleteMode) =>
+    mode === "TIME_ONLY"
+      ? "solo fichajes de horas"
+      : mode === "REQUESTS_ONLY"
+        ? "solo solicitudes y actividades"
+        : "todos los datos (horas + solicitudes + actividades)";
+
+  const handleDeleteCollaboratorData = async (mode: DeleteMode) => {
     if (!user || user.role !== "admin") return;
     if (deleteTargetUserId === "all") return;
 
@@ -413,21 +543,22 @@ export default function AdminHoursPage() {
     const collaboratorName = collaborator ? getUserDisplayName(collaborator) : deleteTargetUserId;
 
     const confirmed = window.confirm(
-      `Esto eliminará horarios y solicitudes del colaborador ${collaboratorName}. No se puede deshacer.`,
+      `Se eliminará ${getDeleteModeLabel(mode)} del colaborador ${collaboratorName}. Esta acción no se puede deshacer.`,
     );
     if (!confirmed) return;
 
+    setDeleteModalOpen(false);
     setDeletingCollaboratorData(true);
     try {
       const functions = getFunctions();
       const deleteCallable = httpsCallable<
-        { targetUid: string; mode?: "ALL" | "TIME_ONLY" },
+        { targetUid: string; mode?: DeleteMode },
         { ok: boolean; deleted?: Record<string, number> }
       >(functions, "adminDeleteUserData");
 
       const response = await deleteCallable({
         targetUid: deleteTargetUserId,
-        mode: "ALL",
+        mode,
       });
 
       if (response.data?.ok) {
@@ -504,6 +635,57 @@ export default function AdminHoursPage() {
           </div>
         </div>
 
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
+            <p className="text-xs text-slate-500">Colaboradores evaluados</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{globalKpis.totalCollaborators}</p>
+            <p className="text-xs text-slate-500">Semana {formatISODate(weekStart)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
+            <p className="text-xs text-slate-500">Cumpliendo meta semanal</p>
+            <p className="mt-1 text-2xl font-semibold text-emerald-700">{globalKpis.onTrackCount}</p>
+            <p className="text-xs text-slate-500">{globalKpis.pendingCount} con horas pendientes</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
+            <p className="text-xs text-slate-500">Horas registradas globales</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{minutesToHHMM(globalKpis.totalWorkedMinutes)}</p>
+            <p className="text-xs text-slate-500">Objetivo {minutesToHHMM(globalKpis.totalExpectedMinutes)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
+            <p className="text-xs text-slate-500">Balance global</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
+              {globalKpis.totalDiffMinutes < 0 ? "Deben" : "A favor"} {minutesToHHMM(Math.abs(globalKpis.totalDiffMinutes))}
+            </p>
+            <p className="text-xs text-slate-500">Avance total {globalKpis.completionRate}%</p>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-slate-200/60 bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-slate-900">Top colaboradores por horas registradas</h3>
+            <span className="text-xs text-slate-500">Click en una tarjeta para abrir su dashboard</span>
+          </div>
+
+          <div className="h-64">
+            {globalChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={globalChartData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-18} textAnchor="end" height={46} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip content={<GlobalHoursTooltip />} />
+                  <Bar dataKey="expectedHours" fill="#cbd5e1" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="workedHours" fill="#4f46e5" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 text-sm text-slate-500">
+                No hay datos suficientes para el gráfico esta semana.
+              </div>
+            )}
+          </div>
+        </div>
+
         <div className="mt-4 space-y-3">
           {summaries.map((item) => (
             <button
@@ -525,6 +707,11 @@ export default function AdminHoursPage() {
                 <p className="text-xs text-slate-500">
                   {item.user.position} · Semana {formatISODate(weekStart)}
                 </p>
+                {item.approvedExtraMinutes > 0 ? (
+                  <p className="text-xs text-indigo-600">
+                    +{minutesToHHMM(item.approvedExtraMinutes)} por actividades extra aprobadas
+                  </p>
+                ) : null}
                 {item.weekRecords.length === 0 ? (
                   <p className="text-xs text-slate-400">Sin registros</p>
                 ) : null}
@@ -558,7 +745,7 @@ export default function AdminHoursPage() {
           <div>
             <h3 className="text-sm font-semibold text-slate-900">Gestión avanzada</h3>
             <p className="text-xs text-rose-700">
-              Esto elimina horarios, solicitudes y actividades. No se puede deshacer.
+              Elige qué tipo de datos borrar por colaborador. Puedes eliminar solo fichajes, solo solicitudes o todo.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
@@ -582,13 +769,76 @@ export default function AdminHoursPage() {
               type="button"
               className="rounded-xl bg-red-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
               disabled={deleteTargetUserId === "all" || deletingCollaboratorData}
-              onClick={() => void handleDeleteCollaboratorData()}
+              onClick={() => setDeleteModalOpen(true)}
             >
-              {deletingCollaboratorData ? "Eliminando..." : "Borrar datos del colaborador"}
+              {deletingCollaboratorData ? "Eliminando..." : "Elegir qué borrar"}
             </button>
           </div>
         </div>
       </div>
+
+      {deleteModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <h4 className="text-sm font-semibold text-slate-900">Seleccionar datos a eliminar</h4>
+            <p className="mt-1 text-xs text-slate-500">
+              Esta acción es irreversible. Selecciona el alcance para el colaborador elegido.
+            </p>
+
+            <div className="mt-4 space-y-2">
+              <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 p-3 text-sm">
+                <input
+                  checked={deleteMode === "TIME_ONLY"}
+                  className="mt-0.5"
+                  name="deleteMode"
+                  onChange={() => setDeleteMode("TIME_ONLY")}
+                  type="radio"
+                />
+                <span>Solo fichajes de horas (timeEntries + users/(uid)/hours)</span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 p-3 text-sm">
+                <input
+                  checked={deleteMode === "REQUESTS_ONLY"}
+                  className="mt-0.5"
+                  name="deleteMode"
+                  onChange={() => setDeleteMode("REQUESTS_ONLY")}
+                  type="radio"
+                />
+                <span>Solo solicitudes y actividades (hourRequests + extraActivities)</span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-slate-200 p-3 text-sm">
+                <input
+                  checked={deleteMode === "ALL"}
+                  className="mt-0.5"
+                  name="deleteMode"
+                  onChange={() => setDeleteMode("ALL")}
+                  type="radio"
+                />
+                <span>Todo (horas + solicitudes + actividades)</span>
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600"
+                onClick={() => setDeleteModalOpen(false)}
+                type="button"
+              >
+                Cancelar
+              </button>
+              <button
+                className="rounded-xl bg-red-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-70"
+                disabled={deleteTargetUserId === "all" || deletingCollaboratorData}
+                onClick={() => void handleDeleteCollaboratorData(deleteMode)}
+                type="button"
+              >
+                {deletingCollaboratorData ? "Eliminando..." : "Confirmar eliminación"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
 
       {/* ----------------------- DETALLE ----------------------- */}
       {detailUser ? (

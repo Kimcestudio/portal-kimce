@@ -143,6 +143,7 @@ export default function AttendancePageContent() {
   const [schedule, setSchedule] = useState<WorkSchedule>(DEFAULT_WORK_SCHEDULES[0]);
   const [pendingHourRequestsCount, setPendingHourRequestsCount] = useState(0);
   const [pendingExtraActivitiesCount, setPendingExtraActivitiesCount] = useState(0);
+  const [approvedExtraActivities, setApprovedExtraActivities] = useState<{ date: string; minutes: number }[]>([]);
 
   const weekStart = useMemo(() => {
     const base = new Date();
@@ -277,6 +278,37 @@ export default function AttendancePageContent() {
     }
   }, [pendingExtraActivitiesCount, pendingHourRequestsCount]);
 
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const approvedExtrasRef = query(collection(db, "extraActivities"), where("uid", "==", user.uid));
+    const unsubscribe = onSnapshot(
+      approvedExtrasRef,
+      (snapshot) => {
+        const approved = snapshot.docs
+          .map((docSnap) => docSnap.data() as { status?: string; date?: string; minutes?: number; hours?: number })
+          .filter((item) => (item.status ?? "").toLowerCase() === "approved")
+          .map((item) => ({
+            date: typeof item.date === "string" ? item.date : "",
+            minutes:
+              typeof item.minutes === "number"
+                ? item.minutes
+                : typeof item.hours === "number"
+                  ? Math.round(item.hours * 60)
+                  : 0,
+          }))
+          .filter((item) => item.date);
+
+        setApprovedExtraActivities(approved);
+      },
+      (error) => {
+        console.error("[attendance] Error loading approved extra activities", error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [user?.uid]);
+
   const reloadToday = () => {
     if (!user) return;
     const todayISO = formatISODate(new Date());
@@ -324,13 +356,19 @@ export default function AttendancePageContent() {
     (total, date) => total + expectedMinutesForDate(date, schedule),
     0
   );
-  const workedMinutesWeek = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
+  const weekDateSet = new Set(weekDates.map((date) => formatISODate(date)));
+  const workedMinutesWeekBase = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
+  const approvedExtraMinutesWeek = approvedExtraActivities.reduce((total, item) => {
+    if (!item.date || !weekDateSet.has(item.date)) return total;
+    return total + item.minutes;
+  }, 0);
+  const workedMinutesWeek = workedMinutesWeekBase + approvedExtraMinutesWeek;
   const diffMinutes = workedMinutesWeek - expectedMinutesWeek;
   const totalBalanceMinutes = user
     ? listAllRecords(user.uid).reduce((sum, record) => {
         const recordDate = new Date(`${record.date}T00:00:00`);
         return sum + (record.totalMinutes - expectedMinutesForDate(recordDate, schedule));
-      }, 0)
+      }, 0) + approvedExtraActivities.reduce((sum, item) => sum + item.minutes, 0)
     : 0;
   const completedDays = weekRecords.filter(
     (record) => record.status === "CLOSED" && new Date(`${record.date}T00:00:00`).getDay() !== 0
@@ -540,9 +578,13 @@ export default function AttendancePageContent() {
       const dateISO = formatISODate(date);
       const record = weekRecords.find((item) => item.date === dateISO);
       const targetHours = expectedMinutesForDate(date, schedule) / 60;
+      const approvedExtraMinutes = approvedExtraActivities
+        .filter((item) => item.date === dateISO)
+        .reduce((sum, item) => sum + item.minutes, 0);
+      const totalMinutesDay = (record?.totalMinutes ?? 0) + approvedExtraMinutes;
       return {
         label: date.toLocaleDateString("es-ES", { weekday: "short" }),
-        hours: record ? Math.round((record.totalMinutes / 60) * 10) / 10 : 0,
+        hours: Math.round((totalMinutesDay / 60) * 10) / 10,
         target: targetHours,
       };
     });
@@ -682,6 +724,9 @@ export default function AttendancePageContent() {
               }
             />
           </label>
+          <p className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+            Nota: las actividades extra aprobadas sí se suman a tus horas trabajadas y al balance general.
+          </p>
           <label className="block text-xs font-semibold text-muted">
             Tipo
             <select
@@ -732,6 +777,9 @@ export default function AttendancePageContent() {
 
       <Modal title="Pedir libre / permiso" open={requestOpen} onClose={() => setRequestOpen(false)}>
         <div className="space-y-4">
+          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            Nota: pedir libre/permiso no suma horas trabajadas. Solo documenta la ausencia y el saldo de horas se mantiene según los registros de entrada/salida.
+          </p>
           <label className="block text-xs font-semibold text-muted">
             Tipo
             <select

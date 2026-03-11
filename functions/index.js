@@ -198,7 +198,8 @@ async function deleteUserSubcollection({ targetUid, subcollection, deletedPaths 
 exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 540, memory: "1GiB" }, async (request) => {
   const requesterUid = request.auth?.uid ?? null;
   const targetUid = typeof request.data?.targetUid === "string" ? request.data.targetUid.trim() : "";
-  const mode = request.data?.mode === "TIME_ONLY" ? "TIME_ONLY" : "ALL";
+  const requestedMode = typeof request.data?.mode === "string" ? request.data.mode : "ALL";
+  const mode = ["ALL", "TIME_ONLY", "REQUESTS_ONLY"].includes(requestedMode) ? requestedMode : "ALL";
 
   logInfo("request received", {
     requesterUid,
@@ -243,21 +244,33 @@ exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 54
       usersExtraActivities: 0,
     };
 
-    const timeByUid = await deleteRootCollectionByField({
-      collectionId: "timeEntries",
-      field: "uid",
-      targetUid,
-      deletedPaths,
-    });
-    const timeByUserId = await deleteRootCollectionByField({
-      collectionId: "timeEntries",
-      field: "userId",
-      targetUid,
-      deletedPaths,
-    });
-    deleted.timeEntries = timeByUid.deleted + timeByUserId.deleted;
+    const deleteTimeData = mode === "ALL" || mode === "TIME_ONLY";
+    const deleteRequestData = mode === "ALL" || mode === "REQUESTS_ONLY";
 
-    if (mode === "ALL") {
+    if (deleteTimeData) {
+      const timeByUid = await deleteRootCollectionByField({
+        collectionId: "timeEntries",
+        field: "uid",
+        targetUid,
+        deletedPaths,
+      });
+      const timeByUserId = await deleteRootCollectionByField({
+        collectionId: "timeEntries",
+        field: "userId",
+        targetUid,
+        deletedPaths,
+      });
+      deleted.timeEntries = timeByUid.deleted + timeByUserId.deleted;
+
+      const userHours = await deleteUserSubcollection({
+        targetUid,
+        subcollection: "hours",
+        deletedPaths,
+      });
+      relatedDeleted.usersHours = userHours.deleted;
+    }
+
+    if (deleteRequestData) {
       const hourByUid = await deleteRootCollectionByField({
         collectionId: "hourRequests",
         field: "uid",
@@ -285,16 +298,7 @@ exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 54
         deletedPaths,
       });
       deleted.extraActivities = extraByUid.deleted + extraByUserId.deleted;
-    }
 
-    const userHours = await deleteUserSubcollection({
-      targetUid,
-      subcollection: "hours",
-      deletedPaths,
-    });
-    relatedDeleted.usersHours = userHours.deleted;
-
-    if (mode === "ALL") {
       const userHourRequests = await deleteUserSubcollection({
         targetUid,
         subcollection: "hourRequests",
