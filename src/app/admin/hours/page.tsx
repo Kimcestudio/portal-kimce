@@ -424,44 +424,6 @@ export default function AdminHoursPage() {
     [summaries],
   );
 
-  const globalKpis = useMemo(() => {
-    const totalCollaborators = summaries.length;
-    const pendingCount = summaries.filter((item) => item.diffMinutes < 0).length;
-    const onTrackCount = totalCollaborators - pendingCount;
-    const totalWorkedMinutes = summaries.reduce((sum, item) => sum + item.totalMinutes, 0);
-    const totalExpectedMinutes = summaries.reduce((sum, item) => sum + item.expectedMinutes, 0);
-    const totalDiffMinutes = totalWorkedMinutes - totalExpectedMinutes;
-    const completionRate = totalExpectedMinutes > 0
-      ? Math.round((totalWorkedMinutes / totalExpectedMinutes) * 100)
-      : 0;
-
-    return {
-      totalCollaborators,
-      pendingCount,
-      onTrackCount,
-      totalWorkedMinutes,
-      totalExpectedMinutes,
-      totalDiffMinutes,
-      completionRate,
-    };
-  }, [summaries]);
-
-  const globalChartData = useMemo(
-    () =>
-      summaries
-        .map((item) => ({
-          uid: item.user.uid,
-          name: getUserDisplayName(item.user),
-          workedHours: Math.round((item.totalMinutes / 60) * 10) / 10,
-          expectedHours: Math.round((item.expectedMinutes / 60) * 10) / 10,
-          workedLabel: minutesToHHMM(item.totalMinutes),
-          expectedLabel: minutesToHHMM(item.expectedMinutes),
-        }))
-        .sort((a, b) => b.workedHours - a.workedHours)
-        .slice(0, 10),
-    [summaries],
-  );
-
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return;
 
