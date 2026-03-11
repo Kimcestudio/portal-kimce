@@ -7,6 +7,15 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import PageHeader from "@/components/PageHeader";
 import UserAvatar from "@/components/common/UserAvatar";
 import CollaboratorDashboard from "@/components/dashboard/CollaboratorDashboard";
@@ -48,6 +57,20 @@ type TimeEntryEvent = {
   type: string;
   ts: string;
   totalMinutes?: number;
+};
+
+const GlobalHoursTooltip = ({ active, payload }: any) => {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
+  if (!row) return null;
+
+  return (
+    <div className="rounded-xl bg-slate-900 px-3 py-2 text-xs text-white shadow-xl">
+      <p className="font-semibold">{row.name}</p>
+      <p className="text-white/80">Trabajadas: {row.workedLabel}</p>
+      <p className="text-white/80">Objetivo: {row.expectedLabel}</p>
+    </div>
+  );
 };
 
 
@@ -314,6 +337,44 @@ export default function AdminHoursPage() {
     });
   }, [collaboratorUsers, filteredRecords, scheduleById, scheduleOptions, selectedUserId, weekDates]);
 
+  const globalKpis = useMemo(() => {
+    const totalCollaborators = summaries.length;
+    const pendingCount = summaries.filter((item) => item.diffMinutes < 0).length;
+    const onTrackCount = totalCollaborators - pendingCount;
+    const totalWorkedMinutes = summaries.reduce((sum, item) => sum + item.totalMinutes, 0);
+    const totalExpectedMinutes = summaries.reduce((sum, item) => sum + item.expectedMinutes, 0);
+    const totalDiffMinutes = totalWorkedMinutes - totalExpectedMinutes;
+    const completionRate = totalExpectedMinutes > 0
+      ? Math.round((totalWorkedMinutes / totalExpectedMinutes) * 100)
+      : 0;
+
+    return {
+      totalCollaborators,
+      pendingCount,
+      onTrackCount,
+      totalWorkedMinutes,
+      totalExpectedMinutes,
+      totalDiffMinutes,
+      completionRate,
+    };
+  }, [summaries]);
+
+  const globalChartData = useMemo(
+    () =>
+      summaries
+        .map((item) => ({
+          uid: item.user.uid,
+          name: getUserDisplayName(item.user),
+          workedHours: Math.round((item.totalMinutes / 60) * 10) / 10,
+          expectedHours: Math.round((item.expectedMinutes / 60) * 10) / 10,
+          workedLabel: minutesToHHMM(item.totalMinutes),
+          expectedLabel: minutesToHHMM(item.expectedMinutes),
+        }))
+        .sort((a, b) => b.workedHours - a.workedHours)
+        .slice(0, 10),
+    [summaries],
+  );
+
   useEffect(() => {
     if (process.env.NODE_ENV !== "development") return;
 
@@ -501,6 +562,57 @@ export default function AdminHoursPage() {
               </select>
             </label>
 
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
+            <p className="text-xs text-slate-500">Colaboradores evaluados</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{globalKpis.totalCollaborators}</p>
+            <p className="text-xs text-slate-500">Semana {formatISODate(weekStart)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
+            <p className="text-xs text-slate-500">Cumpliendo meta semanal</p>
+            <p className="mt-1 text-2xl font-semibold text-emerald-700">{globalKpis.onTrackCount}</p>
+            <p className="text-xs text-slate-500">{globalKpis.pendingCount} con horas pendientes</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
+            <p className="text-xs text-slate-500">Horas registradas globales</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{minutesToHHMM(globalKpis.totalWorkedMinutes)}</p>
+            <p className="text-xs text-slate-500">Objetivo {minutesToHHMM(globalKpis.totalExpectedMinutes)}</p>
+          </div>
+          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
+            <p className="text-xs text-slate-500">Balance global</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">
+              {globalKpis.totalDiffMinutes < 0 ? "Deben" : "A favor"} {minutesToHHMM(Math.abs(globalKpis.totalDiffMinutes))}
+            </p>
+            <p className="text-xs text-slate-500">Avance total {globalKpis.completionRate}%</p>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-slate-200/60 bg-white p-4">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <h3 className="text-sm font-semibold text-slate-900">Top colaboradores por horas registradas</h3>
+            <span className="text-xs text-slate-500">Click en una tarjeta para abrir su dashboard</span>
+          </div>
+
+          <div className="h-64">
+            {globalChartData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={globalChartData} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-18} textAnchor="end" height={46} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip content={<GlobalHoursTooltip />} />
+                  <Bar dataKey="expectedHours" fill="#cbd5e1" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="workedHours" fill="#4f46e5" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 text-sm text-slate-500">
+                No hay datos suficientes para el gráfico esta semana.
+              </div>
+            )}
           </div>
         </div>
 
