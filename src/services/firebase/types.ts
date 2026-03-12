@@ -12,6 +12,14 @@ export interface UserProfile {
   approved?: boolean;
   isActive?: boolean;
   createdAt?: string;
+  birthDate?: string;
+  phone?: string;
+  maritalStatus?: string;
+  gender?: string;
+  bankName?: string;
+  accountType?: string;
+  accountNumber?: string;
+  cci?: string;
 }
 
 export type WorkScheduleDays = {

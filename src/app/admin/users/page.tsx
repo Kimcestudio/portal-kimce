@@ -10,7 +10,28 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
+import {
+  Building2,
+  CalendarDays,
+  Clock3,
+  FileText,
+  List,
+  Mail,
+  MessageCircle,
+  Network,
+  Pencil,
+  Search,
+  Settings,
+  Sparkles,
+  Table2,
+  Trash2,
+  UserPlus,
+  UserX,
+  Users,
+  X,
+} from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import UserAvatar from "@/components/common/UserAvatar";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { db } from "@/services/firebase/client";
 import type { UserProfile, WorkSchedule } from "@/services/firebase/types";
@@ -32,26 +53,21 @@ type FirestoreTimestamp = {
   toMillis?: () => number;
 };
 
-const formatStatusLabel = (isActive?: boolean) => (isActive === false ? "Inactivo" : "Activo");
+type DetailTab = "personal" | "laboral" | "activos" | "personalizados";
 
-const formatDateLabel = (value?: string) => {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "—";
-  return new Intl.DateTimeFormat("es-CL", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(parsed);
-};
+const formatStatusLabel = (isActive?: boolean) => (isActive === false ? "Inactivo" : "Activo");
 
 const badgeStyles = {
   active: "bg-emerald-50 text-emerald-700 border border-emerald-200",
   inactive: "bg-rose-50 text-rose-700 border border-rose-200",
 };
+
+const detailTabs: Array<{ id: DetailTab; label: string }> = [
+  { id: "personal", label: "Personal" },
+  { id: "laboral", label: "Laboral" },
+  { id: "activos", label: "Activos" },
+  { id: "personalizados", label: "Personalizados" },
+];
 
 export default function AdminUsersPage() {
   const { user } = useAuth();
@@ -62,6 +78,32 @@ export default function AdminUsersPage() {
   const [workSchedulesLoading, setWorkSchedulesLoading] = useState(true);
   const [positionEdits, setPositionEdits] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<{ message: string; tone: "success" | "error" } | null>(null);
+
+  const [topTab, setTopTab] = useState<"empleados" | "ia" | "config">("empleados");
+  const [viewMode, setViewMode] = useState<"lista" | "cuadricula" | "organigrama">("cuadricula");
+  const [search, setSearch] = useState("");
+  const [areaFilter, setAreaFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "pending">("all");
+  const [perPage, setPerPage] = useState<number>(8);
+
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<DetailTab>("personal");
+  const [detailForm, setDetailForm] = useState({
+    displayName: "",
+    email: "",
+    position: "",
+    firstName: "",
+    lastName: "",
+    middleName: "",
+    birthDate: "",
+    phone: "",
+    maritalStatus: "Soltero",
+    gender: "No especificado",
+    bankName: "Banco de Crédito del Perú",
+    accountType: "Cuenta sueldo",
+    accountNumber: "**** **** 2456",
+    cci: "002-2456-7890-1234",
+  });
 
   useEffect(() => {
     if (!toast) return;
@@ -93,6 +135,14 @@ export default function AdminUsersPage() {
             isActive: data.isActive,
             createdAt,
             updatedAt,
+            birthDate: data.birthDate ?? "",
+            phone: data.phone ?? "",
+            maritalStatus: data.maritalStatus ?? "",
+            gender: data.gender ?? "",
+            bankName: data.bankName ?? "",
+            accountType: data.accountType ?? "",
+            accountNumber: data.accountNumber ?? "",
+            cci: data.cci ?? "",
           };
         });
         setUsers(nextUsers);
@@ -170,23 +220,13 @@ export default function AdminUsersPage() {
         const createdAtMs = Date.parse(item.createdAt);
         if (!Number.isNaN(createdAtMs)) return createdAtMs;
       }
-      if (item.updatedAt) {
-        const updatedAtMs = Date.parse(item.updatedAt);
-        if (!Number.isNaN(updatedAtMs)) return updatedAtMs;
-      }
       return item.email.toLowerCase();
     };
     return [...users].sort((a, b) => {
       const aValue = getSortableValue(a);
       const bValue = getSortableValue(b);
-      if (typeof aValue === "number" && typeof bValue === "number") {
-        return bValue - aValue;
-      }
-      if (typeof aValue === "string" && typeof bValue === "string") {
-        return aValue.localeCompare(bValue);
-      }
-      if (typeof aValue === "number") return -1;
-      if (typeof bValue === "number") return 1;
+      if (typeof aValue === "number" && typeof bValue === "number") return bValue - aValue;
+      if (typeof aValue === "string" && typeof bValue === "string") return aValue.localeCompare(bValue);
       return 0;
     });
   }, [users]);
@@ -196,19 +236,84 @@ export default function AdminUsersPage() {
     [workSchedules]
   );
 
-  const pendingUsers = useMemo(
-    () => sortedUsers.filter((item) => item.approved !== true),
-    [sortedUsers]
+  const areaOptions = useMemo(() => {
+    const areas = sortedUsers.map((item) => (item.position ?? "").trim()).filter(Boolean);
+    return [...new Set(areas)];
+  }, [sortedUsers]);
+
+  const filteredUsers = useMemo(() => {
+    return sortedUsers
+      .filter((item) => {
+        const matchesSearch =
+          item.displayName.toLowerCase().includes(search.toLowerCase()) ||
+          item.email.toLowerCase().includes(search.toLowerCase());
+        const matchesArea = areaFilter === "all" || (item.position ?? "") === areaFilter;
+        const matchesStatus =
+          statusFilter === "all"
+            ? true
+            : statusFilter === "pending"
+              ? item.approved !== true
+              : statusFilter === "active"
+                ? item.isActive !== false
+                : item.isActive === false;
+        return matchesSearch && matchesArea && matchesStatus;
+      })
+      .slice(0, perPage);
+  }, [sortedUsers, search, areaFilter, statusFilter, perPage]);
+
+  const orgChart = useMemo(() => {
+    const byRole = new Map<string, FirestoreUser[]>();
+    filteredUsers.forEach((member) => {
+      const key = member.role === "admin" ? "Administración" : "Colaboradores";
+      const list = byRole.get(key) ?? [];
+      list.push(member);
+      byRole.set(key, list);
+    });
+    return [...byRole.entries()];
+  }, [filteredUsers]);
+
+  const selectedUser = useMemo(
+    () => (selectedUserId ? sortedUsers.find((item) => item.uid === selectedUserId) ?? null : null),
+    [selectedUserId, sortedUsers],
   );
-  const activeUsers = useMemo(
-    () =>
-      sortedUsers.filter((item) => item.approved === true && item.isActive === true),
-    [sortedUsers]
-  );
-  const otherUsers = useMemo(
-    () => sortedUsers.filter((item) => !pendingUsers.includes(item) && !activeUsers.includes(item)),
-    [sortedUsers, pendingUsers, activeUsers]
-  );
+
+  useEffect(() => {
+    if (!selectedUser) return;
+    const parts = (selectedUser.displayName ?? "").trim().split(/\s+/);
+    setDetailForm({
+      displayName: selectedUser.displayName ?? "",
+      email: selectedUser.email ?? "",
+      position: selectedUser.position ?? "",
+      firstName: parts[0] ?? "",
+      lastName: parts[1] ?? "",
+      middleName: parts.slice(2).join(" "),
+      birthDate: selectedUser.birthDate ?? "",
+      phone: selectedUser.phone ?? "",
+      maritalStatus: selectedUser.maritalStatus ?? "Soltero",
+      gender: selectedUser.gender ?? "No especificado",
+      bankName: selectedUser.bankName ?? "Banco de Crédito del Perú",
+      accountType: selectedUser.accountType ?? "Cuenta sueldo",
+      accountNumber: selectedUser.accountNumber ?? "**** **** 2456",
+      cci: selectedUser.cci ?? "002-2456-7890-1234",
+    });
+  }, [selectedUser]);
+
+  const saveDetailProfile = async () => {
+    if (!selectedUser) return;
+    await updateUserDoc(selectedUser.uid, {
+      displayName: detailForm.displayName.trim() || selectedUser.displayName,
+      email: detailForm.email.trim() || selectedUser.email,
+      position: detailForm.position.trim(),
+      birthDate: detailForm.birthDate,
+      phone: detailForm.phone,
+      maritalStatus: detailForm.maritalStatus,
+      gender: detailForm.gender,
+      bankName: detailForm.bankName,
+      accountType: detailForm.accountType,
+      accountNumber: detailForm.accountNumber,
+      cci: detailForm.cci,
+    });
+  };
 
   const updateUserDoc = async (uid: string, payload: Record<string, unknown>) => {
     try {
@@ -227,21 +332,11 @@ export default function AdminUsersPage() {
     }
   };
 
-  const toggleActive = (uid: string, nextValue: boolean) =>
-    updateUserDoc(uid, {
-      isActive: nextValue,
-    });
-
+  const toggleActive = (uid: string, nextValue: boolean) => updateUserDoc(uid, { isActive: nextValue });
   const updateRole = (uid: string, role: UserProfile["role"]) => updateUserDoc(uid, { role });
-
-  const updatePosition = (uid: string, position: string) =>
-    updateUserDoc(uid, { position });
-
-  const updateWorkSchedule = (uid: string, workScheduleId: string) =>
-    updateUserDoc(uid, { workScheduleId });
-
-  const approveUser = (uid: string) =>
-    updateUserDoc(uid, { approved: true, isActive: true });
+  const updatePosition = (uid: string, position: string) => updateUserDoc(uid, { position });
+  const updateWorkSchedule = (uid: string, workScheduleId: string) => updateUserDoc(uid, { workScheduleId });
+  const approveUser = (uid: string) => updateUserDoc(uid, { approved: true, isActive: true });
 
   if (user?.role !== "admin") {
     return (
@@ -254,264 +349,341 @@ export default function AdminUsersPage() {
     );
   }
 
-  const userSections = [
-    { title: "Pendientes", items: pendingUsers },
-    { title: "Activos", items: activeUsers },
-    { title: "Otros", items: otherUsers },
-  ];
-
   return (
     <div className="flex flex-col gap-4">
       <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
-      <div className="mx-auto w-full max-w-5xl rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">Usuarios y Roles</h2>
-            <p className="text-xs text-slate-500">Gestiona accesos, roles y estados de usuario.</p>
-          </div>
+
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-[0_12px_32px_rgba(17,24,39,0.08)]">
+        <div className="flex flex-wrap gap-6 border-b border-slate-200 pb-3">
+          {[
+            { key: "empleados", label: "Empleados", icon: Users },
+            { key: "ia", label: "Asistente de IA", icon: Sparkles },
+            { key: "config", label: "Configuración", icon: Settings },
+          ].map((tab) => {
+            const Icon = tab.icon;
+            const active = topTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setTopTab(tab.key as "empleados" | "ia" | "config")}
+                className={`inline-flex items-center gap-2 border-b-2 pb-2 text-sm font-semibold transition ${
+                  active ? "border-indigo-500 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
-        {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
-        {toast ? (
-          <div
-            className={`mt-3 rounded-xl border px-4 py-2 text-xs font-semibold ${
-              toast.tone === "error"
-                ? "border-rose-200 bg-rose-50 text-rose-700"
-                : "border-emerald-200 bg-emerald-50 text-emerald-700"
-            }`}
-          >
-            {toast.message}
+
+        {topTab !== "empleados" ? (
+          <div className="mt-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-sm text-slate-500">
+            {topTab === "ia" ? "Próximamente: panel de asistente IA para RRHH." : "Próximamente: configuración avanzada de usuarios y roles."}
           </div>
-        ) : null}
-        {loading ? (
-          <p className="mt-4 text-sm text-slate-500">Cargando usuarios...</p>
         ) : (
-          <div className="mt-4 space-y-8">
-            {userSections.map(({ title, items }) => (
-              <div key={title} className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    {title} ({items.length})
-                  </p>
-                </div>
-                <div className="hidden overflow-x-auto rounded-xl border border-slate-200/60 md:block">
-                  <table className="min-w-full text-left text-xs">
-                    <thead className="sticky top-0 bg-slate-50 text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 font-semibold">Correo</th>
-                        <th className="px-4 py-3 font-semibold">Nombre</th>
-                        <th className="px-4 py-3 font-semibold">Puesto</th>
-                        <th className="px-4 py-3 text-center font-semibold">Jornada</th>
-                        <th className="px-4 py-3 text-center font-semibold">Rol</th>
-                        <th className="px-4 py-3 text-center font-semibold">Estado</th>
-                        <th className="px-4 py-3 text-center font-semibold">Activo</th>
-                        <th className="px-4 py-3 font-semibold">Creado</th>
-                        <th className="px-4 py-3 text-right font-semibold">Acciones</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200/60 text-slate-700">
-                      {items.map((item) => {
-                        const positionValue =
-                          positionEdits[item.uid] ?? item.position ?? "";
-                        return (
-                          <tr key={item.uid} className="align-middle">
-                            <td className="px-4 py-3">{item.email}</td>
-                            <td className="px-4 py-3 font-semibold text-slate-900">
-                              {item.displayName}
-                            </td>
-                            <td className="px-4 py-3">
-                              <input
-                                className="w-40 rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
-                                value={positionValue}
-                                onChange={(event) =>
-                                  setPositionEdits((prev) => ({
-                                    ...prev,
-                                    [item.uid]: event.target.value,
-                                  }))
-                                }
-                                onBlur={(event) => {
-                                  const nextValue = event.target.value.trim();
-                                  if ((item.position ?? "") === nextValue) return;
-                                  updatePosition(item.uid, nextValue);
-                                }}
-                              />
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <select
-                                className="w-40 rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
-                                value={item.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID}
-                                onChange={(event) => updateWorkSchedule(item.uid, event.target.value)}
-                                disabled={workSchedulesLoading}
-                              >
-                                {scheduleOptions.map((schedule) => (
-                                  <option key={schedule.id} value={schedule.id}>
-                                    {schedule.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <select
-                                className="w-36 rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
-                                value={item.role ?? "collab"}
-                                onChange={(event) =>
-                                  updateRole(item.uid, event.target.value as UserProfile["role"])
-                                }
-                              >
-                                <option value="admin">Administrador</option>
-                                <option value="collab">Colaborador</option>
-                              </select>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <span
-                                className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${
-                                  item.isActive === false ? badgeStyles.inactive : badgeStyles.active
-                                }`}
-                              >
-                                {formatStatusLabel(item.isActive)}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-center">
-                              <label className="inline-flex items-center justify-center">
-                                <input
-                                  className="peer sr-only"
-                                  type="checkbox"
-                                  checked={item.isActive !== false}
-                                  onChange={(event) => toggleActive(item.uid, event.target.checked)}
-                                />
-                                <span className="flex h-5 w-9 items-center rounded-full bg-slate-200 p-0.5 transition peer-checked:bg-emerald-500">
-                                  <span className="h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
-                                </span>
-                              </label>
-                            </td>
-                            <td className="px-4 py-3 text-[11px] text-slate-500">
-                              {formatDateLabel(item.createdAt)}
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex flex-col items-end gap-2">
-                                <div className="flex flex-wrap justify-end gap-2">
-                                  {item.approved !== true ? (
-                                    <button
-                                      className="rounded-full border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-700"
-                                      type="button"
-                                      onClick={() => approveUser(item.uid)}
-                                    >
-                                      Aprobar
-                                    </button>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {items.length === 0 ? (
-                    <p className="px-4 py-4 text-xs text-slate-400">Sin usuarios en esta sección.</p>
-                  ) : null}
-                </div>
-                <div className="space-y-3 md:hidden">
-                  {items.length === 0 ? (
-                    <div className="rounded-xl border border-slate-200/60 p-4 text-xs text-slate-400">
-                      Sin usuarios en esta sección.
-                    </div>
-                  ) : null}
-                  {items.map((item) => (
-                    <div key={item.uid} className="rounded-xl border border-slate-200/60 p-4 text-xs">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">{item.displayName}</p>
-                          <p className="text-xs text-slate-500">{item.email}</p>
-                        </div>
-                        <select
-                          className="rounded-lg border border-slate-200 px-2 py-1 text-[10px]"
-                          value={item.role ?? "collab"}
-                          onChange={(event) =>
-                            updateRole(item.uid, event.target.value as UserProfile["role"])
-                          }
-                        >
-                          <option value="admin">Administrador</option>
-                          <option value="collab">Colaborador</option>
-                        </select>
-                      </div>
-                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                        <label className="text-[11px] font-semibold text-slate-500">
-                          Puesto
-                          <input
-                            className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
-                            value={positionEdits[item.uid] ?? item.position ?? ""}
-                            onChange={(event) =>
-                              setPositionEdits((prev) => ({
-                                ...prev,
-                                [item.uid]: event.target.value,
-                              }))
-                            }
-                            onBlur={(event) => {
-                              const nextValue = event.target.value.trim();
-                              if ((item.position ?? "") === nextValue) return;
-                              updatePosition(item.uid, nextValue);
-                            }}
-                          />
-                        </label>
-                        <label className="text-[11px] font-semibold text-slate-500">
-                          Jornada
-                          <select
-                            className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1 text-[11px]"
-                            value={item.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID}
-                            onChange={(event) => updateWorkSchedule(item.uid, event.target.value)}
-                            disabled={workSchedulesLoading}
-                          >
-                            {scheduleOptions.map((schedule) => (
-                              <option key={schedule.id} value={schedule.id}>
-                                {schedule.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-slate-500">
-                        <span
-                          className={`rounded-full px-2 py-1 font-semibold ${
-                            item.isActive === false ? badgeStyles.inactive : badgeStyles.active
-                          }`}
-                        >
-                          {formatStatusLabel(item.isActive)}
-                        </span>
-                        <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-600">
-                          {formatDateLabel(item.createdAt)}
-                        </span>
-                      </div>
-                      <div className="mt-3 space-y-2">
-                        <div className="flex flex-wrap gap-2">
-                          <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-slate-500">
-                            Activo
-                            <input
-                              className="peer sr-only"
-                              type="checkbox"
-                              checked={item.isActive !== false}
-                              onChange={(event) => toggleActive(item.uid, event.target.checked)}
-                            />
-                            <span className="flex h-5 w-9 items-center rounded-full bg-slate-200 p-0.5 transition peer-checked:bg-emerald-500">
-                              <span className="h-4 w-4 rounded-full bg-white shadow transition peer-checked:translate-x-4" />
-                            </span>
-                          </label>
-                          {item.approved !== true ? (
-                            <button
-                              className="rounded-full border border-emerald-200 px-3 py-1 text-[11px] font-semibold text-emerald-700"
-                              type="button"
-                              onClick={() => approveUser(item.uid)}
-                            >
-                              Aprobar
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+          <>
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-semibold text-slate-900">Empleados</h2>
+                <p className="text-sm text-slate-500">{sortedUsers.length} empleados en total</p>
               </div>
-            ))}
-          </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {[
+                  { key: "lista", label: "Lista", icon: List },
+                  { key: "cuadricula", label: "Cuadrícula", icon: Table2 },
+                  { key: "organigrama", label: "Organigrama", icon: Network },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  const active = viewMode === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => setViewMode(item.key as "lista" | "cuadricula" | "organigrama")}
+                      className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold ${active ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500"}`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                      {item.label}
+                    </button>
+                  );
+                })}
+                <button className="ml-1 inline-flex items-center gap-2 rounded-full bg-emerald-400 px-5 py-2 text-xs font-semibold text-white shadow-[0_8px_20px_rgba(16,185,129,0.3)]">
+                  <UserPlus className="h-4 w-4" /> AGREGAR EMPLEADO
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <label className="text-xs font-semibold text-slate-600">
+                Buscar
+                <span className="mt-1 flex items-center rounded-xl border border-slate-200 px-3 py-2">
+                  <Search className="h-4 w-4 text-slate-400" />
+                  <input
+                    className="ml-2 w-full bg-transparent text-sm font-normal outline-none"
+                    placeholder="Nombre o correo"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </span>
+              </label>
+
+              <label className="text-xs font-semibold text-slate-600">
+                Área
+                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal" value={areaFilter} onChange={(e) => setAreaFilter(e.target.value)}>
+                  <option value="all">Todas</option>
+                  {areaOptions.map((area) => (
+                    <option key={area} value={area}>{area}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="text-xs font-semibold text-slate-600">
+                Estado
+                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "inactive" | "pending")}>
+                  <option value="all">Todos</option>
+                  <option value="active">Activo</option>
+                  <option value="inactive">Inactivo</option>
+                  <option value="pending">Pendiente</option>
+                </select>
+              </label>
+
+              <label className="text-xs font-semibold text-slate-600">
+                Por página
+                <select className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal" value={perPage} onChange={(e) => setPerPage(Number(e.target.value))}>
+                  {[8, 12, 24, 50].map((count) => (
+                    <option key={count} value={count}>{count}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            {error ? <p className="mt-3 text-sm text-rose-600">{error}</p> : null}
+            {toast ? (
+              <div className={`mt-3 rounded-xl border px-4 py-2 text-xs font-semibold ${toast.tone === "error" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                {toast.message}
+              </div>
+            ) : null}
+
+            {loading ? <p className="mt-4 text-sm text-slate-500">Cargando usuarios...</p> : null}
+
+            {!loading && viewMode === "organigrama" ? (
+              <div className="mt-5 space-y-4">
+                {orgChart.length === 0 ? <p className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">Sin usuarios para este filtro.</p> : null}
+                {orgChart.map(([group, members]) => (
+                  <div key={group} className="rounded-2xl border border-indigo-100 bg-indigo-50/30 p-4">
+                    <h3 className="text-sm font-semibold text-indigo-800">{group}</h3>
+                    <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {members.map((member) => (
+                        <article key={member.uid} className="rounded-xl border border-white bg-white p-3 shadow-sm">
+                          <div className="flex items-center gap-2">
+                            <UserAvatar name={member.displayName} photoURL={member.photoURL} sizeClassName="h-10 w-10" />
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">{member.displayName}</p>
+                              <p className="text-xs text-slate-500">{member.position || "Sin área"}</p>
+                            </div>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {!loading && viewMode !== "organigrama" ? (
+              <div className={`mt-5 ${viewMode === "cuadricula" ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4" : "space-y-3"}`}>
+                {filteredUsers.map((item) => (
+                  <article key={item.uid} className="rounded-xl border border-slate-300/70 bg-white p-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.06)]">
+                    <div className="flex items-center justify-between">
+                      <span className="rounded-full bg-teal-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
+                        {item.isActive === false ? "INACTIVO" : "ACTIVO"}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-col items-center text-center">
+                      <UserAvatar name={item.displayName} photoURL={item.photoURL} sizeClassName="h-16 w-16" />
+                      <p className="mt-2 line-clamp-2 text-xl leading-tight text-slate-700">{item.displayName}</p>
+                      <p className="mt-1 text-xs font-medium text-slate-500">{item.position || "Sin área asignada"}</p>
+                      <p className="text-xs text-slate-400">{item.email}</p>
+                    </div>
+
+                    <div className="mt-3.5 flex items-center justify-center gap-3 text-slate-500">
+                      <button type="button" title="Mensajes" className="hover:text-indigo-600" onClick={() => setToast({ message: "Mensajería próximamente.", tone: "success" })}>
+                        <MessageCircle className="h-4.5 w-4.5" />
+                      </button>
+                      <button type="button" title="Documentos" className="hover:text-indigo-600" onClick={() => setToast({ message: "Documentos próximamente.", tone: "success" })}>
+                        <FileText className="h-4.5 w-4.5" />
+                      </button>
+                      <button type="button" title="Historial" className="hover:text-indigo-600" onClick={() => { setSelectedUserId(item.uid); setDetailTab("activos"); }}>
+                        <Clock3 className="h-4.5 w-4.5" />
+                      </button>
+                      <button
+                        type="button"
+                        className="hover:text-indigo-600"
+                        onClick={() => {
+                          setSelectedUserId(item.uid);
+                          setDetailTab("personal");
+                        }}
+                        aria-label="Editar usuario"
+                        title="Editar usuario"
+                      >
+                        <Pencil className="h-4.5 w-4.5" />
+                      </button>
+                      <button type="button" title="Desactivar" className="hover:text-amber-600" onClick={() => toggleActive(item.uid, item.isActive === false)}>
+                        <UserX className="h-4.5 w-4.5" />
+                      </button>
+                      <button type="button" title="Eliminar" className="text-rose-400 hover:text-rose-500" onClick={() => setToast({ message: "Eliminación disponible en próxima iteración.", tone: "error" })}>
+                        <Trash2 className="h-4.5 w-4.5" />
+                      </button>
+                    </div>
+                  </article>
+                ))}
+
+                {filteredUsers.length === 0 ? (
+                  <p className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">No hay usuarios para los filtros seleccionados.</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {selectedUser ? (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-3" onClick={() => setSelectedUserId(null)}>
+                <section
+                  className="max-h-[84vh] w-full max-w-4xl overflow-auto rounded-3xl border border-indigo-100 bg-white p-5 shadow-[0_20px_40px_rgba(15,23,42,0.25)]"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div className="flex items-center gap-4">
+                      <UserAvatar name={selectedUser.displayName} photoURL={selectedUser.photoURL} sizeClassName="h-14 w-14" />
+                      <div>
+                        <h3 className="text-3xl leading-tight text-slate-700">{detailForm.displayName || selectedUser.displayName}</h3>
+                        <p className="text-base text-slate-400">Actualiza información del empleado</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button type="button" className="rounded-full border-2 border-teal-300 px-5 py-1 text-sm font-semibold text-teal-500" onClick={() => setSelectedUserId(null)}>
+                        CANCELAR
+                      </button>
+                      <button type="button" className="rounded-full bg-teal-400 px-5 py-1 text-sm font-semibold text-white" onClick={() => void saveDetailProfile()}>
+                        ACTUALIZAR EMPLEADO
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex flex-wrap gap-4 border-b border-slate-200 pb-2">
+                    {detailTabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => setDetailTab(tab.id)}
+                        className={`border-b-4 pb-2 text-base font-semibold ${detailTab === tab.id ? "border-indigo-500 text-indigo-500" : "border-transparent text-slate-600"}`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-5 rounded-2xl border border-slate-200 p-5">
+                    {detailTab === "personal" ? (
+                      <div>
+                        <h4 className="mb-2 text-2xl font-semibold text-slate-700">Información personal</h4>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="text-base font-semibold text-slate-600">Nombre
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.firstName} onChange={(e) => setDetailForm((prev) => ({ ...prev, firstName: e.target.value, displayName: `${e.target.value} ${prev.lastName} ${prev.middleName}`.trim() }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Apellido paterno
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.lastName} onChange={(e) => setDetailForm((prev) => ({ ...prev, lastName: e.target.value, displayName: `${prev.firstName} ${e.target.value} ${prev.middleName}`.trim() }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Apellido materno
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.middleName} onChange={(e) => setDetailForm((prev) => ({ ...prev, middleName: e.target.value, displayName: `${prev.firstName} ${prev.lastName} ${e.target.value}`.trim() }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Fecha de nacimiento
+                            <input type="date" className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.birthDate} onChange={(e) => setDetailForm((prev) => ({ ...prev, birthDate: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Correo
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.email} onChange={(e) => setDetailForm((prev) => ({ ...prev, email: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Teléfono
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.phone} onChange={(e) => setDetailForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Estado civil
+                            <select className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.maritalStatus} onChange={(e) => setDetailForm((prev) => ({ ...prev, maritalStatus: e.target.value }))}>
+                              <option>Soltero</option><option>Casado</option><option>Divorciado</option><option>Viudo</option>
+                            </select>
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Género
+                            <select className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.gender} onChange={(e) => setDetailForm((prev) => ({ ...prev, gender: e.target.value }))}>
+                              <option>Masculino</option><option>Femenino</option><option>No especificado</option>
+                            </select>
+                          </label>
+                        </div>
+                      </div>
+                    ) : detailTab === "laboral" ? (
+                      <div className="space-y-4">
+                        <h4 className="mb-1 text-3xl font-semibold text-slate-700">Información laboral</h4>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="text-base font-semibold text-slate-600">Área / puesto
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.position} onChange={(e) => setDetailForm((prev) => ({ ...prev, position: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Rol en sistema
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={selectedUser.role === "admin" ? "Administrador" : "Colaborador"} readOnly />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Jornada
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={scheduleOptions.find((s) => s.id === selectedUser.workScheduleId)?.name ?? "Sin jornada"} readOnly />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Estado
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={formatStatusLabel(selectedUser.isActive)} readOnly />
+                          </label>
+                        </div>
+
+                        <h5 className="pt-2 text-xl font-semibold text-slate-700">Datos salariales (referencial)</h5>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="text-base font-semibold text-slate-600">Tipo de pago
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value="Mensual" readOnly />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Moneda
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value="PEN" readOnly />
+                          </label>
+                        </div>
+
+                        <h5 className="pt-2 text-xl font-semibold text-slate-700">Contactos laborales</h5>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="text-base font-semibold text-slate-600">Correo corporativo
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.email} onChange={(e) => setDetailForm((prev) => ({ ...prev, email: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Teléfono laboral
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.phone} onChange={(e) => setDetailForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                          </label>
+                        </div>
+
+                        <h5 className="pt-2 text-xl font-semibold text-slate-700">Datos bancarios</h5>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="text-base font-semibold text-slate-600">Banco
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.bankName} onChange={(e) => setDetailForm((prev) => ({ ...prev, bankName: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Tipo de cuenta
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.accountType} onChange={(e) => setDetailForm((prev) => ({ ...prev, accountType: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Número de cuenta
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.accountNumber} onChange={(e) => setDetailForm((prev) => ({ ...prev, accountNumber: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">CCI
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.cci} onChange={(e) => setDetailForm((prev) => ({ ...prev, cci: e.target.value }))} />
+                          </label>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-slate-200 p-6 text-sm text-slate-500">
+                        Contenido de la pestaña <strong>{detailTabs.find((t) => t.id === detailTab)?.label}</strong> preparado para integrar datos reales.
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </div>
+            ) : null}
+          </>
         )}
       </div>
     </div>
