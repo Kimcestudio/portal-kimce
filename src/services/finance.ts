@@ -499,6 +499,10 @@ export async function updateCollaboratorActive(id: string, isActive: boolean) {
   });
 }
 
+export async function deleteCollaborator(id: string) {
+  await deleteDoc(doc(financeRefs.collaboratorsRef, id));
+}
+
 export async function createCollaboratorPayment(
   input: Omit<CollaboratorPayment, "id" | "createdAt" | "updatedAt">,
 ) {
