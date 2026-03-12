@@ -96,6 +96,7 @@ export default function AdminUsersPage() {
     lastName: "",
     middleName: "",
     birthDate: "",
+    employmentStartDate: "",
     phone: "",
     maritalStatus: "Soltero",
     gender: "No especificado",
@@ -136,6 +137,7 @@ export default function AdminUsersPage() {
             createdAt,
             updatedAt,
             birthDate: data.birthDate ?? "",
+            employmentStartDate: data.employmentStartDate ?? "",
             phone: data.phone ?? "",
             maritalStatus: data.maritalStatus ?? "",
             gender: data.gender ?? "",
@@ -288,6 +290,7 @@ export default function AdminUsersPage() {
       lastName: parts[1] ?? "",
       middleName: parts.slice(2).join(" "),
       birthDate: selectedUser.birthDate ?? "",
+      employmentStartDate: selectedUser.employmentStartDate ?? "",
       phone: selectedUser.phone ?? "",
       maritalStatus: selectedUser.maritalStatus ?? "Soltero",
       gender: selectedUser.gender ?? "No especificado",
@@ -305,6 +308,7 @@ export default function AdminUsersPage() {
       email: detailForm.email.trim() || selectedUser.email,
       position: detailForm.position.trim(),
       birthDate: detailForm.birthDate,
+      employmentStartDate: detailForm.employmentStartDate,
       phone: detailForm.phone,
       maritalStatus: detailForm.maritalStatus,
       gender: detailForm.gender,
@@ -626,6 +630,9 @@ export default function AdminUsersPage() {
                         <div className="grid gap-4 md:grid-cols-2">
                           <label className="text-base font-semibold text-slate-600">Área / puesto
                             <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.position} onChange={(e) => setDetailForm((prev) => ({ ...prev, position: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Inicio de funciones
+                            <input type="date" className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.employmentStartDate} onChange={(e) => setDetailForm((prev) => ({ ...prev, employmentStartDate: e.target.value }))} />
                           </label>
                           <label className="text-base font-semibold text-slate-600">Rol en sistema
                             <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={selectedUser.role === "admin" ? "Administrador" : "Colaborador"} readOnly />

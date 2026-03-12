@@ -15,6 +15,7 @@ type NameForm = Partial<UserProfile> & {
 interface ProfileEditorProps {
   user: UserProfile;
   onSave: (payload: Partial<UserProfile>) => void;
+  canEditEmploymentStartDate?: boolean;
 }
 
 interface FieldProps {
@@ -39,7 +40,7 @@ function Field({ label, icon, className, children }: FieldProps) {
 const inputClassName =
   "w-full rounded-xl border border-sky-100 bg-white/90 px-3 py-2.5 text-sm text-slate-700 shadow-sm outline-none transition placeholder:text-slate-300 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100";
 
-export default function ProfileEditor({ user, onSave }: ProfileEditorProps) {
+export default function ProfileEditor({ user, onSave, canEditEmploymentStartDate = false }: ProfileEditorProps) {
   const [tab, setTab] = useState<ProfileTab>("personal");
   const [form, setForm] = useState<NameForm>({});
 
@@ -50,6 +51,7 @@ export default function ProfileEditor({ user, onSave }: ProfileEditorProps) {
       email: user.email,
       position: user.position,
       birthDate: user.birthDate ?? "",
+      employmentStartDate: user.employmentStartDate ?? "",
       phone: user.phone ?? "",
       maritalStatus: user.maritalStatus ?? "Soltero",
       gender: user.gender ?? "No especificado",
@@ -83,6 +85,7 @@ export default function ProfileEditor({ user, onSave }: ProfileEditorProps) {
       email: form.email?.trim() ?? user.email,
       position: form.position?.trim() ?? user.position,
       birthDate: form.birthDate ?? "",
+      employmentStartDate: form.employmentStartDate ?? "",
       phone: form.phone ?? "",
       maritalStatus: form.maritalStatus ?? "",
       gender: form.gender ?? "",
@@ -177,6 +180,21 @@ export default function ProfileEditor({ user, onSave }: ProfileEditorProps) {
           <div className="grid gap-4 md:grid-cols-2">
             <Field label="Área / puesto" icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}>
               <input className={inputClassName} value={form.position ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, position: e.target.value }))} />
+            </Field>
+            <Field label="Inicio de funciones" icon={<CalendarDays className="h-3.5 w-3.5" />}>
+              <input
+                type="date"
+                className={inputClassName}
+                value={form.employmentStartDate ?? ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, employmentStartDate: e.target.value }))}
+                disabled={!canEditEmploymentStartDate}
+                readOnly={!canEditEmploymentStartDate}
+              />
+              <p className="mt-1 text-[11px] text-slate-500">
+                {canEditEmploymentStartDate
+                  ? "Este dato se usa para aniversarios laborales del dashboard."
+                  : "Solo administradores pueden editar este dato."}
+              </p>
             </Field>
             <Field label="Banco" icon={<Landmark className="h-3.5 w-3.5" />}>
               <input className={inputClassName} value={form.bankName ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, bankName: e.target.value }))} />

@@ -119,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 ? data.createdAt
                 : localProfile?.createdAt ?? new Date().toISOString(),
             birthDate: data.birthDate ?? localProfile?.birthDate,
+            employmentStartDate: data.employmentStartDate ?? localProfile?.employmentStartDate,
             phone: data.phone ?? localProfile?.phone,
             maritalStatus: data.maritalStatus ?? localProfile?.maritalStatus,
             gender: data.gender ?? localProfile?.gender,
@@ -248,6 +249,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ? data.createdAt
           : existingProfile?.createdAt ?? new Date().toISOString(),
       birthDate: data.birthDate ?? existingProfile?.birthDate,
+      employmentStartDate: data.employmentStartDate ?? existingProfile?.employmentStartDate,
       phone: data.phone ?? existingProfile?.phone,
       maritalStatus: data.maritalStatus ?? existingProfile?.maritalStatus,
       gender: data.gender ?? existingProfile?.gender,

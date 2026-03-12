@@ -21,6 +21,7 @@ export default function AdminProfilePage() {
       ) : null}
       <ProfileEditor
         user={user}
+        canEditEmploymentStartDate={user.role === "admin"}
         onSave={(payload) => {
           updateUser(payload);
           setMessage("Perfil actualizado y sincronizado con administración.");
