@@ -14,7 +14,11 @@ export default function ProfilePage() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader userName={user.displayName} />
-      {message ? <p className="text-xs font-semibold text-emerald-700">{message}</p> : null}
+      {message ? (
+        <p className="rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2 text-xs font-semibold text-cyan-700">
+          {message}
+        </p>
+      ) : null}
       <ProfileEditor
         user={user}
         onSave={(payload) => {

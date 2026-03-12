@@ -1,18 +1,47 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { BriefcaseBusiness, Building2, CalendarDays, CreditCard, Landmark, Mail, Phone, UserRound } from "lucide-react";
 import type { UserProfile } from "@/services/firebase/types";
 
 type ProfileTab = "personal" | "laboral";
+
+type NameForm = Partial<UserProfile> & {
+  firstName?: string;
+  lastName?: string;
+  middleName?: string;
+};
 
 interface ProfileEditorProps {
   user: UserProfile;
   onSave: (payload: Partial<UserProfile>) => void;
 }
 
+interface FieldProps {
+  label: string;
+  icon?: React.ReactNode;
+  className?: string;
+  children: React.ReactNode;
+}
+
+function Field({ label, icon, className, children }: FieldProps) {
+  return (
+    <label className={`block ${className ?? ""}`}>
+      <span className="mb-1.5 inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {icon}
+        {label}
+      </span>
+      {children}
+    </label>
+  );
+}
+
+const inputClassName =
+  "w-full rounded-xl border border-sky-100 bg-white/90 px-3 py-2.5 text-sm text-slate-700 shadow-sm outline-none transition placeholder:text-slate-300 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100";
+
 export default function ProfileEditor({ user, onSave }: ProfileEditorProps) {
   const [tab, setTab] = useState<ProfileTab>("personal");
-  const [form, setForm] = useState<Partial<UserProfile>>({});
+  const [form, setForm] = useState<NameForm>({});
 
   useEffect(() => {
     const parts = (user.displayName ?? "").trim().split(/\s+/);
@@ -28,111 +57,142 @@ export default function ProfileEditor({ user, onSave }: ProfileEditorProps) {
       accountType: user.accountType ?? "",
       accountNumber: user.accountNumber ?? "",
       cci: user.cci ?? "",
-      // auxiliares en displayName simple
       firstName: parts[0] ?? "",
       lastName: parts[1] ?? "",
       middleName: parts.slice(2).join(" "),
-    } as Partial<UserProfile> & Record<string, string>);
+    });
   }, [user]);
 
   const canSave = useMemo(() => {
-    return Boolean(form.displayName?.toString().trim() || form.position?.toString().trim());
+    return Boolean(form.displayName?.trim() || form.position?.trim());
   }, [form.displayName, form.position]);
 
   const setNamePart = (key: "firstName" | "lastName" | "middleName", value: string) => {
     const next = {
-      ...(form as Record<string, string>),
+      ...form,
       [key]: value,
     };
     const displayName = `${next.firstName ?? ""} ${next.lastName ?? ""} ${next.middleName ?? ""}`.trim();
-    setForm((prev) => ({ ...prev, ...next, displayName }));
+    setForm({ ...next, displayName });
   };
 
   const submit = () => {
     if (!canSave) return;
-    const payload: Partial<UserProfile> = {
-      displayName: form.displayName?.toString().trim() ?? user.displayName,
-      email: form.email?.toString().trim() ?? user.email,
-      position: form.position?.toString().trim() ?? user.position,
-      birthDate: form.birthDate?.toString() ?? "",
-      phone: form.phone?.toString() ?? "",
-      maritalStatus: form.maritalStatus?.toString() ?? "",
-      gender: form.gender?.toString() ?? "",
-      bankName: form.bankName?.toString() ?? "",
-      accountType: form.accountType?.toString() ?? "",
-      accountNumber: form.accountNumber?.toString() ?? "",
-      cci: form.cci?.toString() ?? "",
-    };
-    onSave(payload);
+    onSave({
+      displayName: form.displayName?.trim() ?? user.displayName,
+      email: form.email?.trim() ?? user.email,
+      position: form.position?.trim() ?? user.position,
+      birthDate: form.birthDate ?? "",
+      phone: form.phone ?? "",
+      maritalStatus: form.maritalStatus ?? "",
+      gender: form.gender ?? "",
+      bankName: form.bankName ?? "",
+      accountType: form.accountType ?? "",
+      accountNumber: form.accountNumber ?? "",
+      cci: form.cci ?? "",
+    });
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900">Mi perfil</h2>
-          <p className="text-xs text-slate-500">Tu perfil es la fuente principal para administración y finanzas.</p>
+    <section className="overflow-hidden rounded-3xl border border-cyan-100 bg-gradient-to-br from-cyan-50/60 via-white to-sky-50/80 shadow-[0_20px_55px_rgba(8,145,178,0.12)]">
+      <div className="border-b border-cyan-100/70 bg-white/80 px-5 py-4 md:px-7 md:py-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-500 to-teal-500 text-white shadow-lg shadow-cyan-200">
+              <UserRound className="h-6 w-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-slate-800">Mi perfil</h2>
+              <p className="text-xs text-slate-500">Fuente principal sincronizada con administración y finanzas.</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!canSave}
+            className="rounded-xl bg-gradient-to-r from-cyan-500 to-teal-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-cyan-200 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Guardar cambios
+          </button>
         </div>
-        <button type="button" onClick={submit} className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white">
-          Guardar cambios
-        </button>
+
+        <div className="mt-4 inline-flex rounded-xl bg-cyan-100/70 p-1">
+          {([
+            ["personal", "Personal"],
+            ["laboral", "Laboral y bancaria"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                tab === key ? "bg-white text-cyan-700 shadow-sm" : "text-slate-500 hover:text-cyan-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="mt-4 flex gap-2 border-b border-slate-200 pb-2">
-        <button type="button" className={`rounded-lg px-3 py-1 text-xs font-semibold ${tab === "personal" ? "bg-indigo-100 text-indigo-700" : "text-slate-500"}`} onClick={() => setTab("personal")}>Personal</button>
-        <button type="button" className={`rounded-lg px-3 py-1 text-xs font-semibold ${tab === "laboral" ? "bg-indigo-100 text-indigo-700" : "text-slate-500"}`} onClick={() => setTab("laboral")}>Laboral</button>
+      <div className="px-5 py-4 md:px-7 md:py-6">
+        {tab === "personal" ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Nombre" icon={<UserRound className="h-3.5 w-3.5" />}>
+              <input className={inputClassName} value={form.firstName ?? ""} onChange={(e) => setNamePart("firstName", e.target.value)} />
+            </Field>
+            <Field label="Apellido paterno">
+              <input className={inputClassName} value={form.lastName ?? ""} onChange={(e) => setNamePart("lastName", e.target.value)} />
+            </Field>
+            <Field label="Apellido materno">
+              <input className={inputClassName} value={form.middleName ?? ""} onChange={(e) => setNamePart("middleName", e.target.value)} />
+            </Field>
+            <Field label="Fecha de nacimiento" icon={<CalendarDays className="h-3.5 w-3.5" />}>
+              <input type="date" className={inputClassName} value={form.birthDate ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, birthDate: e.target.value }))} />
+            </Field>
+            <Field label="Correo" icon={<Mail className="h-3.5 w-3.5" />}>
+              <input className={inputClassName} value={form.email ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} />
+            </Field>
+            <Field label="Teléfono" icon={<Phone className="h-3.5 w-3.5" />}>
+              <input className={inputClassName} value={form.phone ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} />
+            </Field>
+            <Field label="Estado civil">
+              <select className={inputClassName} value={form.maritalStatus ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, maritalStatus: e.target.value }))}>
+                <option>Soltero</option>
+                <option>Casado</option>
+                <option>Divorciado</option>
+                <option>Viudo</option>
+              </select>
+            </Field>
+            <Field label="Género">
+              <select className={inputClassName} value={form.gender ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, gender: e.target.value }))}>
+                <option>No especificado</option>
+                <option>Masculino</option>
+                <option>Femenino</option>
+              </select>
+            </Field>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Área / puesto" icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}>
+              <input className={inputClassName} value={form.position ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, position: e.target.value }))} />
+            </Field>
+            <Field label="Banco" icon={<Landmark className="h-3.5 w-3.5" />}>
+              <input className={inputClassName} value={form.bankName ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, bankName: e.target.value }))} />
+            </Field>
+            <Field label="Tipo de cuenta" icon={<Building2 className="h-3.5 w-3.5" />}>
+              <input className={inputClassName} value={form.accountType ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, accountType: e.target.value }))} />
+            </Field>
+            <Field label="Número de cuenta" icon={<CreditCard className="h-3.5 w-3.5" />}>
+              <input className={inputClassName} value={form.accountNumber ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, accountNumber: e.target.value }))} />
+            </Field>
+            <Field label="CCI" className="md:col-span-2">
+              <input className={inputClassName} value={form.cci ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, cci: e.target.value }))} />
+            </Field>
+          </div>
+        )}
       </div>
-
-      {tab === "personal" ? (
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="text-xs font-semibold text-slate-500">Nombre
-            <input className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={(form as any).firstName ?? ""} onChange={(e) => setNamePart("firstName", e.target.value)} />
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Apellido paterno
-            <input className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={(form as any).lastName ?? ""} onChange={(e) => setNamePart("lastName", e.target.value)} />
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Apellido materno
-            <input className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={(form as any).middleName ?? ""} onChange={(e) => setNamePart("middleName", e.target.value)} />
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Fecha de nacimiento
-            <input type="date" className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={form.birthDate?.toString() ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, birthDate: e.target.value }))} />
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Correo
-            <input className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={form.email?.toString() ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} />
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Teléfono
-            <input className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={form.phone?.toString() ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} />
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Estado civil
-            <select className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={form.maritalStatus?.toString() ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, maritalStatus: e.target.value }))}>
-              <option>Soltero</option><option>Casado</option><option>Divorciado</option><option>Viudo</option>
-            </select>
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Género
-            <select className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={form.gender?.toString() ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, gender: e.target.value }))}>
-              <option>No especificado</option><option>Masculino</option><option>Femenino</option>
-            </select>
-          </label>
-        </div>
-      ) : (
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="text-xs font-semibold text-slate-500">Área / puesto
-            <input className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={form.position?.toString() ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, position: e.target.value }))} />
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Banco
-            <input className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={form.bankName?.toString() ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, bankName: e.target.value }))} />
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Tipo de cuenta
-            <input className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={form.accountType?.toString() ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, accountType: e.target.value }))} />
-          </label>
-          <label className="text-xs font-semibold text-slate-500">Número de cuenta
-            <input className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={form.accountNumber?.toString() ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, accountNumber: e.target.value }))} />
-          </label>
-          <label className="text-xs font-semibold text-slate-500 md:col-span-2">CCI
-            <input className="mt-2 w-full rounded-xl border border-slate-200/60 px-3 py-2 text-sm" value={form.cci?.toString() ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, cci: e.target.value }))} />
-          </label>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
