@@ -53,7 +53,7 @@ type FirestoreTimestamp = {
   toMillis?: () => number;
 };
 
-type DetailTab = "personal" | "laboral" | "salarial" | "bancaria" | "contactos" | "activos" | "personalizados";
+type DetailTab = "personal" | "laboral" | "bancaria" | "activos" | "personalizados";
 
 const formatStatusLabel = (isActive?: boolean) => (isActive === false ? "Inactivo" : "Activo");
 
@@ -65,9 +65,7 @@ const badgeStyles = {
 const detailTabs: Array<{ id: DetailTab; label: string }> = [
   { id: "personal", label: "Personal" },
   { id: "laboral", label: "Laboral" },
-  { id: "salarial", label: "Salarial" },
   { id: "bancaria", label: "Bancaria" },
-  { id: "contactos", label: "Contactos" },
   { id: "activos", label: "Activos" },
   { id: "personalizados", label: "Personalizados" },
 ];
@@ -479,21 +477,21 @@ export default function AdminUsersPage() {
             {!loading && viewMode !== "organigrama" ? (
               <div className={`mt-5 ${viewMode === "cuadricula" ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4" : "space-y-3"}`}>
                 {filteredUsers.map((item) => (
-                  <article key={item.uid} className="rounded-2xl border border-slate-300/70 bg-white p-5 shadow-[0_6px_18px_rgba(15,23,42,0.06)]">
+                  <article key={item.uid} className="rounded-2xl border border-slate-300/70 bg-white p-4 shadow-[0_6px_18px_rgba(15,23,42,0.06)]">
                     <div className="flex items-center justify-between">
                       <span className="rounded-full bg-teal-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
                         {item.isActive === false ? "INACTIVO" : "ACTIVO"}
                       </span>
                     </div>
 
-                    <div className="mt-4 flex flex-col items-center text-center">
-                      <UserAvatar name={item.displayName} photoURL={item.photoURL} sizeClassName="h-24 w-24" />
-                      <p className="mt-3 text-[34px] leading-none text-slate-700">{item.displayName}</p>
-                      <div className="mt-2 h-3 w-28 rounded-full bg-slate-200" />
-                      <div className="mt-2 h-3 w-44 rounded-full bg-slate-200" />
+                    <div className="mt-3 flex flex-col items-center text-center">
+                      <UserAvatar name={item.displayName} photoURL={item.photoURL} sizeClassName="h-20 w-20" />
+                      <p className="mt-2 line-clamp-2 text-2xl leading-tight text-slate-700">{item.displayName}</p>
+                      <p className="mt-1 text-xs font-medium text-slate-500">{item.position || "Sin área asignada"}</p>
+                      <p className="text-xs text-slate-400">{item.email}</p>
                     </div>
 
-                    <div className="mt-5 flex items-center justify-center gap-4 text-slate-500">
+                    <div className="mt-4 flex items-center justify-center gap-4 text-slate-500">
                       <button type="button" title="Mensajes" className="hover:text-indigo-600" onClick={() => setToast({ message: "Mensajería próximamente.", tone: "success" })}>
                         <MessageCircle className="h-5 w-5" />
                       </button>
@@ -532,36 +530,36 @@ export default function AdminUsersPage() {
             ) : null}
 
             {selectedUser ? (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-4" onClick={() => setSelectedUserId(null)}>
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 p-3" onClick={() => setSelectedUserId(null)}>
                 <section
-                  className="max-h-[92vh] w-full max-w-6xl overflow-auto rounded-3xl border border-indigo-100 bg-white p-6 shadow-[0_28px_48px_rgba(15,23,42,0.3)]"
+                  className="max-h-[84vh] w-full max-w-4xl overflow-auto rounded-3xl border border-indigo-100 bg-white p-5 shadow-[0_20px_40px_rgba(15,23,42,0.25)]"
                   onClick={(event) => event.stopPropagation()}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
                       <UserAvatar name={selectedUser.displayName} photoURL={selectedUser.photoURL} sizeClassName="h-24 w-24" />
                       <div>
-                        <h3 className="text-5xl leading-tight text-slate-700">{detailForm.displayName || selectedUser.displayName}</h3>
-                        <p className="text-2xl text-slate-400">Actualiza información del empleado</p>
+                        <h3 className="text-4xl leading-tight text-slate-700">{detailForm.displayName || selectedUser.displayName}</h3>
+                        <p className="text-xl text-slate-400">Actualiza información del empleado</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <button type="button" className="rounded-full border-2 border-teal-300 px-8 py-2 text-xl font-semibold text-teal-500" onClick={() => setSelectedUserId(null)}>
+                      <button type="button" className="rounded-full border-2 border-teal-300 px-6 py-1.5 text-base font-semibold text-teal-500" onClick={() => setSelectedUserId(null)}>
                         CANCELAR
                       </button>
-                      <button type="button" className="rounded-full bg-teal-400 px-8 py-2 text-xl font-semibold text-white" onClick={() => void saveDetailProfile()}>
+                      <button type="button" className="rounded-full bg-teal-400 px-6 py-1.5 text-base font-semibold text-white" onClick={() => void saveDetailProfile()}>
                         ACTUALIZAR EMPLEADO
                       </button>
                     </div>
                   </div>
 
-                  <div className="mt-6 flex flex-wrap gap-6 border-b border-slate-200 pb-3">
+                  <div className="mt-5 flex flex-wrap gap-4 border-b border-slate-200 pb-2">
                     {detailTabs.map((tab) => (
                       <button
                         key={tab.id}
                         type="button"
                         onClick={() => setDetailTab(tab.id)}
-                        className={`border-b-4 pb-2 text-2xl font-semibold ${detailTab === tab.id ? "border-indigo-500 text-indigo-500" : "border-transparent text-slate-600"}`}
+                        className={`border-b-4 pb-2 text-lg font-semibold ${detailTab === tab.id ? "border-indigo-500 text-indigo-500" : "border-transparent text-slate-600"}`}
                       >
                         {tab.label}
                       </button>
@@ -571,35 +569,73 @@ export default function AdminUsersPage() {
                   <div className="mt-5 rounded-2xl border border-slate-200 p-5">
                     {detailTab === "personal" ? (
                       <div>
-                        <h4 className="mb-4 text-4xl font-semibold text-slate-700">Información personal</h4>
+                        <h4 className="mb-3 text-3xl font-semibold text-slate-700">Información personal</h4>
                         <div className="grid gap-4 md:grid-cols-2">
-                          <label className="text-xl font-semibold text-slate-600">Nombre
-                            <input className="mt-2 w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-2xl" value={detailForm.firstName} onChange={(e) => setDetailForm((prev) => ({ ...prev, firstName: e.target.value, displayName: `${e.target.value} ${prev.lastName} ${prev.middleName}`.trim() }))} />
+                          <label className="text-base font-semibold text-slate-600">Nombre
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.firstName} onChange={(e) => setDetailForm((prev) => ({ ...prev, firstName: e.target.value, displayName: `${e.target.value} ${prev.lastName} ${prev.middleName}`.trim() }))} />
                           </label>
-                          <label className="text-xl font-semibold text-slate-600">Apellido paterno
-                            <input className="mt-2 w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-2xl" value={detailForm.lastName} onChange={(e) => setDetailForm((prev) => ({ ...prev, lastName: e.target.value, displayName: `${prev.firstName} ${e.target.value} ${prev.middleName}`.trim() }))} />
+                          <label className="text-base font-semibold text-slate-600">Apellido paterno
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.lastName} onChange={(e) => setDetailForm((prev) => ({ ...prev, lastName: e.target.value, displayName: `${prev.firstName} ${e.target.value} ${prev.middleName}`.trim() }))} />
                           </label>
-                          <label className="text-xl font-semibold text-slate-600">Apellido materno
-                            <input className="mt-2 w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-2xl" value={detailForm.middleName} onChange={(e) => setDetailForm((prev) => ({ ...prev, middleName: e.target.value, displayName: `${prev.firstName} ${prev.lastName} ${e.target.value}`.trim() }))} />
+                          <label className="text-base font-semibold text-slate-600">Apellido materno
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.middleName} onChange={(e) => setDetailForm((prev) => ({ ...prev, middleName: e.target.value, displayName: `${prev.firstName} ${prev.lastName} ${e.target.value}`.trim() }))} />
                           </label>
-                          <label className="text-xl font-semibold text-slate-600">Fecha de nacimiento
-                            <input type="date" className="mt-2 w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-2xl" value={detailForm.birthDate} onChange={(e) => setDetailForm((prev) => ({ ...prev, birthDate: e.target.value }))} />
+                          <label className="text-base font-semibold text-slate-600">Fecha de nacimiento
+                            <input type="date" className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.birthDate} onChange={(e) => setDetailForm((prev) => ({ ...prev, birthDate: e.target.value }))} />
                           </label>
-                          <label className="text-xl font-semibold text-slate-600">Correo
-                            <input className="mt-2 w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-2xl" value={detailForm.email} onChange={(e) => setDetailForm((prev) => ({ ...prev, email: e.target.value }))} />
+                          <label className="text-base font-semibold text-slate-600">Correo
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.email} onChange={(e) => setDetailForm((prev) => ({ ...prev, email: e.target.value }))} />
                           </label>
-                          <label className="text-xl font-semibold text-slate-600">Teléfono
-                            <input className="mt-2 w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-2xl" value={detailForm.phone} onChange={(e) => setDetailForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                          <label className="text-base font-semibold text-slate-600">Teléfono
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.phone} onChange={(e) => setDetailForm((prev) => ({ ...prev, phone: e.target.value }))} />
                           </label>
-                          <label className="text-xl font-semibold text-slate-600">Estado civil
-                            <select className="mt-2 w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-2xl" value={detailForm.maritalStatus} onChange={(e) => setDetailForm((prev) => ({ ...prev, maritalStatus: e.target.value }))}>
+                          <label className="text-base font-semibold text-slate-600">Estado civil
+                            <select className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.maritalStatus} onChange={(e) => setDetailForm((prev) => ({ ...prev, maritalStatus: e.target.value }))}>
                               <option>Soltero</option><option>Casado</option><option>Divorciado</option><option>Viudo</option>
                             </select>
                           </label>
-                          <label className="text-xl font-semibold text-slate-600">Género
-                            <select className="mt-2 w-full rounded-2xl border-2 border-slate-300 px-4 py-3 text-2xl" value={detailForm.gender} onChange={(e) => setDetailForm((prev) => ({ ...prev, gender: e.target.value }))}>
+                          <label className="text-base font-semibold text-slate-600">Género
+                            <select className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.gender} onChange={(e) => setDetailForm((prev) => ({ ...prev, gender: e.target.value }))}>
                               <option>Masculino</option><option>Femenino</option><option>No especificado</option>
                             </select>
+                          </label>
+                        </div>
+                      </div>
+                    ) : detailTab === "laboral" ? (
+                      <div className="space-y-4">
+                        <h4 className="mb-1 text-3xl font-semibold text-slate-700">Información laboral</h4>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="text-base font-semibold text-slate-600">Área / puesto
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.position} onChange={(e) => setDetailForm((prev) => ({ ...prev, position: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Rol en sistema
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={selectedUser.role === "admin" ? "Administrador" : "Colaborador"} readOnly />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Jornada
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={scheduleOptions.find((s) => s.id === selectedUser.workScheduleId)?.name ?? "Sin jornada"} readOnly />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Estado
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={formatStatusLabel(selectedUser.isActive)} readOnly />
+                          </label>
+                        </div>
+
+                        <h5 className="pt-2 text-xl font-semibold text-slate-700">Datos salariales (referencial)</h5>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="text-base font-semibold text-slate-600">Tipo de pago
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value="Mensual" readOnly />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Moneda
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value="PEN" readOnly />
+                          </label>
+                        </div>
+
+                        <h5 className="pt-2 text-xl font-semibold text-slate-700">Contactos laborales</h5>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="text-base font-semibold text-slate-600">Correo corporativo
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.email} onChange={(e) => setDetailForm((prev) => ({ ...prev, email: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Teléfono laboral
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.phone} onChange={(e) => setDetailForm((prev) => ({ ...prev, phone: e.target.value }))} />
                           </label>
                         </div>
                       </div>
