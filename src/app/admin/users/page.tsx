@@ -135,6 +135,14 @@ export default function AdminUsersPage() {
             isActive: data.isActive,
             createdAt,
             updatedAt,
+            birthDate: data.birthDate ?? "",
+            phone: data.phone ?? "",
+            maritalStatus: data.maritalStatus ?? "",
+            gender: data.gender ?? "",
+            bankName: data.bankName ?? "",
+            accountType: data.accountType ?? "",
+            accountNumber: data.accountNumber ?? "",
+            cci: data.cci ?? "",
           };
         });
         setUsers(nextUsers);
@@ -279,14 +287,14 @@ export default function AdminUsersPage() {
       firstName: parts[0] ?? "",
       lastName: parts[1] ?? "",
       middleName: parts.slice(2).join(" "),
-      birthDate: (selectedUser as any).birthDate ?? "",
-      phone: (selectedUser as any).phone ?? "",
-      maritalStatus: (selectedUser as any).maritalStatus ?? "Soltero",
-      gender: (selectedUser as any).gender ?? "No especificado",
-      bankName: (selectedUser as any).bankName ?? "Banco de Crédito del Perú",
-      accountType: (selectedUser as any).accountType ?? "Cuenta sueldo",
-      accountNumber: (selectedUser as any).accountNumber ?? "**** **** 2456",
-      cci: (selectedUser as any).cci ?? "002-2456-7890-1234",
+      birthDate: selectedUser.birthDate ?? "",
+      phone: selectedUser.phone ?? "",
+      maritalStatus: selectedUser.maritalStatus ?? "Soltero",
+      gender: selectedUser.gender ?? "No especificado",
+      bankName: selectedUser.bankName ?? "Banco de Crédito del Perú",
+      accountType: selectedUser.accountType ?? "Cuenta sueldo",
+      accountNumber: selectedUser.accountNumber ?? "**** **** 2456",
+      cci: selectedUser.cci ?? "002-2456-7890-1234",
     });
   }, [selectedUser]);
 
