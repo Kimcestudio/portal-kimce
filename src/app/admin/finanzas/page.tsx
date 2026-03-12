@@ -71,6 +71,7 @@ import {
   deleteTransfer,
   updateCollaborator,
   updateCollaboratorActive,
+  deleteCollaborator,
   updateCollaboratorPayment,
   updateCollaboratorPaymentStatus,
   updateExpense,
@@ -1245,11 +1246,23 @@ export default function FinanceModulePage() {
     });
   };
 
-  const handleDeleteCollaborator = (collaborator: Collaborator) => {
-    setToast({
-      message: `Eliminar colaborador (${collaborator.nombreCompleto}) estará disponible próximamente.`,
-      tone: "error",
-    });
+  const handleDeleteCollaborator = async (collaborator: Collaborator) => {
+    const confirmed = window.confirm(`¿Eliminar al colaborador ${collaborator.nombreCompleto}? Esta acción no se puede deshacer.`);
+    if (!confirmed) return;
+
+    try {
+      await deleteCollaborator(collaborator.id);
+      setToast({
+        message: `Colaborador eliminado: ${collaborator.nombreCompleto}`,
+        tone: "success",
+      });
+    } catch (error) {
+      console.error("[admin/finanzas] Error eliminando colaborador", error);
+      setToast({
+        message: "No se pudo eliminar el colaborador.",
+        tone: "error",
+      });
+    }
   };
 
   return (
