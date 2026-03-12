@@ -53,7 +53,7 @@ type FirestoreTimestamp = {
   toMillis?: () => number;
 };
 
-type DetailTab = "personal" | "laboral" | "bancaria" | "activos" | "personalizados";
+type DetailTab = "personal" | "laboral" | "activos" | "personalizados";
 
 const formatStatusLabel = (isActive?: boolean) => (isActive === false ? "Inactivo" : "Activo");
 
@@ -65,7 +65,6 @@ const badgeStyles = {
 const detailTabs: Array<{ id: DetailTab; label: string }> = [
   { id: "personal", label: "Personal" },
   { id: "laboral", label: "Laboral" },
-  { id: "bancaria", label: "Bancaria" },
   { id: "activos", label: "Activos" },
   { id: "personalizados", label: "Personalizados" },
 ];
@@ -100,6 +99,10 @@ export default function AdminUsersPage() {
     phone: "",
     maritalStatus: "Soltero",
     gender: "No especificado",
+    bankName: "Banco de Crédito del Perú",
+    accountType: "Cuenta sueldo",
+    accountNumber: "**** **** 2456",
+    cci: "002-2456-7890-1234",
   });
 
   useEffect(() => {
@@ -280,6 +283,10 @@ export default function AdminUsersPage() {
       phone: (selectedUser as any).phone ?? "",
       maritalStatus: (selectedUser as any).maritalStatus ?? "Soltero",
       gender: (selectedUser as any).gender ?? "No especificado",
+      bankName: (selectedUser as any).bankName ?? "Banco de Crédito del Perú",
+      accountType: (selectedUser as any).accountType ?? "Cuenta sueldo",
+      accountNumber: (selectedUser as any).accountNumber ?? "**** **** 2456",
+      cci: (selectedUser as any).cci ?? "002-2456-7890-1234",
     });
   }, [selectedUser]);
 
@@ -293,6 +300,10 @@ export default function AdminUsersPage() {
       phone: detailForm.phone,
       maritalStatus: detailForm.maritalStatus,
       gender: detailForm.gender,
+      bankName: detailForm.bankName,
+      accountType: detailForm.accountType,
+      accountNumber: detailForm.accountNumber,
+      cci: detailForm.cci,
     });
   };
 
@@ -477,7 +488,7 @@ export default function AdminUsersPage() {
             {!loading && viewMode !== "organigrama" ? (
               <div className={`mt-5 ${viewMode === "cuadricula" ? "grid gap-4 sm:grid-cols-2 xl:grid-cols-4" : "space-y-3"}`}>
                 {filteredUsers.map((item) => (
-                  <article key={item.uid} className="rounded-2xl border border-slate-300/70 bg-white p-4 shadow-[0_6px_18px_rgba(15,23,42,0.06)]">
+                  <article key={item.uid} className="rounded-xl border border-slate-300/70 bg-white p-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.06)]">
                     <div className="flex items-center justify-between">
                       <span className="rounded-full bg-teal-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
                         {item.isActive === false ? "INACTIVO" : "ACTIVO"}
@@ -485,21 +496,21 @@ export default function AdminUsersPage() {
                     </div>
 
                     <div className="mt-3 flex flex-col items-center text-center">
-                      <UserAvatar name={item.displayName} photoURL={item.photoURL} sizeClassName="h-20 w-20" />
-                      <p className="mt-2 line-clamp-2 text-2xl leading-tight text-slate-700">{item.displayName}</p>
+                      <UserAvatar name={item.displayName} photoURL={item.photoURL} sizeClassName="h-16 w-16" />
+                      <p className="mt-2 line-clamp-2 text-xl leading-tight text-slate-700">{item.displayName}</p>
                       <p className="mt-1 text-xs font-medium text-slate-500">{item.position || "Sin área asignada"}</p>
                       <p className="text-xs text-slate-400">{item.email}</p>
                     </div>
 
-                    <div className="mt-4 flex items-center justify-center gap-4 text-slate-500">
+                    <div className="mt-3.5 flex items-center justify-center gap-3 text-slate-500">
                       <button type="button" title="Mensajes" className="hover:text-indigo-600" onClick={() => setToast({ message: "Mensajería próximamente.", tone: "success" })}>
-                        <MessageCircle className="h-5 w-5" />
+                        <MessageCircle className="h-4.5 w-4.5" />
                       </button>
                       <button type="button" title="Documentos" className="hover:text-indigo-600" onClick={() => setToast({ message: "Documentos próximamente.", tone: "success" })}>
-                        <FileText className="h-5 w-5" />
+                        <FileText className="h-4.5 w-4.5" />
                       </button>
                       <button type="button" title="Historial" className="hover:text-indigo-600" onClick={() => { setSelectedUserId(item.uid); setDetailTab("activos"); }}>
-                        <Clock3 className="h-5 w-5" />
+                        <Clock3 className="h-4.5 w-4.5" />
                       </button>
                       <button
                         type="button"
@@ -511,13 +522,13 @@ export default function AdminUsersPage() {
                         aria-label="Editar usuario"
                         title="Editar usuario"
                       >
-                        <Pencil className="h-5 w-5" />
+                        <Pencil className="h-4.5 w-4.5" />
                       </button>
                       <button type="button" title="Desactivar" className="hover:text-amber-600" onClick={() => toggleActive(item.uid, item.isActive === false)}>
-                        <UserX className="h-5 w-5" />
+                        <UserX className="h-4.5 w-4.5" />
                       </button>
                       <button type="button" title="Eliminar" className="text-rose-400 hover:text-rose-500" onClick={() => setToast({ message: "Eliminación disponible en próxima iteración.", tone: "error" })}>
-                        <Trash2 className="h-5 w-5" />
+                        <Trash2 className="h-4.5 w-4.5" />
                       </button>
                     </div>
                   </article>
@@ -537,17 +548,17 @@ export default function AdminUsersPage() {
                 >
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
-                      <UserAvatar name={selectedUser.displayName} photoURL={selectedUser.photoURL} sizeClassName="h-24 w-24" />
+                      <UserAvatar name={selectedUser.displayName} photoURL={selectedUser.photoURL} sizeClassName="h-14 w-14" />
                       <div>
-                        <h3 className="text-4xl leading-tight text-slate-700">{detailForm.displayName || selectedUser.displayName}</h3>
-                        <p className="text-xl text-slate-400">Actualiza información del empleado</p>
+                        <h3 className="text-3xl leading-tight text-slate-700">{detailForm.displayName || selectedUser.displayName}</h3>
+                        <p className="text-base text-slate-400">Actualiza información del empleado</p>
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <button type="button" className="rounded-full border-2 border-teal-300 px-6 py-1.5 text-base font-semibold text-teal-500" onClick={() => setSelectedUserId(null)}>
+                      <button type="button" className="rounded-full border-2 border-teal-300 px-5 py-1 text-sm font-semibold text-teal-500" onClick={() => setSelectedUserId(null)}>
                         CANCELAR
                       </button>
-                      <button type="button" className="rounded-full bg-teal-400 px-6 py-1.5 text-base font-semibold text-white" onClick={() => void saveDetailProfile()}>
+                      <button type="button" className="rounded-full bg-teal-400 px-5 py-1 text-sm font-semibold text-white" onClick={() => void saveDetailProfile()}>
                         ACTUALIZAR EMPLEADO
                       </button>
                     </div>
@@ -559,7 +570,7 @@ export default function AdminUsersPage() {
                         key={tab.id}
                         type="button"
                         onClick={() => setDetailTab(tab.id)}
-                        className={`border-b-4 pb-2 text-lg font-semibold ${detailTab === tab.id ? "border-indigo-500 text-indigo-500" : "border-transparent text-slate-600"}`}
+                        className={`border-b-4 pb-2 text-base font-semibold ${detailTab === tab.id ? "border-indigo-500 text-indigo-500" : "border-transparent text-slate-600"}`}
                       >
                         {tab.label}
                       </button>
@@ -569,7 +580,7 @@ export default function AdminUsersPage() {
                   <div className="mt-5 rounded-2xl border border-slate-200 p-5">
                     {detailTab === "personal" ? (
                       <div>
-                        <h4 className="mb-3 text-3xl font-semibold text-slate-700">Información personal</h4>
+                        <h4 className="mb-2 text-2xl font-semibold text-slate-700">Información personal</h4>
                         <div className="grid gap-4 md:grid-cols-2">
                           <label className="text-base font-semibold text-slate-600">Nombre
                             <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.firstName} onChange={(e) => setDetailForm((prev) => ({ ...prev, firstName: e.target.value, displayName: `${e.target.value} ${prev.lastName} ${prev.middleName}`.trim() }))} />
@@ -636,6 +647,22 @@ export default function AdminUsersPage() {
                           </label>
                           <label className="text-base font-semibold text-slate-600">Teléfono laboral
                             <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.phone} onChange={(e) => setDetailForm((prev) => ({ ...prev, phone: e.target.value }))} />
+                          </label>
+                        </div>
+
+                        <h5 className="pt-2 text-xl font-semibold text-slate-700">Datos bancarios</h5>
+                        <div className="grid gap-4 md:grid-cols-2">
+                          <label className="text-base font-semibold text-slate-600">Banco
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.bankName} onChange={(e) => setDetailForm((prev) => ({ ...prev, bankName: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Tipo de cuenta
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.accountType} onChange={(e) => setDetailForm((prev) => ({ ...prev, accountType: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Número de cuenta
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.accountNumber} onChange={(e) => setDetailForm((prev) => ({ ...prev, accountNumber: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">CCI
+                            <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.cci} onChange={(e) => setDetailForm((prev) => ({ ...prev, cci: e.target.value }))} />
                           </label>
                         </div>
                       </div>
