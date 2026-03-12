@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Pencil, Power, Trash2 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import FinanceGate from "@/components/admin/FinanceGate";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -1244,6 +1245,13 @@ export default function FinanceModulePage() {
     });
   };
 
+  const handleDeleteCollaborator = (collaborator: Collaborator) => {
+    setToast({
+      message: `Eliminar colaborador (${collaborator.nombreCompleto}) estará disponible próximamente.`,
+      tone: "error",
+    });
+  };
+
   return (
     <div className="flex flex-col gap-4">
       <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
@@ -2093,20 +2101,33 @@ export default function FinanceModulePage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex justify-end gap-1.5">
                             <button
                               type="button"
-                              className="rounded-xl border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
                               onClick={() => handleEditCollaborator(collaborator)}
+                              title="Editar"
+                              aria-label="Editar"
                             >
-                              Editar
+                              <Pencil className="h-4 w-4" />
                             </button>
                             <button
                               type="button"
-                              className="rounded-xl border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-amber-200 hover:bg-amber-50 hover:text-amber-600"
                               onClick={() => handleToggleCollaborator(collaborator)}
+                              title={isActive ? "Desactivar" : "Activar"}
+                              aria-label={isActive ? "Desactivar" : "Activar"}
                             >
-                              {isActive ? "Desactivar" : "Activar"}
+                              <Power className="h-4 w-4" />
+                            </button>
+                            <button
+                              type="button"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                              onClick={() => handleDeleteCollaborator(collaborator)}
+                              title="Eliminar"
+                              aria-label="Eliminar"
+                            >
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
                         </td>
