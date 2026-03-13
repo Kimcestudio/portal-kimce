@@ -54,8 +54,12 @@ export type CollaboratorPaymentType = "MENSUAL" | "POR_PROYECTO" | "POR_HORAS";
 
 export interface Collaborator {
   id: string;
+  userId?: string;
   nombreCompleto: string;
+  correo?: string | null;
   rolPuesto: string;
+  area?: string | null;
+  documento?: string | null;
   tipoPago: CollaboratorPaymentType;
   montoBase: number;
   moneda: "PEN";

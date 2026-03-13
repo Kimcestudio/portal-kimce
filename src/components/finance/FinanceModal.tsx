@@ -508,6 +508,7 @@ interface FinanceModalProps {
   disabled?: boolean;
   isSubmitting?: boolean;
   initialValues?: Partial<FinanceFormValuesMap[FinanceModalType]> | null;
+  collaboratorsData?: Collaborator[];
 }
 
 export default function FinanceModal({
@@ -518,6 +519,7 @@ export default function FinanceModal({
   disabled,
   isSubmitting,
   initialValues,
+  collaboratorsData,
 }: FinanceModalProps) {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const config = financeFormRegistry[modalType];
@@ -529,13 +531,17 @@ export default function FinanceModal({
   useEffect(() => {
     if (isOpen) {
       let isMounted = true;
-      listCollaborators()
-        .then((items) => {
-          if (isMounted) setCollaborators(items);
-        })
-        .catch(() => {
-          if (isMounted) setCollaborators([]);
-        });
+      if (collaboratorsData) {
+        setCollaborators(collaboratorsData);
+      } else {
+        listCollaborators()
+          .then((items) => {
+            if (isMounted) setCollaborators(items);
+          })
+          .catch(() => {
+            if (isMounted) setCollaborators([]);
+          });
+      }
       switch (modalType) {
         case "income":
           setForm({
@@ -576,7 +582,7 @@ export default function FinanceModal({
       };
     }
     return undefined;
-  }, [config.defaultValues, initialValues, isOpen, modalType]);
+  }, [collaboratorsData, config.defaultValues, initialValues, isOpen, modalType]);
 
   useEffect(() => {
     if (modalType !== "collaborator_payment") return;
