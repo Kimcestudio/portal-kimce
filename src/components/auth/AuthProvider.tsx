@@ -118,6 +118,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               typeof data.createdAt === "string"
                 ? data.createdAt
                 : localProfile?.createdAt ?? new Date().toISOString(),
+            birthDate: data.birthDate ?? localProfile?.birthDate,
+            employmentStartDate: data.employmentStartDate ?? localProfile?.employmentStartDate,
+            phone: data.phone ?? localProfile?.phone,
+            maritalStatus: data.maritalStatus ?? localProfile?.maritalStatus,
+            gender: data.gender ?? localProfile?.gender,
+            bankName: data.bankName ?? localProfile?.bankName,
+            accountType: data.accountType ?? localProfile?.accountType,
+            accountNumber: data.accountNumber ?? localProfile?.accountNumber,
+            cci: data.cci ?? localProfile?.cci,
           };
 
           upsertUser(nextProfile);
@@ -239,6 +248,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         typeof data.createdAt === "string"
           ? data.createdAt
           : existingProfile?.createdAt ?? new Date().toISOString(),
+      birthDate: data.birthDate ?? existingProfile?.birthDate,
+      employmentStartDate: data.employmentStartDate ?? existingProfile?.employmentStartDate,
+      phone: data.phone ?? existingProfile?.phone,
+      maritalStatus: data.maritalStatus ?? existingProfile?.maritalStatus,
+      gender: data.gender ?? existingProfile?.gender,
+      bankName: data.bankName ?? existingProfile?.bankName,
+      accountType: data.accountType ?? existingProfile?.accountType,
+      accountNumber: data.accountNumber ?? existingProfile?.accountNumber,
+      cci: data.cci ?? existingProfile?.cci,
     };
     upsertUser(mergedProfile);
     setStoredSession({ uid: mergedProfile.uid, email: mergedProfile.email });
@@ -261,8 +279,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updateUser = (payload: Partial<UserProfile>) => {
     if (!profile) return;
+
+    const nextProfile = {
+      ...profile,
+      ...payload,
+    };
+
+    setProfile(nextProfile);
+    upsertUser(nextProfile);
+
     const updated = updateUserProfile(profile.uid, payload);
     if (updated) setProfile(updated);
+
+    const userRef = doc(db, "users", profile.uid);
+    void setDoc(
+      userRef,
+      {
+        ...payload,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
   };
 
   const value = useMemo(
