@@ -2,6 +2,7 @@
 
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   setDoc,
@@ -35,6 +36,7 @@ import UserAvatar from "@/components/common/UserAvatar";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { db } from "@/services/firebase/client";
 import type { UserProfile, WorkSchedule } from "@/services/firebase/types";
+import { upsertCollaborator } from "@/services/finance";
 import {
   DEFAULT_WORK_SCHEDULES,
   DEFAULT_WORK_SCHEDULE_ID,
@@ -60,6 +62,7 @@ const formatStatusLabel = (isActive?: boolean) => (isActive === false ? "Inactiv
 const badgeStyles = {
   active: "bg-emerald-50 text-emerald-700 border border-emerald-200",
   inactive: "bg-rose-50 text-rose-700 border border-rose-200",
+  pending: "bg-amber-50 text-amber-700 border border-amber-200",
 };
 
 const detailTabs: Array<{ id: DetailTab; label: string }> = [
@@ -97,6 +100,8 @@ export default function AdminUsersPage() {
     middleName: "",
     birthDate: "",
     employmentStartDate: "",
+    contractEndDate: "",
+    contractIndefinite: false,
     phone: "",
     maritalStatus: "Soltero",
     gender: "No especificado",
@@ -138,6 +143,8 @@ export default function AdminUsersPage() {
             updatedAt,
             birthDate: data.birthDate ?? "",
             employmentStartDate: data.employmentStartDate ?? "",
+            contractEndDate: data.contractEndDate ?? "",
+            contractIndefinite: data.contractIndefinite ?? false,
             phone: data.phone ?? "",
             maritalStatus: data.maritalStatus ?? "",
             gender: data.gender ?? "",
@@ -291,6 +298,8 @@ export default function AdminUsersPage() {
       middleName: parts.slice(2).join(" "),
       birthDate: selectedUser.birthDate ?? "",
       employmentStartDate: selectedUser.employmentStartDate ?? "",
+      contractEndDate: selectedUser.contractEndDate ?? "",
+      contractIndefinite: selectedUser.contractIndefinite ?? false,
       phone: selectedUser.phone ?? "",
       maritalStatus: selectedUser.maritalStatus ?? "Soltero",
       gender: selectedUser.gender ?? "No especificado",
@@ -309,6 +318,8 @@ export default function AdminUsersPage() {
       position: detailForm.position.trim(),
       birthDate: detailForm.birthDate,
       employmentStartDate: detailForm.employmentStartDate,
+      contractEndDate: detailForm.contractIndefinite ? "" : detailForm.contractEndDate,
+      contractIndefinite: detailForm.contractIndefinite,
       phone: detailForm.phone,
       maritalStatus: detailForm.maritalStatus,
       gender: detailForm.gender,
@@ -316,6 +327,25 @@ export default function AdminUsersPage() {
       accountType: detailForm.accountType,
       accountNumber: detailForm.accountNumber,
       cci: detailForm.cci,
+    });
+
+    await upsertCollaborator(selectedUser.uid, {
+      nombreCompleto: detailForm.displayName.trim() || selectedUser.displayName,
+      correo: detailForm.email.trim() || selectedUser.email,
+      rolPuesto: detailForm.position.trim(),
+      tipoPago: "MENSUAL",
+      montoBase: 0,
+      moneda: "PEN",
+      cuentaPagoPreferida: "LUIS",
+      inicioContrato: detailForm.employmentStartDate ? new Date(detailForm.employmentStartDate).toISOString() : "",
+      finContrato:
+        detailForm.contractIndefinite || !detailForm.contractEndDate
+          ? null
+          : new Date(detailForm.contractEndDate).toISOString(),
+      contratoIndefinido: detailForm.contractIndefinite,
+      activo: selectedUser.isActive ?? true,
+      isActive: selectedUser.isActive ?? true,
+      userId: selectedUser.uid,
     });
   };
 
@@ -334,6 +364,34 @@ export default function AdminUsersPage() {
       setError(message);
       setToast({ message, tone: "error" });
     }
+  };
+
+  const deleteUser = async (uid: string, displayName: string) => {
+    const confirmed = window.confirm(`¿Eliminar al usuario ${displayName}? Esta acción no se puede deshacer.`);
+    if (!confirmed) return;
+    try {
+      await deleteDoc(doc(db, "users", uid));
+      setToast({ message: "Usuario eliminado correctamente.", tone: "success" });
+      setError(null);
+    } catch (err) {
+      console.error("[admin/users] Error deleting user", err);
+      const message = err instanceof Error ? err.message : "No se pudo eliminar el usuario.";
+      setError(message);
+      setToast({ message, tone: "error" });
+    }
+  };
+
+  const getUserStatus = (item: FirestoreUser): "active" | "inactive" | "pending" => {
+    if (item.approved !== true) return "pending";
+    if (item.isActive === false) return "inactive";
+    return "active";
+  };
+
+  const getUserStatusLabel = (item: FirestoreUser) => {
+    const status = getUserStatus(item);
+    if (status === "pending") return "PENDIENTE";
+    if (status === "inactive") return "INACTIVO";
+    return "ACTIVO";
   };
 
   const toggleActive = (uid: string, nextValue: boolean) => updateUserDoc(uid, { isActive: nextValue });
@@ -502,8 +560,8 @@ export default function AdminUsersPage() {
                 {filteredUsers.map((item) => (
                   <article key={item.uid} className="rounded-xl border border-slate-300/70 bg-white p-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.06)]">
                     <div className="flex items-center justify-between">
-                      <span className="rounded-full bg-teal-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
-                        {item.isActive === false ? "INACTIVO" : "ACTIVO"}
+                      <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${badgeStyles[getUserStatus(item)]}`}>
+                        {getUserStatusLabel(item)}
                       </span>
                     </div>
 
@@ -539,7 +597,12 @@ export default function AdminUsersPage() {
                       <button type="button" title="Desactivar" className="hover:text-amber-600" onClick={() => toggleActive(item.uid, item.isActive === false)}>
                         <UserX className="h-4.5 w-4.5" />
                       </button>
-                      <button type="button" title="Eliminar" className="text-rose-400 hover:text-rose-500" onClick={() => setToast({ message: "Eliminación disponible en próxima iteración.", tone: "error" })}>
+                      {item.approved !== true ? (
+                        <button type="button" title="Admitir" className="text-emerald-500 hover:text-emerald-600" onClick={() => approveUser(item.uid)}>
+                          <UserPlus className="h-4.5 w-4.5" />
+                        </button>
+                      ) : null}
+                      <button type="button" title="Eliminar" className="text-rose-400 hover:text-rose-500" onClick={() => void deleteUser(item.uid, item.displayName)}>
                         <Trash2 className="h-4.5 w-4.5" />
                       </button>
                     </div>
@@ -631,8 +694,17 @@ export default function AdminUsersPage() {
                           <label className="text-base font-semibold text-slate-600">Área / puesto
                             <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.position} onChange={(e) => setDetailForm((prev) => ({ ...prev, position: e.target.value }))} />
                           </label>
-                          <label className="text-base font-semibold text-slate-600">Inicio de funciones
+                          <label className="text-base font-semibold text-slate-600">Inicio de contrato
                             <input type="date" className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.employmentStartDate} onChange={(e) => setDetailForm((prev) => ({ ...prev, employmentStartDate: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Contrato indefinido
+                            <select className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.contractIndefinite ? "yes" : "no"} onChange={(e) => setDetailForm((prev) => ({ ...prev, contractIndefinite: e.target.value === "yes", contractEndDate: e.target.value === "yes" ? "" : prev.contractEndDate }))}>
+                              <option value="yes">Sí</option>
+                              <option value="no">No</option>
+                            </select>
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Fin de contrato
+                            <input type="date" className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.contractEndDate} onChange={(e) => setDetailForm((prev) => ({ ...prev, contractEndDate: e.target.value }))} disabled={detailForm.contractIndefinite} />
                           </label>
                           <label className="text-base font-semibold text-slate-600">Rol en sistema
                             <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={selectedUser.role === "admin" ? "Administrador" : "Colaborador"} readOnly />

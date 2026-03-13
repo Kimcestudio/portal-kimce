@@ -14,6 +14,8 @@ export interface UserProfile {
   createdAt?: string;
   birthDate?: string;
   employmentStartDate?: string;
+  contractEndDate?: string;
+  contractIndefinite?: boolean;
   phone?: string;
   maritalStatus?: string;
   gender?: string;
