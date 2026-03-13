@@ -2,6 +2,7 @@
 
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   setDoc,
@@ -19,7 +20,9 @@ import {
   Mail,
   MessageCircle,
   Network,
+  Plus,
   Pencil,
+  Minus,
   Search,
   Settings,
   Sparkles,
@@ -35,6 +38,7 @@ import UserAvatar from "@/components/common/UserAvatar";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { db } from "@/services/firebase/client";
 import type { UserProfile, WorkSchedule } from "@/services/firebase/types";
+import { upsertCollaborator } from "@/services/finance";
 import {
   DEFAULT_WORK_SCHEDULES,
   DEFAULT_WORK_SCHEDULE_ID,
@@ -46,6 +50,9 @@ type FirestoreUser = UserProfile & {
   createdAt?: string;
   updatedAt?: string;
   workScheduleId?: string;
+  orgNodeType?: "root" | "leader" | "member";
+  orgParentId?: string;
+  orgTeam?: string;
 };
 
 type FirestoreTimestamp = {
@@ -60,6 +67,7 @@ const formatStatusLabel = (isActive?: boolean) => (isActive === false ? "Inactiv
 const badgeStyles = {
   active: "bg-emerald-50 text-emerald-700 border border-emerald-200",
   inactive: "bg-rose-50 text-rose-700 border border-rose-200",
+  pending: "bg-amber-50 text-amber-700 border border-amber-200",
 };
 
 const detailTabs: Array<{ id: DetailTab; label: string }> = [
@@ -85,6 +93,7 @@ export default function AdminUsersPage() {
   const [areaFilter, setAreaFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "pending">("all");
   const [perPage, setPerPage] = useState<number>(8);
+  const [orgZoom, setOrgZoom] = useState(100);
 
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("personal");
@@ -97,6 +106,8 @@ export default function AdminUsersPage() {
     middleName: "",
     birthDate: "",
     employmentStartDate: "",
+    contractEndDate: "",
+    contractIndefinite: false,
     phone: "",
     maritalStatus: "Soltero",
     gender: "No especificado",
@@ -138,6 +149,8 @@ export default function AdminUsersPage() {
             updatedAt,
             birthDate: data.birthDate ?? "",
             employmentStartDate: data.employmentStartDate ?? "",
+            contractEndDate: data.contractEndDate ?? "",
+            contractIndefinite: data.contractIndefinite ?? false,
             phone: data.phone ?? "",
             maritalStatus: data.maritalStatus ?? "",
             gender: data.gender ?? "",
@@ -145,6 +158,9 @@ export default function AdminUsersPage() {
             accountType: data.accountType ?? "",
             accountNumber: data.accountNumber ?? "",
             cci: data.cci ?? "",
+            orgNodeType: (data.orgNodeType as FirestoreUser["orgNodeType"]) ?? undefined,
+            orgParentId: data.orgParentId ?? "",
+            orgTeam: data.orgTeam ?? "",
           };
         });
         setUsers(nextUsers);
@@ -274,6 +290,29 @@ export default function AdminUsersPage() {
     return [...byRole.entries()];
   }, [filteredUsers]);
 
+  const organigramData = useMemo(() => {
+    if (filteredUsers.length === 0) {
+      return { root: null as FirestoreUser | null, leaders: [] as FirestoreUser[], team: [] as FirestoreUser[] };
+    }
+
+    const rootCandidate =
+      filteredUsers.find((item) => item.orgNodeType === "root") ??
+      filteredUsers.find((item) => item.role === "admin") ??
+      filteredUsers.find((item) => /ceo|director|gerente/i.test(item.position ?? "")) ??
+      filteredUsers[0];
+
+    const remaining = filteredUsers.filter((item) => item.uid !== rootCandidate.uid);
+    const leadersByConfig = remaining.filter((item) => item.orgNodeType === "leader");
+    const leaders = leadersByConfig.length > 0 ? leadersByConfig.slice(0, 3) : remaining.slice(0, 3);
+    const leaderIds = new Set(leaders.map((item) => item.uid));
+    const team = remaining
+      .filter((item) => !leaderIds.has(item.uid))
+      .sort((a, b) => (a.orgParentId ?? "").localeCompare(b.orgParentId ?? ""))
+      .slice(0, 6);
+
+    return { root: rootCandidate, leaders, team };
+  }, [filteredUsers]);
+
   const selectedUser = useMemo(
     () => (selectedUserId ? sortedUsers.find((item) => item.uid === selectedUserId) ?? null : null),
     [selectedUserId, sortedUsers],
@@ -291,6 +330,8 @@ export default function AdminUsersPage() {
       middleName: parts.slice(2).join(" "),
       birthDate: selectedUser.birthDate ?? "",
       employmentStartDate: selectedUser.employmentStartDate ?? "",
+      contractEndDate: selectedUser.contractEndDate ?? "",
+      contractIndefinite: selectedUser.contractIndefinite ?? false,
       phone: selectedUser.phone ?? "",
       maritalStatus: selectedUser.maritalStatus ?? "Soltero",
       gender: selectedUser.gender ?? "No especificado",
@@ -309,6 +350,8 @@ export default function AdminUsersPage() {
       position: detailForm.position.trim(),
       birthDate: detailForm.birthDate,
       employmentStartDate: detailForm.employmentStartDate,
+      contractEndDate: detailForm.contractIndefinite ? "" : detailForm.contractEndDate,
+      contractIndefinite: detailForm.contractIndefinite,
       phone: detailForm.phone,
       maritalStatus: detailForm.maritalStatus,
       gender: detailForm.gender,
@@ -316,6 +359,25 @@ export default function AdminUsersPage() {
       accountType: detailForm.accountType,
       accountNumber: detailForm.accountNumber,
       cci: detailForm.cci,
+    });
+
+    await upsertCollaborator(selectedUser.uid, {
+      nombreCompleto: detailForm.displayName.trim() || selectedUser.displayName,
+      correo: detailForm.email.trim() || selectedUser.email,
+      rolPuesto: detailForm.position.trim(),
+      tipoPago: "MENSUAL",
+      montoBase: 0,
+      moneda: "PEN",
+      cuentaPagoPreferida: "LUIS",
+      inicioContrato: detailForm.employmentStartDate ? new Date(detailForm.employmentStartDate).toISOString() : "",
+      finContrato:
+        detailForm.contractIndefinite || !detailForm.contractEndDate
+          ? null
+          : new Date(detailForm.contractEndDate).toISOString(),
+      contratoIndefinido: detailForm.contractIndefinite,
+      activo: selectedUser.isActive ?? true,
+      isActive: selectedUser.isActive ?? true,
+      userId: selectedUser.uid,
     });
   };
 
@@ -336,11 +398,43 @@ export default function AdminUsersPage() {
     }
   };
 
+  const deleteUser = async (uid: string, displayName: string) => {
+    const confirmed = window.confirm(`¿Eliminar al usuario ${displayName}? Esta acción no se puede deshacer.`);
+    if (!confirmed) return;
+    try {
+      await deleteDoc(doc(db, "users", uid));
+      setToast({ message: "Usuario eliminado correctamente.", tone: "success" });
+      setError(null);
+    } catch (err) {
+      console.error("[admin/users] Error deleting user", err);
+      const message = err instanceof Error ? err.message : "No se pudo eliminar el usuario.";
+      setError(message);
+      setToast({ message, tone: "error" });
+    }
+  };
+
+  const getUserStatus = (item: FirestoreUser): "active" | "inactive" | "pending" => {
+    if (item.approved !== true) return "pending";
+    if (item.isActive === false) return "inactive";
+    return "active";
+  };
+
+  const getUserStatusLabel = (item: FirestoreUser) => {
+    const status = getUserStatus(item);
+    if (status === "pending") return "PENDIENTE";
+    if (status === "inactive") return "INACTIVO";
+    return "ACTIVO";
+  };
+
   const toggleActive = (uid: string, nextValue: boolean) => updateUserDoc(uid, { isActive: nextValue });
   const updateRole = (uid: string, role: UserProfile["role"]) => updateUserDoc(uid, { role });
   const updatePosition = (uid: string, position: string) => updateUserDoc(uid, { position });
   const updateWorkSchedule = (uid: string, workScheduleId: string) => updateUserDoc(uid, { workScheduleId });
   const approveUser = (uid: string) => updateUserDoc(uid, { approved: true, isActive: true });
+  const updateOrgNode = (
+    uid: string,
+    patch: Partial<Pick<FirestoreUser, "orgNodeType" | "orgParentId" | "orgTeam">>,
+  ) => updateUserDoc(uid, patch as Record<string, unknown>);
 
   if (user?.role !== "admin") {
     return (
@@ -474,26 +568,123 @@ export default function AdminUsersPage() {
             {loading ? <p className="mt-4 text-sm text-slate-500">Cargando usuarios...</p> : null}
 
             {!loading && viewMode === "organigrama" ? (
-              <div className="mt-5 space-y-4">
-                {orgChart.length === 0 ? <p className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">Sin usuarios para este filtro.</p> : null}
-                {orgChart.map(([group, members]) => (
-                  <div key={group} className="rounded-2xl border border-indigo-100 bg-indigo-50/30 p-4">
-                    <h3 className="text-sm font-semibold text-indigo-800">{group}</h3>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      {members.map((member) => (
-                        <article key={member.uid} className="rounded-xl border border-white bg-white p-3 shadow-sm">
+              <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50/40 p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">Organigrama</h3>
+                    <p className="text-xs text-slate-500">Vista jerárquica con acciones rápidas.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600" onClick={() => setOrgZoom((prev) => Math.max(70, prev - 10))}>
+                      <Minus className="h-4 w-4" />
+                    </button>
+                    <span className="min-w-12 text-center text-xs font-semibold text-slate-500">{orgZoom}%</span>
+                    <button type="button" className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600" onClick={() => setOrgZoom((prev) => Math.min(140, prev + 10))}>
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {organigramData.root ? (
+                  <div className="overflow-x-auto">
+                    <div className="mx-auto min-w-[980px] origin-top" style={{ transform: `scale(${orgZoom / 100})` }}>
+                      <div className="flex justify-center">
+                        <article className="w-64 rounded-xl border border-indigo-200 bg-white p-3 shadow-sm">
+                          <div className="mb-2 h-1 rounded-full bg-indigo-400" />
                           <div className="flex items-center gap-2">
-                            <UserAvatar name={member.displayName} photoURL={member.photoURL} sizeClassName="h-10 w-10" />
+                            <UserAvatar name={organigramData.root.displayName} photoURL={organigramData.root.photoURL} sizeClassName="h-10 w-10" />
                             <div>
-                              <p className="text-sm font-semibold text-slate-900">{member.displayName}</p>
-                              <p className="text-xs text-slate-500">{member.position || "Sin área"}</p>
+                              <p className="text-sm font-semibold text-slate-900">{organigramData.root.displayName}</p>
+                              <p className="text-xs text-slate-500">{organigramData.root.position || "Dirección"}</p>
                             </div>
                           </div>
+                          <div className="mt-2 flex items-center justify-end gap-2 text-slate-500">
+                            <button type="button" title="Asignar como raíz" className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-indigo-200 hover:text-indigo-600" onClick={() => updateOrgNode(organigramData.root!.uid, { orgNodeType: "root", orgParentId: "" })}>RAÍZ</button>
+                            <button type="button" title="Editar" className="hover:text-indigo-600" onClick={() => { setSelectedUserId(organigramData.root?.uid ?? null); setDetailTab("personal"); }}><Pencil className="h-4 w-4" /></button>
+                            <button type="button" title="Eliminar" className="hover:text-rose-500" onClick={() => organigramData.root && void deleteUser(organigramData.root.uid, organigramData.root.displayName)}><Trash2 className="h-4 w-4" /></button>
+                          </div>
                         </article>
-                      ))}
+                      </div>
+
+                      <div className="mx-auto h-10 w-px bg-slate-300" />
+                      <div className="mx-auto h-px w-[70%] bg-slate-300" />
+
+                      <div className="mt-2 grid grid-cols-3 gap-6">
+                        {organigramData.leaders.map((leader) => (
+                          <div key={leader.uid} className="flex flex-col items-center">
+                            <div className="h-8 w-px bg-slate-300" />
+                            <article className="w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                              <div className="mb-2 h-1 rounded-full bg-indigo-300" />
+                              <div className="flex items-center gap-2">
+                                <UserAvatar name={leader.displayName} photoURL={leader.photoURL} sizeClassName="h-9 w-9" />
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">{leader.displayName}</p>
+                                  <p className="text-xs text-slate-500">{leader.position || "Equipo"}</p>
+                                </div>
+                              </div>
+                              <div className="mt-2 flex items-center justify-end gap-2 text-slate-500">
+                                <select className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600" value={leader.orgTeam ?? ""} onChange={(event) => updateOrgNode(leader.uid, { orgNodeType: "leader", orgTeam: event.target.value, orgParentId: organigramData.root?.uid ?? "" })}>
+                                  <option value="">Sin equipo</option>
+                                  {areaOptions.map((area) => <option key={area} value={area}>{area}</option>)}
+                                </select>
+                                {leader.approved !== true ? <button type="button" title="Admitir" className="hover:text-emerald-600" onClick={() => approveUser(leader.uid)}><UserPlus className="h-4 w-4" /></button> : null}
+                                <button type="button" title="Editar" className="hover:text-indigo-600" onClick={() => { setSelectedUserId(leader.uid); setDetailTab("personal"); }}><Pencil className="h-4 w-4" /></button>
+                                <button type="button" title="Eliminar" className="hover:text-rose-500" onClick={() => void deleteUser(leader.uid, leader.displayName)}><Trash2 className="h-4 w-4" /></button>
+                              </div>
+                            </article>
+                          </div>
+                        ))}
+                      </div>
+
+                      {organigramData.team.length > 0 ? (
+                        <>
+                          <div className="mx-auto mt-3 h-8 w-px bg-slate-300" />
+                          <div className="mx-auto h-px w-[85%] bg-slate-300" />
+                          <div className="mt-2 grid grid-cols-4 gap-4">
+                            {organigramData.team.map((member) => (
+                              <div key={member.uid} className="flex flex-col items-center">
+                                <div className="h-6 w-px bg-slate-300" />
+                                <article className="w-56 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
+                                  <div className="mb-2 h-1 rounded-full bg-indigo-200" />
+                                  <div className="flex items-center gap-2">
+                                    <UserAvatar name={member.displayName} photoURL={member.photoURL} sizeClassName="h-8 w-8" />
+                                    <div>
+                                      <p className="line-clamp-1 text-xs font-semibold text-slate-900">{member.displayName}</p>
+                                      <p className="line-clamp-1 text-[11px] text-slate-500">{member.position || "Colaborador"}</p>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 flex flex-col gap-1">
+                                    <select className="w-full rounded border border-slate-200 px-1.5 py-1 text-[10px] text-slate-600" value={member.orgParentId ?? ""} onChange={(event) => updateOrgNode(member.uid, { orgNodeType: "member", orgParentId: event.target.value })}>
+                                      <option value="">Sin líder</option>
+                                      {organigramData.leaders.map((leader) => <option key={leader.uid} value={leader.uid}>{leader.displayName}</option>)}
+                                    </select>
+                                    <select className="w-full rounded border border-slate-200 px-1.5 py-1 text-[10px] text-slate-600" value={member.orgTeam ?? ""} onChange={(event) => updateOrgNode(member.uid, { orgNodeType: "member", orgTeam: event.target.value })}>
+                                      <option value="">Sin equipo</option>
+                                      {areaOptions.map((area) => <option key={area} value={area}>{area}</option>)}
+                                    </select>
+                                  </div>
+                                </article>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : null}
                     </div>
                   </div>
-                ))}
+                ) : (
+                  <p className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">Sin usuarios para este filtro.</p>
+                )}
+
+                {orgChart.length > 0 ? (
+                  <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {orgChart.map(([group, members]) => (
+                      <div key={group} className="rounded-xl border border-indigo-100 bg-white px-3 py-2">
+                        <p className="text-xs font-semibold text-indigo-700">{group}</p>
+                        <p className="text-xs text-slate-500">{members.length} integrante(s)</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -502,8 +693,8 @@ export default function AdminUsersPage() {
                 {filteredUsers.map((item) => (
                   <article key={item.uid} className="rounded-xl border border-slate-300/70 bg-white p-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.06)]">
                     <div className="flex items-center justify-between">
-                      <span className="rounded-full bg-teal-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
-                        {item.isActive === false ? "INACTIVO" : "ACTIVO"}
+                      <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${badgeStyles[getUserStatus(item)]}`}>
+                        {getUserStatusLabel(item)}
                       </span>
                     </div>
 
@@ -539,7 +730,12 @@ export default function AdminUsersPage() {
                       <button type="button" title="Desactivar" className="hover:text-amber-600" onClick={() => toggleActive(item.uid, item.isActive === false)}>
                         <UserX className="h-4.5 w-4.5" />
                       </button>
-                      <button type="button" title="Eliminar" className="text-rose-400 hover:text-rose-500" onClick={() => setToast({ message: "Eliminación disponible en próxima iteración.", tone: "error" })}>
+                      {item.approved !== true ? (
+                        <button type="button" title="Admitir" className="text-emerald-500 hover:text-emerald-600" onClick={() => approveUser(item.uid)}>
+                          <UserPlus className="h-4.5 w-4.5" />
+                        </button>
+                      ) : null}
+                      <button type="button" title="Eliminar" className="text-rose-400 hover:text-rose-500" onClick={() => void deleteUser(item.uid, item.displayName)}>
                         <Trash2 className="h-4.5 w-4.5" />
                       </button>
                     </div>
@@ -631,8 +827,17 @@ export default function AdminUsersPage() {
                           <label className="text-base font-semibold text-slate-600">Área / puesto
                             <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.position} onChange={(e) => setDetailForm((prev) => ({ ...prev, position: e.target.value }))} />
                           </label>
-                          <label className="text-base font-semibold text-slate-600">Inicio de funciones
+                          <label className="text-base font-semibold text-slate-600">Inicio de contrato
                             <input type="date" className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.employmentStartDate} onChange={(e) => setDetailForm((prev) => ({ ...prev, employmentStartDate: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Contrato indefinido
+                            <select className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.contractIndefinite ? "yes" : "no"} onChange={(e) => setDetailForm((prev) => ({ ...prev, contractIndefinite: e.target.value === "yes", contractEndDate: e.target.value === "yes" ? "" : prev.contractEndDate }))}>
+                              <option value="yes">Sí</option>
+                              <option value="no">No</option>
+                            </select>
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Fin de contrato
+                            <input type="date" className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.contractEndDate} onChange={(e) => setDetailForm((prev) => ({ ...prev, contractEndDate: e.target.value }))} disabled={detailForm.contractIndefinite} />
                           </label>
                           <label className="text-base font-semibold text-slate-600">Rol en sistema
                             <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={selectedUser.role === "admin" ? "Administrador" : "Colaborador"} readOnly />
