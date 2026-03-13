@@ -46,6 +46,7 @@ export type CollaboratorFormValues = {
   fechaPago: string;
   inicioContrato: string;
   finContrato: string;
+  contratoIndefinido: boolean;
   activo: boolean;
   notas: string;
 };
@@ -219,6 +220,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       fechaPago: "",
       inicioContrato: new Date().toISOString().slice(0, 10),
       finContrato: "",
+      contratoIndefinido: true,
       activo: true,
       notas: "",
     },
@@ -228,6 +230,9 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       if (!s(values.rolPuesto)) errors.rolPuesto = "Rol requerido";
       if (values.montoBase <= 0 || Number.isNaN(values.montoBase)) errors.montoBase = "Monto inválido";
       if (!values.inicioContrato) errors.inicioContrato = "Fecha requerida";
+      if (!values.contratoIndefinido && !values.finContrato) {
+        errors.finContrato = "Define fin de contrato o marca indefinido";
+      }
       const hasDay = values.diaPago !== "";
       const hasDate = Boolean(values.fechaPago);
       if (!hasDay && !hasDate) {
@@ -274,7 +279,13 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       },
       { name: "fechaPago", label: "Fecha de pago puntual", type: "date" },
       { name: "inicioContrato", label: "Inicio de contrato", type: "date" },
-      { name: "finContrato", label: "Fin de contrato", type: "date" },
+      { name: "contratoIndefinido", label: "Contrato indefinido", type: "checkbox" },
+      {
+        name: "finContrato",
+        label: "Fin de contrato",
+        type: "date",
+        showWhen: (values) => !(values as CollaboratorFormValues).contratoIndefinido,
+      },
       { name: "activo", label: "Activo", type: "checkbox" },
       { name: "notas", label: "Notas", type: "textarea", placeholder: "Observaciones…" },
     ],
@@ -508,6 +519,7 @@ interface FinanceModalProps {
   disabled?: boolean;
   isSubmitting?: boolean;
   initialValues?: Partial<FinanceFormValuesMap[FinanceModalType]> | null;
+  collaboratorsData?: Collaborator[];
 }
 
 export default function FinanceModal({
@@ -518,6 +530,7 @@ export default function FinanceModal({
   disabled,
   isSubmitting,
   initialValues,
+  collaboratorsData,
 }: FinanceModalProps) {
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const config = financeFormRegistry[modalType];
@@ -529,13 +542,17 @@ export default function FinanceModal({
   useEffect(() => {
     if (isOpen) {
       let isMounted = true;
-      listCollaborators()
-        .then((items) => {
-          if (isMounted) setCollaborators(items);
-        })
-        .catch(() => {
-          if (isMounted) setCollaborators([]);
-        });
+      if (collaboratorsData) {
+        setCollaborators(collaboratorsData);
+      } else {
+        listCollaborators()
+          .then((items) => {
+            if (isMounted) setCollaborators(items);
+          })
+          .catch(() => {
+            if (isMounted) setCollaborators([]);
+          });
+      }
       switch (modalType) {
         case "income":
           setForm({
@@ -576,7 +593,7 @@ export default function FinanceModal({
       };
     }
     return undefined;
-  }, [config.defaultValues, initialValues, isOpen, modalType]);
+  }, [collaboratorsData, config.defaultValues, initialValues, isOpen, modalType]);
 
   useEffect(() => {
     if (modalType !== "collaborator_payment") return;
