@@ -192,6 +192,8 @@ export default function FinanceModulePage() {
   >("summary");
   const [isAnnualView, setIsAnnualView] = useState(false);
   const [annualYear, setAnnualYear] = useState(() => new Date().getFullYear());
+  const currentYear = new Date().getFullYear();
+  const currentMonth = new Date().getMonth() + 1;
 
   const logDev = (...args: unknown[]) => {
     if (process.env.NODE_ENV === "development") {
@@ -227,14 +229,7 @@ export default function FinanceModulePage() {
     let usersLoaded = false;
 
     const markLoaded = () => {
-      if (
-        movementsLoaded &&
-        expensesLoaded &&
-        paymentsLoaded &&
-        transfersLoaded &&
-        collaboratorsLoaded &&
-        usersLoaded
-      ) {
+      if (movementsLoaded && expensesLoaded && paymentsLoaded) {
         setIsLoading((prev) => {
           if (prev) logDev("[FINANCE] loading complete");
           return false;
@@ -588,21 +583,28 @@ export default function FinanceModulePage() {
   );
 
   const annualSeries = useMemo(
-    () =>
-      computeMonthlySeries(
+    () => {
+      const endMonth = annualYear === currentYear ? currentMonth : 12;
+      return computeMonthlySeries(
         movements,
         expenses,
         payments,
-        `${annualYear}-12`,
-        12,
+        `${annualYear}-${String(endMonth).padStart(2, "0")}`,
+        endMonth,
         filters.account,
-      ),
-    [annualYear, expenses, filters.account, movements, payments],
+      );
+    },
+    [annualYear, currentMonth, currentYear, expenses, filters.account, movements, payments],
   );
 
   const ytdTotals = useMemo(() => {
     const year = isAnnualView ? annualYear : selectedMonthInfo.year;
-    const endMonth = isAnnualView ? 12 : selectedMonthInfo.month;
+    const endMonth =
+      isAnnualView
+        ? annualYear === currentYear
+          ? currentMonth
+          : 12
+        : selectedMonthInfo.month;
     return computeYearToDateTotals(
       movements,
       expenses,
@@ -613,6 +615,8 @@ export default function FinanceModulePage() {
     );
   }, [
     annualYear,
+    currentMonth,
+    currentYear,
     expenses,
     filters.account,
     isAnnualView,
