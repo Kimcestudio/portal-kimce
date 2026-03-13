@@ -20,7 +20,9 @@ import {
   Mail,
   MessageCircle,
   Network,
+  Plus,
   Pencil,
+  Minus,
   Search,
   Settings,
   Sparkles,
@@ -88,6 +90,7 @@ export default function AdminUsersPage() {
   const [areaFilter, setAreaFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive" | "pending">("all");
   const [perPage, setPerPage] = useState<number>(8);
+  const [orgZoom, setOrgZoom] = useState(100);
 
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("personal");
@@ -279,6 +282,24 @@ export default function AdminUsersPage() {
       byRole.set(key, list);
     });
     return [...byRole.entries()];
+  }, [filteredUsers]);
+
+  const organigramData = useMemo(() => {
+    if (filteredUsers.length === 0) {
+      return { root: null as FirestoreUser | null, leaders: [] as FirestoreUser[], team: [] as FirestoreUser[] };
+    }
+
+    const rootCandidate =
+      filteredUsers.find((item) => item.role === "admin") ??
+      filteredUsers.find((item) => /ceo|director|gerente/i.test(item.position ?? "")) ??
+      filteredUsers[0];
+
+    const remaining = filteredUsers.filter((item) => item.uid !== rootCandidate.uid);
+    const leaders = remaining.slice(0, 3);
+    const leaderIds = new Set(leaders.map((item) => item.uid));
+    const team = remaining.filter((item) => !leaderIds.has(item.uid)).slice(0, 6);
+
+    return { root: rootCandidate, leaders, team };
   }, [filteredUsers]);
 
   const selectedUser = useMemo(
@@ -532,26 +553,108 @@ export default function AdminUsersPage() {
             {loading ? <p className="mt-4 text-sm text-slate-500">Cargando usuarios...</p> : null}
 
             {!loading && viewMode === "organigrama" ? (
-              <div className="mt-5 space-y-4">
-                {orgChart.length === 0 ? <p className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">Sin usuarios para este filtro.</p> : null}
-                {orgChart.map(([group, members]) => (
-                  <div key={group} className="rounded-2xl border border-indigo-100 bg-indigo-50/30 p-4">
-                    <h3 className="text-sm font-semibold text-indigo-800">{group}</h3>
-                    <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                      {members.map((member) => (
-                        <article key={member.uid} className="rounded-xl border border-white bg-white p-3 shadow-sm">
+              <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50/40 p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-800">Organigrama</h3>
+                    <p className="text-xs text-slate-500">Vista jerárquica con acciones rápidas.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600" onClick={() => setOrgZoom((prev) => Math.max(70, prev - 10))}>
+                      <Minus className="h-4 w-4" />
+                    </button>
+                    <span className="min-w-12 text-center text-xs font-semibold text-slate-500">{orgZoom}%</span>
+                    <button type="button" className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600" onClick={() => setOrgZoom((prev) => Math.min(140, prev + 10))}>
+                      <Plus className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {organigramData.root ? (
+                  <div className="overflow-x-auto">
+                    <div className="mx-auto min-w-[980px] origin-top" style={{ transform: `scale(${orgZoom / 100})` }}>
+                      <div className="flex justify-center">
+                        <article className="w-64 rounded-xl border border-indigo-200 bg-white p-3 shadow-sm">
+                          <div className="mb-2 h-1 rounded-full bg-indigo-400" />
                           <div className="flex items-center gap-2">
-                            <UserAvatar name={member.displayName} photoURL={member.photoURL} sizeClassName="h-10 w-10" />
+                            <UserAvatar name={organigramData.root.displayName} photoURL={organigramData.root.photoURL} sizeClassName="h-10 w-10" />
                             <div>
-                              <p className="text-sm font-semibold text-slate-900">{member.displayName}</p>
-                              <p className="text-xs text-slate-500">{member.position || "Sin área"}</p>
+                              <p className="text-sm font-semibold text-slate-900">{organigramData.root.displayName}</p>
+                              <p className="text-xs text-slate-500">{organigramData.root.position || "Dirección"}</p>
                             </div>
                           </div>
+                          <div className="mt-2 flex items-center justify-end gap-2 text-slate-500">
+                            <button type="button" title="Editar" className="hover:text-indigo-600" onClick={() => { setSelectedUserId(organigramData.root?.uid ?? null); setDetailTab("personal"); }}><Pencil className="h-4 w-4" /></button>
+                            <button type="button" title="Eliminar" className="hover:text-rose-500" onClick={() => organigramData.root && void deleteUser(organigramData.root.uid, organigramData.root.displayName)}><Trash2 className="h-4 w-4" /></button>
+                          </div>
                         </article>
-                      ))}
+                      </div>
+
+                      <div className="mx-auto h-10 w-px bg-slate-300" />
+                      <div className="mx-auto h-px w-[70%] bg-slate-300" />
+
+                      <div className="mt-2 grid grid-cols-3 gap-6">
+                        {organigramData.leaders.map((leader) => (
+                          <div key={leader.uid} className="flex flex-col items-center">
+                            <div className="h-8 w-px bg-slate-300" />
+                            <article className="w-64 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+                              <div className="mb-2 h-1 rounded-full bg-indigo-300" />
+                              <div className="flex items-center gap-2">
+                                <UserAvatar name={leader.displayName} photoURL={leader.photoURL} sizeClassName="h-9 w-9" />
+                                <div>
+                                  <p className="text-sm font-semibold text-slate-900">{leader.displayName}</p>
+                                  <p className="text-xs text-slate-500">{leader.position || "Equipo"}</p>
+                                </div>
+                              </div>
+                              <div className="mt-2 flex items-center justify-end gap-2 text-slate-500">
+                                {leader.approved !== true ? <button type="button" title="Admitir" className="hover:text-emerald-600" onClick={() => approveUser(leader.uid)}><UserPlus className="h-4 w-4" /></button> : null}
+                                <button type="button" title="Editar" className="hover:text-indigo-600" onClick={() => { setSelectedUserId(leader.uid); setDetailTab("personal"); }}><Pencil className="h-4 w-4" /></button>
+                                <button type="button" title="Eliminar" className="hover:text-rose-500" onClick={() => void deleteUser(leader.uid, leader.displayName)}><Trash2 className="h-4 w-4" /></button>
+                              </div>
+                            </article>
+                          </div>
+                        ))}
+                      </div>
+
+                      {organigramData.team.length > 0 ? (
+                        <>
+                          <div className="mx-auto mt-3 h-8 w-px bg-slate-300" />
+                          <div className="mx-auto h-px w-[85%] bg-slate-300" />
+                          <div className="mt-2 grid grid-cols-4 gap-4">
+                            {organigramData.team.map((member) => (
+                              <div key={member.uid} className="flex flex-col items-center">
+                                <div className="h-6 w-px bg-slate-300" />
+                                <article className="w-56 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
+                                  <div className="mb-2 h-1 rounded-full bg-indigo-200" />
+                                  <div className="flex items-center gap-2">
+                                    <UserAvatar name={member.displayName} photoURL={member.photoURL} sizeClassName="h-8 w-8" />
+                                    <div>
+                                      <p className="line-clamp-1 text-xs font-semibold text-slate-900">{member.displayName}</p>
+                                      <p className="line-clamp-1 text-[11px] text-slate-500">{member.position || "Colaborador"}</p>
+                                    </div>
+                                  </div>
+                                </article>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : null}
                     </div>
                   </div>
-                ))}
+                ) : (
+                  <p className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-500">Sin usuarios para este filtro.</p>
+                )}
+
+                {orgChart.length > 0 ? (
+                  <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                    {orgChart.map(([group, members]) => (
+                      <div key={group} className="rounded-xl border border-indigo-100 bg-white px-3 py-2">
+                        <p className="text-xs font-semibold text-indigo-700">{group}</p>
+                        <p className="text-xs text-slate-500">{members.length} integrante(s)</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
