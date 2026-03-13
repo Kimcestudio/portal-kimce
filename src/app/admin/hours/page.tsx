@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
+  getDocs,
   onSnapshot,
+  query,
+  where,
+  writeBatch,
   type DocumentData,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -11,6 +15,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -86,6 +91,78 @@ const normalizeTimestamp = (value: unknown) => {
 
 const getUserDisplayName = (user: FirestoreUser) =>
   user.displayName || user.fullName || user.name || user.email || "Colaborador";
+
+
+const MAX_DELETE_BATCH = 400;
+
+async function deleteByField(collectionName: string, field: "uid" | "userId", targetUid: string) {
+  let totalDeleted = 0;
+
+  while (true) {
+    const snapshot = await getDocs(
+      query(collection(db, collectionName), where(field, "==", targetUid)),
+    );
+
+    if (snapshot.empty) break;
+
+    const docs = snapshot.docs.slice(0, MAX_DELETE_BATCH);
+    const batch = writeBatch(db);
+    docs.forEach((docSnap) => batch.delete(docSnap.ref));
+    await batch.commit();
+
+    totalDeleted += docs.length;
+    if (snapshot.size <= MAX_DELETE_BATCH) break;
+  }
+
+  return totalDeleted;
+}
+
+async function deleteUserSubcollectionDocs(targetUid: string, subcollectionName: string) {
+  let totalDeleted = 0;
+
+  while (true) {
+    const snapshot = await getDocs(collection(db, "users", targetUid, subcollectionName));
+    if (snapshot.empty) break;
+
+    const docs = snapshot.docs.slice(0, MAX_DELETE_BATCH);
+    const batch = writeBatch(db);
+    docs.forEach((docSnap) => batch.delete(docSnap.ref));
+    await batch.commit();
+
+    totalDeleted += docs.length;
+    if (snapshot.size <= MAX_DELETE_BATCH) break;
+  }
+
+  return totalDeleted;
+}
+
+async function directDeleteCollaboratorData(targetUid: string, mode: DeleteMode) {
+  const deleted = {
+    timeEntries: 0,
+    hourRequests: 0,
+    extraActivities: 0,
+    usersHours: 0,
+    usersHourRequests: 0,
+    usersExtraActivities: 0,
+  };
+
+  if (mode === "ALL" || mode === "TIME_ONLY") {
+    deleted.timeEntries += await deleteByField("timeEntries", "uid", targetUid);
+    deleted.timeEntries += await deleteByField("timeEntries", "userId", targetUid);
+    deleted.usersHours += await deleteUserSubcollectionDocs(targetUid, "hours");
+  }
+
+  if (mode === "ALL" || mode === "REQUESTS_ONLY") {
+    deleted.hourRequests += await deleteByField("hourRequests", "uid", targetUid);
+    deleted.hourRequests += await deleteByField("hourRequests", "userId", targetUid);
+    deleted.extraActivities += await deleteByField("extraActivities", "uid", targetUid);
+    deleted.extraActivities += await deleteByField("extraActivities", "userId", targetUid);
+    deleted.usersHourRequests += await deleteUserSubcollectionDocs(targetUid, "hourRequests");
+    deleted.usersExtraActivities += await deleteUserSubcollectionDocs(targetUid, "extraActivities");
+  }
+
+  return deleted;
+}
 
 function computeBreakMinutes(record: AdminAttendanceRecord | null) {
   if (!record) return 0;
@@ -411,52 +488,21 @@ export default function AdminHoursPage() {
   const globalChartData = useMemo(
     () =>
       summaries
-        .map((item) => ({
-          uid: item.user.uid,
-          name: getUserDisplayName(item.user),
-          workedHours: Math.round((item.totalMinutes / 60) * 10) / 10,
-          expectedHours: Math.round((item.expectedMinutes / 60) * 10) / 10,
-          workedLabel: minutesToHHMM(item.totalMinutes),
-          expectedLabel: minutesToHHMM(item.expectedMinutes),
-        }))
-        .sort((a, b) => b.workedHours - a.workedHours)
-        .slice(0, 10),
-    [summaries],
-  );
-
-  const globalKpis = useMemo(() => {
-    const totalCollaborators = summaries.length;
-    const pendingCount = summaries.filter((item) => item.diffMinutes < 0).length;
-    const onTrackCount = totalCollaborators - pendingCount;
-    const totalWorkedMinutes = summaries.reduce((sum, item) => sum + item.totalMinutes, 0);
-    const totalExpectedMinutes = summaries.reduce((sum, item) => sum + item.expectedMinutes, 0);
-    const totalDiffMinutes = totalWorkedMinutes - totalExpectedMinutes;
-    const completionRate = totalExpectedMinutes > 0
-      ? Math.round((totalWorkedMinutes / totalExpectedMinutes) * 100)
-      : 0;
-
-    return {
-      totalCollaborators,
-      pendingCount,
-      onTrackCount,
-      totalWorkedMinutes,
-      totalExpectedMinutes,
-      totalDiffMinutes,
-      completionRate,
-    };
-  }, [summaries]);
-
-  const globalChartData = useMemo(
-    () =>
-      summaries
-        .map((item) => ({
-          uid: item.user.uid,
-          name: getUserDisplayName(item.user),
-          workedHours: Math.round((item.totalMinutes / 60) * 10) / 10,
-          expectedHours: Math.round((item.expectedMinutes / 60) * 10) / 10,
-          workedLabel: minutesToHHMM(item.totalMinutes),
-          expectedLabel: minutesToHHMM(item.expectedMinutes),
-        }))
+        .map((item) => {
+          const completion = item.expectedMinutes > 0
+            ? Math.round((item.totalMinutes / item.expectedMinutes) * 100)
+            : 0;
+          return {
+            uid: item.user.uid,
+            name: getUserDisplayName(item.user),
+            workedHours: Math.round((item.totalMinutes / 60) * 10) / 10,
+            expectedHours: Math.round((item.expectedMinutes / 60) * 10) / 10,
+            workedLabel: minutesToHHMM(item.totalMinutes),
+            expectedLabel: minutesToHHMM(item.expectedMinutes),
+            completionRate: completion,
+            workedColor: completion >= 100 ? "#10b981" : completion >= 70 ? "#4f46e5" : "#f59e0b",
+          };
+        })
         .sort((a, b) => b.workedHours - a.workedHours)
         .slice(0, 10),
     [summaries],
@@ -549,6 +595,10 @@ export default function AdminHoursPage() {
         })
     : [];
 
+  const detailProgressRate = detailExpectedMinutesWeek > 0
+    ? Math.round((detailWorkedMinutesWeek / detailExpectedMinutesWeek) * 100)
+    : 0;
+  const detailRecordedDays = detailRecords.filter((record) => record.totalMinutes > 0).length;
 
   const handleSelectCollaboratorFromHours = (clickedUid: string) => {
     setDetailUserId(clickedUid);
@@ -599,8 +649,15 @@ export default function AdminHoursPage() {
         mode,
       });
 
+      const callableDeleted = response.data?.deleted ?? {};
+      const directDeleted = await directDeleteCollaboratorData(deleteTargetUserId, mode);
+
       if (response.data?.ok) {
-        window.alert("Datos del colaborador eliminados correctamente.");
+        if (process.env.NODE_ENV === "development") {
+          console.log("[admin/hours] callable delete summary", callableDeleted);
+          console.log("[admin/hours] direct delete summary", directDeleted);
+        }
+        window.alert("Datos del colaborador eliminados correctamente y sincronizados en la base de datos activa.");
       } else {
         window.alert("No se pudo confirmar la eliminación de datos.");
       }
@@ -617,12 +674,21 @@ export default function AdminHoursPage() {
         `[admin/hours] Error eliminando datos del colaborador (code: ${firebaseCode}, message: ${firebaseMessage})`,
         error,
       );
-      if (firebaseCode.includes("permission-denied")) {
-        window.alert("Tu usuario no tiene permisos de admin o reglas/roles no están correctos.");
-      } else if (firebaseCode.includes("functions/internal") || firebaseCode === "internal") {
-        window.alert("Error interno del servidor. Revisa los logs de Cloud Functions.");
-      } else {
-        window.alert("No se pudieron eliminar los datos del colaborador. Intenta nuevamente.");
+      try {
+        const directDeleted = await directDeleteCollaboratorData(deleteTargetUserId, mode);
+        if (process.env.NODE_ENV === "development") {
+          console.log("[admin/hours] direct delete fallback summary", directDeleted);
+        }
+        window.alert("Cloud Function no respondió correctamente, pero se aplicó eliminación directa en la base actual.");
+      } catch (directError) {
+        console.error("[admin/hours] Fallback direct delete failed", directError);
+        if (firebaseCode.includes("permission-denied")) {
+          window.alert("Tu usuario no tiene permisos de admin o reglas/roles no están correctos.");
+        } else if (firebaseCode.includes("functions/internal") || firebaseCode === "internal") {
+          window.alert("Error interno del servidor. Revisa los logs de Cloud Functions.");
+        } else {
+          window.alert("No se pudieron eliminar los datos del colaborador. Intenta nuevamente.");
+        }
       }
     } finally {
       setDeletingCollaboratorData(false);
@@ -674,23 +740,30 @@ export default function AdminHoursPage() {
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
-            <p className="text-xs text-slate-500">Colaboradores evaluados</p>
-            <p className="mt-1 text-2xl font-semibold text-slate-900">{globalKpis.totalCollaborators}</p>
-            <p className="text-xs text-slate-500">Semana {formatISODate(weekStart)}</p>
+          <div className="rounded-xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-4">
+            <p className="text-xs text-indigo-700">Colaboradores evaluados</p>
+            <p className="mt-1 text-2xl font-semibold text-indigo-950">{globalKpis.totalCollaborators}</p>
+            <p className="text-xs text-indigo-600">Semana {formatISODate(weekStart)}</p>
           </div>
-          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
-            <p className="text-xs text-slate-500">Cumpliendo meta semanal</p>
+          <div className="rounded-xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4">
+            <p className="text-xs text-emerald-700">Cumpliendo meta semanal</p>
             <p className="mt-1 text-2xl font-semibold text-emerald-700">{globalKpis.onTrackCount}</p>
-            <p className="text-xs text-slate-500">{globalKpis.pendingCount} con horas pendientes</p>
+            <p className="text-xs text-emerald-600">{globalKpis.pendingCount} con horas pendientes</p>
           </div>
-          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
-            <p className="text-xs text-slate-500">Horas registradas globales</p>
+          <div className="rounded-xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white p-4">
+            <p className="text-xs text-sky-700">Horas registradas globales</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">{minutesToHHMM(globalKpis.totalWorkedMinutes)}</p>
             <p className="text-xs text-slate-500">Objetivo {minutesToHHMM(globalKpis.totalExpectedMinutes)}</p>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-sky-100">
+              <div
+                className={`h-full rounded-full transition-all ${globalKpis.completionRate >= 100 ? "bg-emerald-500" : globalKpis.completionRate >= 70 ? "bg-indigo-500" : "bg-amber-500"}`}
+                style={{ width: `${Math.min(globalKpis.completionRate, 100)}%` }}
+              />
+            </div>
+            <p className="mt-1 text-xs font-medium text-sky-700">Avance semanal {globalKpis.completionRate}%</p>
           </div>
-          <div className="rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
-            <p className="text-xs text-slate-500">Balance global</p>
+          <div className="rounded-xl border border-amber-100 bg-gradient-to-br from-amber-50 to-white p-4">
+            <p className="text-xs text-amber-700">Balance global</p>
             <p className="mt-1 text-2xl font-semibold text-slate-900">
               {globalKpis.totalDiffMinutes < 0 ? "Deben" : "A favor"} {minutesToHHMM(Math.abs(globalKpis.totalDiffMinutes))}
             </p>
@@ -712,8 +785,12 @@ export default function AdminHoursPage() {
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} interval={0} angle={-18} textAnchor="end" height={46} />
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip content={<GlobalHoursTooltip />} />
-                  <Bar dataKey="expectedHours" fill="#cbd5e1" radius={[6, 6, 0, 0]} />
-                  <Bar dataKey="workedHours" fill="#4f46e5" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="expectedHours" fill="#dbeafe" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="workedHours" radius={[6, 6, 0, 0]}>
+                    {globalChartData.map((entry) => (
+                      <Cell key={`${entry.uid}-worked`} fill={entry.workedColor} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -880,11 +957,11 @@ export default function AdminHoursPage() {
 
       {/* ----------------------- DETALLE ----------------------- */}
       {detailUser ? (
-        <div ref={detailSectionRef} className="rounded-2xl border border-slate-200/60 bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+        <div ref={detailSectionRef} className="rounded-2xl border border-indigo-100 bg-gradient-to-b from-white to-indigo-50/30 p-6 shadow-[0_10px_28px_rgba(79,70,229,0.12)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="text-base font-semibold text-slate-900">Detalle semanal</h3>
-              <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
+              <div className="mt-1 flex items-center gap-2 text-xs text-slate-600">
                 <UserAvatar
                   name={getUserDisplayName(detailUser)}
                   photoURL={detailUser.photoURL}
@@ -897,7 +974,7 @@ export default function AdminHoursPage() {
               </div>
             </div>
             <button
-              className="rounded-full border border-slate-200/60 px-3 py-1 text-xs font-semibold text-slate-500"
+              className="rounded-full border border-indigo-200 bg-white px-3 py-1 text-xs font-semibold text-indigo-600"
               onClick={() => setDetailUserId(null)}
               type="button"
             >
@@ -905,57 +982,98 @@ export default function AdminHoursPage() {
             </button>
           </div>
 
-          <div className="mt-4 space-y-3">
-            {weekDates.map((date) => {
-              const dateISO = formatISODate(date);
-              const dayRecords = detailRecords.filter((item) => item.date === dateISO);
-
-              if (dayRecords.length === 0) {
-                return (
-                  <div
-                    key={dateISO}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200/60 px-4 py-3 text-sm"
-                  >
-                    <div>
-                      <p className="font-semibold text-slate-900">{dateISO}</p>
-                      <p className="text-xs text-slate-500">Sin registros</p>
-                    </div>
-                  </div>
-                );
-              }
-
-              return dayRecords.map((record, index) => {
-                const breakMinutes = computeBreakMinutes(record);
-                return (
-                  <div
-                    key={`${dateISO}-${record.id}-${index}`}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
-                  >
-                    <div>
-                      <p className="font-semibold text-slate-900">{dateISO}</p>
-                      <p className="text-xs text-slate-500">
-                        Entrada {formatTime(record?.checkInAt ?? null)} · Salida {formatTime(record?.checkOutAt ?? null)}
-                      </p>
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      Descanso {minutesToHHMM(breakMinutes)} · Total {minutesToHHMM(record?.totalMinutes ?? 0)}
-                    </div>
-                    <span className="text-xs text-slate-500">{record?.notes ?? "Sin notas"}</span>
-                  </div>
-                );
-              });
-            })}
+          <div className="mt-5">
+            <CollaboratorDashboard
+              collaboratorName={getUserDisplayName(detailUser)}
+              workedMinutes={detailWorkedMinutesWeek}
+              expectedMinutes={detailExpectedMinutesWeek}
+              diffMinutes={detailDiffMinutesWeek}
+              completedDays={detailCompletedDays}
+              totalBalanceMinutes={detailTotalBalanceMinutes}
+              chartData={detailChartData}
+            />
           </div>
 
-          <CollaboratorDashboard
-            collaboratorName={getUserDisplayName(detailUser)}
-            workedMinutes={detailWorkedMinutesWeek}
-            expectedMinutes={detailExpectedMinutesWeek}
-            diffMinutes={detailDiffMinutesWeek}
-            completedDays={detailCompletedDays}
-            totalBalanceMinutes={detailTotalBalanceMinutes}
-            chartData={detailChartData}
-          />
+          <section className="mt-6 rounded-2xl border border-indigo-100 bg-white/80 p-4 shadow-[0_8px_24px_rgba(99,102,241,0.08)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-semibold text-slate-900">Desglose por semana</h4>
+                <p className="text-xs text-slate-500">Resumen de horas trabajadas y detalle diario.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-medium">
+                <span className="rounded-full bg-indigo-100 px-3 py-1 text-indigo-700">
+                  Trabajadas {minutesToHHMM(detailWorkedMinutesWeek)}
+                </span>
+                <span className="rounded-full bg-cyan-100 px-3 py-1 text-cyan-700">
+                  Objetivo {minutesToHHMM(detailExpectedMinutesWeek)}
+                </span>
+                <span className={`rounded-full px-3 py-1 ${detailDiffMinutesWeek >= 0 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                  {detailDiffMinutesWeek >= 0 ? "Superávit" : "Pendiente"} {minutesToHHMM(Math.abs(detailDiffMinutesWeek))}
+                </span>
+                <span className="rounded-full bg-violet-100 px-3 py-1 text-violet-700">
+                  Progreso {detailProgressRate}%
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
+                <p className="text-xs text-indigo-700">Horas base</p>
+                <p className="text-lg font-semibold text-indigo-900">{minutesToHHMM(detailWorkedMinutesWeekBase)}</p>
+              </div>
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/70 p-3">
+                <p className="text-xs text-emerald-700">Extras aprobadas</p>
+                <p className="text-lg font-semibold text-emerald-900">{minutesToHHMM(detailApprovedExtraMinutesWeek)}</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3">
+                <p className="text-xs text-slate-600">Días con registros</p>
+                <p className="text-lg font-semibold text-slate-900">{detailRecordedDays}/{weekDates.length}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              {weekDates.map((date) => {
+                const dateISO = formatISODate(date);
+                const dayRecords = detailRecords.filter((item) => item.date === dateISO);
+
+                if (dayRecords.length === 0) {
+                  return (
+                    <div
+                      key={dateISO}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-white px-4 py-3 text-sm"
+                    >
+                      <div>
+                        <p className="font-semibold text-slate-900">{dateISO}</p>
+                        <p className="text-xs text-slate-500">Sin registros</p>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return dayRecords.map((record, index) => {
+                  const breakMinutes = computeBreakMinutes(record);
+                  return (
+                    <div
+                      key={`${dateISO}-${record.id}-${index}`}
+                      className="grid gap-2 rounded-xl border border-indigo-100 bg-white px-4 py-3 text-sm md:grid-cols-[1.3fr_1fr_1fr] md:items-center"
+                    >
+                      <div>
+                        <p className="font-semibold text-slate-900">{dateISO}</p>
+                        <p className="text-xs text-slate-500">
+                          Entrada {formatTime(record?.checkInAt ?? null)} · Salida {formatTime(record?.checkOutAt ?? null)}
+                        </p>
+                      </div>
+                      <div className="text-xs text-slate-600">
+                        <p>Descanso {minutesToHHMM(breakMinutes)}</p>
+                        <p className="font-semibold text-indigo-700">Total {minutesToHHMM(record?.totalMinutes ?? 0)}</p>
+                      </div>
+                      <span className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">{record?.notes ?? "Sin notas"}</span>
+                    </div>
+                  );
+                });
+              })}
+            </div>
+          </section>
         </div>
       ) : null}
 
