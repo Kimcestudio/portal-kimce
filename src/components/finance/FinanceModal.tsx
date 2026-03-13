@@ -46,6 +46,7 @@ export type CollaboratorFormValues = {
   fechaPago: string;
   inicioContrato: string;
   finContrato: string;
+  contratoIndefinido: boolean;
   activo: boolean;
   notas: string;
 };
@@ -219,6 +220,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       fechaPago: "",
       inicioContrato: new Date().toISOString().slice(0, 10),
       finContrato: "",
+      contratoIndefinido: true,
       activo: true,
       notas: "",
     },
@@ -228,6 +230,9 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       if (!s(values.rolPuesto)) errors.rolPuesto = "Rol requerido";
       if (values.montoBase <= 0 || Number.isNaN(values.montoBase)) errors.montoBase = "Monto inválido";
       if (!values.inicioContrato) errors.inicioContrato = "Fecha requerida";
+      if (!values.contratoIndefinido && !values.finContrato) {
+        errors.finContrato = "Define fin de contrato o marca indefinido";
+      }
       const hasDay = values.diaPago !== "";
       const hasDate = Boolean(values.fechaPago);
       if (!hasDay && !hasDate) {
@@ -274,7 +279,13 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       },
       { name: "fechaPago", label: "Fecha de pago puntual", type: "date" },
       { name: "inicioContrato", label: "Inicio de contrato", type: "date" },
-      { name: "finContrato", label: "Fin de contrato", type: "date" },
+      { name: "contratoIndefinido", label: "Contrato indefinido", type: "checkbox" },
+      {
+        name: "finContrato",
+        label: "Fin de contrato",
+        type: "date",
+        showWhen: (values) => !(values as CollaboratorFormValues).contratoIndefinido,
+      },
       { name: "activo", label: "Activo", type: "checkbox" },
       { name: "notas", label: "Notas", type: "textarea", placeholder: "Observaciones…" },
     ],

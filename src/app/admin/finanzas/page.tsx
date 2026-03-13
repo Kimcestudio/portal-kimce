@@ -158,6 +158,8 @@ export default function FinanceModulePage() {
       documentId: string;
       phone: string;
       employmentStartDate: string;
+      contractEndDate: string;
+      contractIndefinite: boolean;
       isActive: boolean;
       active: boolean;
     }>
@@ -381,6 +383,8 @@ export default function FinanceModulePage() {
             documentId: data.documentId ?? data.document ?? "",
             phone: data.phone ?? "",
             employmentStartDate: data.employmentStartDate ?? "",
+            contractEndDate: data.contractEndDate ?? "",
+            contractIndefinite: data.contractIndefinite ?? false,
             isActive: data.isActive ?? data.active ?? true,
             active: data.active ?? data.isActive ?? true,
           };
@@ -528,8 +532,12 @@ export default function FinanceModulePage() {
         cuentaPagoPreferida: profile?.cuentaPagoPreferida ?? "LUIS",
         diaPago: profile?.diaPago ?? null,
         fechaPago: profile?.fechaPago ?? null,
-        inicioContrato: profile?.inicioContrato ?? item.employmentStartDate ?? "",
-        finContrato: profile?.finContrato ?? null,
+        inicioContrato: item.employmentStartDate || profile?.inicioContrato || "",
+        finContrato:
+          item.contractIndefinite
+            ? null
+            : item.contractEndDate || profile?.finContrato || null,
+        contratoIndefinido: item.contractIndefinite ?? profile?.contratoIndefinido ?? false,
         activo: item.isActive,
         isActive: item.isActive,
         notas: profile?.notas ?? "",
@@ -992,17 +1000,31 @@ export default function FinanceModulePage() {
           diaPago: payload.diaPago === "" ? null : payload.diaPago,
           fechaPago: payload.fechaPago ? new Date(payload.fechaPago).toISOString() : null,
           inicioContrato: payload.inicioContrato ? new Date(payload.inicioContrato).toISOString() : "",
-          finContrato: payload.finContrato ? new Date(payload.finContrato).toISOString() : null,
+          finContrato: payload.contratoIndefinido ? null : payload.finContrato ? new Date(payload.finContrato).toISOString() : null,
+          contratoIndefinido: payload.contratoIndefinido,
           activo: payload.activo,
           notas: payload.notas,
           isActive: payload.activo,
-          correo: editingCollaborator.correo ?? null,
-          area: editingCollaborator.area ?? null,
-          documento: editingCollaborator.documento ?? null,
-          userId: editingCollaborator.userId ?? editingCollaborator.id,
+          correo: editingCollaborator?.correo ?? null,
+          area: editingCollaborator?.area ?? null,
+          documento: editingCollaborator?.documento ?? null,
+          userId: editingCollaborator?.userId ?? editingCollaborator?.id,
         };
-        await upsertCollaborator(editingCollaborator.id, collaboratorPayload);
-        setToast({ message: "Colaborador actualizado", tone: "success" });
+        if (editingCollaborator) {
+          await upsertCollaborator(editingCollaborator.id, collaboratorPayload);
+          if (editingCollaborator.userId) {
+            await updateDoc(doc(db, "users", editingCollaborator.userId), {
+              employmentStartDate: payload.inicioContrato,
+              contractEndDate: payload.contratoIndefinido ? "" : payload.finContrato,
+              contractIndefinite: payload.contratoIndefinido,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          setToast({ message: "Colaborador actualizado", tone: "success" });
+        } else {
+          await createCollaborator(collaboratorPayload);
+          setToast({ message: "Colaborador creado", tone: "success" });
+        }
       }
 
       if (type === "collaborator_payment") {
@@ -1219,6 +1241,7 @@ export default function FinanceModulePage() {
         fechaPago: formatDateOnly(editingCollaborator.fechaPago) ?? "",
         inicioContrato: formatDateOnly(editingCollaborator.inicioContrato) ?? editingCollaborator.inicioContrato,
         finContrato: formatDateOnly(editingCollaborator.finContrato) ?? "",
+        contratoIndefinido: editingCollaborator.contratoIndefinido ?? !editingCollaborator.finContrato,
         activo: editingCollaborator.isActive ?? editingCollaborator.activo ?? true,
         notas: editingCollaborator.notas ?? "",
       }
@@ -2186,9 +2209,23 @@ export default function FinanceModulePage() {
                 <option value="active">Activos</option>
                 <option value="inactive">Inactivos</option>
               </select>
-              <p className="text-xs font-semibold text-slate-500">
-                Listos para pago: {collaboratorsWithReadiness.filter((item) => item.isReadyForPayment).length} / {collaboratorsWithReadiness.length}
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold text-slate-500">
+                  Listos para pago: {collaboratorsWithReadiness.filter((item) => item.isReadyForPayment).length} / {collaboratorsWithReadiness.length}
+                </p>
+                <button
+                  type="button"
+                  className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white"
+                  onClick={() => {
+                    setEditingCollaborator(null);
+                    setModalType("collaborator");
+                    setIsModalOpen(true);
+                    setIsSubmitting(false);
+                  }}
+                >
+                  Nuevo colaborador
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 max-h-[55vh] overflow-y-auto rounded-2xl border border-slate-200">
@@ -2226,9 +2263,6 @@ export default function FinanceModulePage() {
                             </span>
                           ) : (
                             <div className="space-y-1">
-                              <span className="rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700">
-                                Faltan datos
-                              </span>
                               <p className="text-xs text-slate-500">{collaborator.missingFields.join(", ")}</p>
                             </div>
                           )}

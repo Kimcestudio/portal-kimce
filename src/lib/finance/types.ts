@@ -68,6 +68,7 @@ export interface Collaborator {
   fechaPago?: string | null;
   inicioContrato: string;
   finContrato?: string | null;
+  contratoIndefinido?: boolean;
   activo?: boolean;
   isActive: boolean;
   notas?: string | null;
