@@ -58,7 +58,7 @@ import type {
   FinanceTabKey,
   TransferMovement,
 } from "@/lib/finance/types";
-import { onSnapshot, orderBy, query } from "firebase/firestore";
+import { collection, doc, onSnapshot, orderBy, query, updateDoc, type DocumentData } from "firebase/firestore";
 import {
   createCollaborator,
   createCollaboratorPayment,
@@ -69,7 +69,6 @@ import {
   deleteExpense,
   deleteFinanceMovement,
   deleteTransfer,
-  updateCollaborator,
   updateCollaboratorActive,
   deleteCollaborator,
   updateCollaboratorPayment,
@@ -84,6 +83,7 @@ import {
   copyItemsFromPreviousMonth,
   ensureRecurringMovementsForMonth,
   materializeRecurringMovementById,
+  upsertCollaborator,
 } from "@/services/finance";
 import { db } from "@/services/firebase/client";
 
@@ -149,6 +149,22 @@ export default function FinanceModulePage() {
   const [payments, setPayments] = useState<CollaboratorPayment[]>([]);
   const [transfers, setTransfers] = useState<TransferMovement[]>([]);
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
+  const [users, setUsers] = useState<
+    Array<{
+      uid: string;
+      displayName: string;
+      email: string;
+      position: string;
+      area: string;
+      documentId: string;
+      phone: string;
+      employmentStartDate: string;
+      contractEndDate: string;
+      contractIndefinite: boolean;
+      isActive: boolean;
+      active: boolean;
+    }>
+  >([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<FinanceModalType>("income");
@@ -160,7 +176,7 @@ export default function FinanceModulePage() {
   const [editingTransfer, setEditingTransfer] = useState<TransferMovement | null>(null);
   const [editingCollaborator, setEditingCollaborator] = useState<Collaborator | null>(null);
   const [isCollaboratorsModalOpen, setIsCollaboratorsModalOpen] = useState(false);
-  const [collaboratorsFilter, setCollaboratorsFilter] = useState<"all" | "active" | "inactive">("all");
+  const [collaboratorsFilter, setCollaboratorsFilter] = useState<"all" | "active" | "inactive">("active");
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isProjectionDetailOpen, setIsProjectionDetailOpen] = useState(false);
   const [isDetailModalProjectionOpen, setIsDetailModalProjectionOpen] = useState(false);
@@ -199,6 +215,7 @@ export default function FinanceModulePage() {
     let paymentsLoaded = false;
     let transfersLoaded = false;
     let collaboratorsLoaded = false;
+    let usersLoaded = false;
 
     const markLoaded = () => {
       if (
@@ -206,7 +223,8 @@ export default function FinanceModulePage() {
         expensesLoaded &&
         paymentsLoaded &&
         transfersLoaded &&
-        collaboratorsLoaded
+        collaboratorsLoaded &&
+        usersLoaded
       ) {
         setIsLoading((prev) => {
           if (prev) logDev("[FINANCE] loading complete");
@@ -351,12 +369,47 @@ export default function FinanceModulePage() {
       },
     );
 
+    const usersRef = collection(db, "users");
+    const unsubscribeUsers = onSnapshot(
+      usersRef,
+      (snapshot) => {
+        const items = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data() as DocumentData;
+          return {
+            uid: data.uid ?? docSnap.id,
+            displayName: data.displayName ?? "",
+            email: data.email ?? "",
+            position: data.position ?? "",
+            area: data.area ?? "",
+            documentId: data.documentId ?? data.document ?? "",
+            phone: data.phone ?? "",
+            employmentStartDate: data.employmentStartDate ?? "",
+            contractEndDate: data.contractEndDate ?? "",
+            contractIndefinite: data.contractIndefinite ?? false,
+            isActive: data.isActive ?? data.active ?? true,
+            active: data.active ?? data.isActive ?? true,
+          };
+        });
+        setUsers(items);
+        if (!usersLoaded) {
+          usersLoaded = true;
+        }
+        markLoaded();
+      },
+      (error) => {
+        handleSnapshotError("usuarios", error);
+        usersLoaded = true;
+        markLoaded();
+      },
+    );
+
     return () => {
       unsubscribeMovements();
       unsubscribeExpenses();
       unsubscribePayments();
       unsubscribeTransfers();
       unsubscribeCollaborators();
+      unsubscribeUsers();
     };
   }, []);
 
@@ -461,9 +514,46 @@ export default function FinanceModulePage() {
     }
   }, [annualYear, availableYears]);
 
+  const collaboratorsForPayments = useMemo(() => {
+    const profileById = new Map(collaborators.map((collaborator) => [collaborator.id, collaborator]));
+    const mappedUsers = users.map((item) => {
+      const profile = profileById.get(item.uid);
+      const fallbackName = item.displayName || item.email || "Colaborador";
+      return {
+        id: item.uid,
+        userId: item.uid,
+        nombreCompleto: profile?.nombreCompleto ?? fallbackName,
+        correo: profile?.correo ?? item.email ?? "",
+        rolPuesto: profile?.rolPuesto ?? item.position ?? "",
+        area: profile?.area ?? item.area ?? "",
+        documento: profile?.documento ?? item.documentId ?? "",
+        tipoPago: profile?.tipoPago ?? "MENSUAL",
+        montoBase: profile?.montoBase ?? 0,
+        moneda: profile?.moneda ?? "PEN",
+        cuentaPagoPreferida: profile?.cuentaPagoPreferida ?? "LUIS",
+        diaPago: profile?.diaPago ?? null,
+        fechaPago: profile?.fechaPago ?? null,
+        inicioContrato: item.employmentStartDate || profile?.inicioContrato || "",
+        finContrato:
+          item.contractIndefinite
+            ? null
+            : item.contractEndDate || profile?.finContrato || null,
+        contratoIndefinido: item.contractIndefinite ?? profile?.contratoIndefinido ?? false,
+        activo: item.isActive,
+        isActive: item.isActive,
+        notas: profile?.notas ?? "",
+        createdAt: profile?.createdAt ?? "",
+        updatedAt: profile?.updatedAt ?? "",
+      } as Collaborator;
+    });
+
+    const legacyOnly = collaborators.filter((item) => !users.some((userItem) => userItem.uid === item.id));
+    return [...mappedUsers, ...legacyOnly];
+  }, [collaborators, users]);
+
   const collaboratorLookup = useMemo(() => {
-    return new Map(collaborators.map((collaborator) => [collaborator.id, collaborator.nombreCompleto]));
-  }, [collaborators]);
+    return new Map(collaboratorsForPayments.map((collaborator) => [collaborator.id, collaborator.nombreCompleto]));
+  }, [collaboratorsForPayments]);
 
   const kpis = useMemo(
     () => calcKpis(movements, expenses, filters.monthKey, filters.includeCancelled, filters.account),
@@ -906,14 +996,27 @@ export default function FinanceModulePage() {
           cuentaPagoPreferida: payload.cuentaPagoPreferida,
           diaPago: payload.diaPago === "" ? null : payload.diaPago,
           fechaPago: payload.fechaPago ? new Date(payload.fechaPago).toISOString() : null,
-          inicioContrato: new Date(payload.inicioContrato).toISOString(),
-          finContrato: payload.finContrato ? new Date(payload.finContrato).toISOString() : null,
+          inicioContrato: payload.inicioContrato ? new Date(payload.inicioContrato).toISOString() : "",
+          finContrato: payload.contratoIndefinido ? null : payload.finContrato ? new Date(payload.finContrato).toISOString() : null,
+          contratoIndefinido: payload.contratoIndefinido,
           activo: payload.activo,
           notas: payload.notas,
           isActive: payload.activo,
+          correo: editingCollaborator?.correo ?? null,
+          area: editingCollaborator?.area ?? null,
+          documento: editingCollaborator?.documento ?? null,
+          userId: editingCollaborator?.userId ?? editingCollaborator?.id,
         };
         if (editingCollaborator) {
-          await updateCollaborator(editingCollaborator.id, collaboratorPayload);
+          await upsertCollaborator(editingCollaborator.id, collaboratorPayload);
+          if (editingCollaborator.userId) {
+            await updateDoc(doc(db, "users", editingCollaborator.userId), {
+              employmentStartDate: payload.inicioContrato,
+              contractEndDate: payload.contratoIndefinido ? "" : payload.finContrato,
+              contractIndefinite: payload.contratoIndefinido,
+              updatedAt: new Date().toISOString(),
+            });
+          }
           setToast({ message: "Colaborador actualizado", tone: "success" });
         } else {
           await createCollaborator(collaboratorPayload);
@@ -1135,6 +1238,7 @@ export default function FinanceModulePage() {
         fechaPago: formatDateOnly(editingCollaborator.fechaPago) ?? "",
         inicioContrato: formatDateOnly(editingCollaborator.inicioContrato) ?? editingCollaborator.inicioContrato,
         finContrato: formatDateOnly(editingCollaborator.finContrato) ?? "",
+        contratoIndefinido: editingCollaborator.contratoIndefinido ?? !editingCollaborator.finContrato,
         activo: editingCollaborator.isActive ?? editingCollaborator.activo ?? true,
         notas: editingCollaborator.notas ?? "",
       }
@@ -1220,15 +1324,39 @@ export default function FinanceModulePage() {
     setToast({ message: "Movimiento eliminado", tone: "success" });
   };
 
+  const collaboratorsWithReadiness = useMemo(() => {
+    const requiredKeys: Array<{ key: keyof Collaborator; label: string }> = [
+      { key: "rolPuesto", label: "Cargo" },
+      { key: "tipoPago", label: "Tipo de pago" },
+      { key: "montoBase", label: "Monto base" },
+      { key: "cuentaPagoPreferida", label: "Cuenta de pago" },
+      { key: "inicioContrato", label: "Inicio de contrato" },
+    ];
+    return collaboratorsForPayments.map((item) => {
+      const missingFields = requiredKeys
+        .filter((field) => {
+          const value = item[field.key];
+          if (typeof value === "number") return value <= 0;
+          return !value;
+        })
+        .map((field) => field.label);
+      return {
+        ...item,
+        missingFields,
+        isReadyForPayment: missingFields.length === 0,
+      };
+    });
+  }, [collaboratorsForPayments]);
+
   const visibleCollaborators = useMemo(() => {
     if (collaboratorsFilter === "active") {
-      return collaborators.filter((item) => item.isActive ?? item.activo ?? true);
+      return collaboratorsWithReadiness.filter((item) => item.isActive ?? item.activo ?? true);
     }
     if (collaboratorsFilter === "inactive") {
-      return collaborators.filter((item) => !(item.isActive ?? item.activo ?? true));
+      return collaboratorsWithReadiness.filter((item) => !(item.isActive ?? item.activo ?? true));
     }
-    return collaborators;
-  }, [collaborators, collaboratorsFilter]);
+    return collaboratorsWithReadiness;
+  }, [collaboratorsFilter, collaboratorsWithReadiness]);
 
   const handleEditCollaborator = (collaborator: Collaborator) => {
     setEditingCollaborator(collaborator);
@@ -1239,6 +1367,11 @@ export default function FinanceModulePage() {
 
   const handleToggleCollaborator = async (collaborator: Collaborator) => {
     const nextActive = !(collaborator.isActive ?? collaborator.activo ?? true);
+    await updateDoc(doc(db, "users", collaborator.id), {
+      isActive: nextActive,
+      active: nextActive,
+      updatedAt: new Date().toISOString(),
+    });
     await updateCollaboratorActive(collaborator.id, nextActive);
     setToast({
       message: nextActive ? "Colaborador activado" : "Colaborador desactivado",
@@ -2050,7 +2183,7 @@ export default function FinanceModulePage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Gestión de colaboradores</h3>
-                <p className="text-xs text-slate-500">Administra alta, edición y estado de colaboradores.</p>
+                <p className="text-xs text-slate-500">Vista administrativa de colaboradores activos y campos pendientes para pago.</p>
               </div>
               <button
                 type="button"
@@ -2073,18 +2206,23 @@ export default function FinanceModulePage() {
                 <option value="active">Activos</option>
                 <option value="inactive">Inactivos</option>
               </select>
-              <button
-                type="button"
-                className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white"
-                onClick={() => {
-                  setEditingCollaborator(null);
-                  setModalType("collaborator");
-                  setIsModalOpen(true);
-                  setIsSubmitting(false);
-                }}
-              >
-                Nuevo colaborador
-              </button>
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold text-slate-500">
+                  Listos para pago: {collaboratorsWithReadiness.filter((item) => item.isReadyForPayment).length} / {collaboratorsWithReadiness.length}
+                </p>
+                <button
+                  type="button"
+                  className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white"
+                  onClick={() => {
+                    setEditingCollaborator(null);
+                    setModalType("collaborator");
+                    setIsModalOpen(true);
+                    setIsSubmitting(false);
+                  }}
+                >
+                  Nuevo colaborador
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 max-h-[55vh] overflow-y-auto rounded-2xl border border-slate-200">
@@ -2093,6 +2231,7 @@ export default function FinanceModulePage() {
                   <tr>
                     <th className="px-4 py-3">Nombre</th>
                     <th className="px-4 py-3">Estado</th>
+                    <th className="px-4 py-3">Completitud para pago</th>
                     <th className="px-4 py-3 text-right">Acciones</th>
                   </tr>
                 </thead>
@@ -2103,6 +2242,7 @@ export default function FinanceModulePage() {
                       <tr key={collaborator.id} className="border-t border-slate-100">
                         <td className="px-4 py-3">
                           <p className="font-semibold text-slate-900">{collaborator.nombreCompleto}</p>
+                          <p className="text-xs text-slate-500">{collaborator.correo ?? "Sin correo"}</p>
                         </td>
                         <td className="px-4 py-3">
                           <span
@@ -2112,6 +2252,17 @@ export default function FinanceModulePage() {
                           >
                             {isActive ? "Activo" : "Inactivo"}
                           </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {collaborator.isReadyForPayment ? (
+                            <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-700">
+                              Completo
+                            </span>
+                          ) : (
+                            <div className="space-y-1">
+                              <p className="text-xs text-slate-500">{collaborator.missingFields.join(", ")}</p>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex justify-end gap-1.5">
@@ -2149,7 +2300,7 @@ export default function FinanceModulePage() {
                   })}
                   {visibleCollaborators.length === 0 ? (
                     <tr>
-                      <td colSpan={3} className="px-4 py-6 text-center text-xs text-slate-400">
+                      <td colSpan={4} className="px-4 py-6 text-center text-xs text-slate-400">
                         Sin colaboradores para este filtro.
                       </td>
                     </tr>
@@ -2169,7 +2320,7 @@ export default function FinanceModulePage() {
         movements={copySourceData.movements}
         expenses={copySourceData.expenses}
         payments={copySourceData.payments}
-        collaborators={collaborators}
+        collaborators={collaboratorsForPayments}
         loading={isCopyingMonthData}
       />
 
@@ -2188,6 +2339,7 @@ export default function FinanceModulePage() {
         disabled={isSubmitting}
         isSubmitting={isSubmitting}
         initialValues={modalInitialValues}
+        collaboratorsData={collaboratorsForPayments}
       />
     </div>
   );
