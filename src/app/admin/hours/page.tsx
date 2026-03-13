@@ -3,7 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
+  getDocs,
   onSnapshot,
+  query,
+  where,
+  writeBatch,
   type DocumentData,
 } from "firebase/firestore";
 import { getFunctions, httpsCallable } from "firebase/functions";
@@ -87,6 +91,78 @@ const normalizeTimestamp = (value: unknown) => {
 
 const getUserDisplayName = (user: FirestoreUser) =>
   user.displayName || user.fullName || user.name || user.email || "Colaborador";
+
+
+const MAX_DELETE_BATCH = 400;
+
+async function deleteByField(collectionName: string, field: "uid" | "userId", targetUid: string) {
+  let totalDeleted = 0;
+
+  while (true) {
+    const snapshot = await getDocs(
+      query(collection(db, collectionName), where(field, "==", targetUid)),
+    );
+
+    if (snapshot.empty) break;
+
+    const docs = snapshot.docs.slice(0, MAX_DELETE_BATCH);
+    const batch = writeBatch(db);
+    docs.forEach((docSnap) => batch.delete(docSnap.ref));
+    await batch.commit();
+
+    totalDeleted += docs.length;
+    if (snapshot.size <= MAX_DELETE_BATCH) break;
+  }
+
+  return totalDeleted;
+}
+
+async function deleteUserSubcollectionDocs(targetUid: string, subcollectionName: string) {
+  let totalDeleted = 0;
+
+  while (true) {
+    const snapshot = await getDocs(collection(db, "users", targetUid, subcollectionName));
+    if (snapshot.empty) break;
+
+    const docs = snapshot.docs.slice(0, MAX_DELETE_BATCH);
+    const batch = writeBatch(db);
+    docs.forEach((docSnap) => batch.delete(docSnap.ref));
+    await batch.commit();
+
+    totalDeleted += docs.length;
+    if (snapshot.size <= MAX_DELETE_BATCH) break;
+  }
+
+  return totalDeleted;
+}
+
+async function directDeleteCollaboratorData(targetUid: string, mode: DeleteMode) {
+  const deleted = {
+    timeEntries: 0,
+    hourRequests: 0,
+    extraActivities: 0,
+    usersHours: 0,
+    usersHourRequests: 0,
+    usersExtraActivities: 0,
+  };
+
+  if (mode === "ALL" || mode === "TIME_ONLY") {
+    deleted.timeEntries += await deleteByField("timeEntries", "uid", targetUid);
+    deleted.timeEntries += await deleteByField("timeEntries", "userId", targetUid);
+    deleted.usersHours += await deleteUserSubcollectionDocs(targetUid, "hours");
+  }
+
+  if (mode === "ALL" || mode === "REQUESTS_ONLY") {
+    deleted.hourRequests += await deleteByField("hourRequests", "uid", targetUid);
+    deleted.hourRequests += await deleteByField("hourRequests", "userId", targetUid);
+    deleted.extraActivities += await deleteByField("extraActivities", "uid", targetUid);
+    deleted.extraActivities += await deleteByField("extraActivities", "userId", targetUid);
+    deleted.usersHourRequests += await deleteUserSubcollectionDocs(targetUid, "hourRequests");
+    deleted.usersExtraActivities += await deleteUserSubcollectionDocs(targetUid, "extraActivities");
+  }
+
+  return deleted;
+}
 
 function computeBreakMinutes(record: AdminAttendanceRecord | null) {
   if (!record) return 0;
@@ -573,8 +649,15 @@ export default function AdminHoursPage() {
         mode,
       });
 
+      const callableDeleted = response.data?.deleted ?? {};
+      const directDeleted = await directDeleteCollaboratorData(deleteTargetUserId, mode);
+
       if (response.data?.ok) {
-        window.alert("Datos del colaborador eliminados correctamente.");
+        if (process.env.NODE_ENV === "development") {
+          console.log("[admin/hours] callable delete summary", callableDeleted);
+          console.log("[admin/hours] direct delete summary", directDeleted);
+        }
+        window.alert("Datos del colaborador eliminados correctamente y sincronizados en la base de datos activa.");
       } else {
         window.alert("No se pudo confirmar la eliminación de datos.");
       }
@@ -591,12 +674,21 @@ export default function AdminHoursPage() {
         `[admin/hours] Error eliminando datos del colaborador (code: ${firebaseCode}, message: ${firebaseMessage})`,
         error,
       );
-      if (firebaseCode.includes("permission-denied")) {
-        window.alert("Tu usuario no tiene permisos de admin o reglas/roles no están correctos.");
-      } else if (firebaseCode.includes("functions/internal") || firebaseCode === "internal") {
-        window.alert("Error interno del servidor. Revisa los logs de Cloud Functions.");
-      } else {
-        window.alert("No se pudieron eliminar los datos del colaborador. Intenta nuevamente.");
+      try {
+        const directDeleted = await directDeleteCollaboratorData(deleteTargetUserId, mode);
+        if (process.env.NODE_ENV === "development") {
+          console.log("[admin/hours] direct delete fallback summary", directDeleted);
+        }
+        window.alert("Cloud Function no respondió correctamente, pero se aplicó eliminación directa en la base actual.");
+      } catch (directError) {
+        console.error("[admin/hours] Fallback direct delete failed", directError);
+        if (firebaseCode.includes("permission-denied")) {
+          window.alert("Tu usuario no tiene permisos de admin o reglas/roles no están correctos.");
+        } else if (firebaseCode.includes("functions/internal") || firebaseCode === "internal") {
+          window.alert("Error interno del servidor. Revisa los logs de Cloud Functions.");
+        } else {
+          window.alert("No se pudieron eliminar los datos del colaborador. Intenta nuevamente.");
+        }
       }
     } finally {
       setDeletingCollaboratorData(false);
