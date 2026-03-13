@@ -209,6 +209,16 @@ export default function FinanceModulePage() {
   });
 
   useEffect(() => {
+    const loadFallbackTimeout = setTimeout(() => {
+      setIsLoading((prev) => {
+        if (prev) {
+          logDev("[FINANCE] loading fallback timeout reached");
+          return false;
+        }
+        return prev;
+      });
+    }, 7000);
+
     let movementsLoaded = false;
     let expensesLoaded = false;
     let paymentsLoaded = false;
@@ -397,6 +407,7 @@ export default function FinanceModulePage() {
     );
 
     return () => {
+      clearTimeout(loadFallbackTimeout);
       unsubscribeMovements();
       unsubscribeExpenses();
       unsubscribePayments();
