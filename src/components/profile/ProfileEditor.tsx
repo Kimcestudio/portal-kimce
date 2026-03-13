@@ -52,6 +52,8 @@ export default function ProfileEditor({ user, onSave, canEditEmploymentStartDate
       position: user.position,
       birthDate: user.birthDate ?? "",
       employmentStartDate: user.employmentStartDate ?? "",
+      contractEndDate: user.contractEndDate ?? "",
+      contractIndefinite: user.contractIndefinite ?? false,
       phone: user.phone ?? "",
       maritalStatus: user.maritalStatus ?? "Soltero",
       gender: user.gender ?? "No especificado",
@@ -86,6 +88,8 @@ export default function ProfileEditor({ user, onSave, canEditEmploymentStartDate
       position: form.position?.trim() ?? user.position,
       birthDate: form.birthDate ?? "",
       employmentStartDate: form.employmentStartDate ?? "",
+      contractEndDate: form.contractIndefinite ? "" : form.contractEndDate ?? "",
+      contractIndefinite: form.contractIndefinite ?? false,
       phone: form.phone ?? "",
       maritalStatus: form.maritalStatus ?? "",
       gender: form.gender ?? "",
@@ -181,7 +185,7 @@ export default function ProfileEditor({ user, onSave, canEditEmploymentStartDate
             <Field label="Área / puesto" icon={<BriefcaseBusiness className="h-3.5 w-3.5" />}>
               <input className={inputClassName} value={form.position ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, position: e.target.value }))} />
             </Field>
-            <Field label="Inicio de funciones" icon={<CalendarDays className="h-3.5 w-3.5" />}>
+            <Field label="Inicio de contrato" icon={<CalendarDays className="h-3.5 w-3.5" />}>
               <input
                 type="date"
                 className={inputClassName}
@@ -192,9 +196,36 @@ export default function ProfileEditor({ user, onSave, canEditEmploymentStartDate
               />
               <p className="mt-1 text-[11px] text-slate-500">
                 {canEditEmploymentStartDate
-                  ? "Este dato se usa para aniversarios laborales del dashboard."
+                  ? "Este dato se comparte con Finanzas para pagos de colaboradores."
                   : "Solo administradores pueden editar este dato."}
               </p>
+            </Field>
+            <Field label="Contrato indefinido">
+              <select
+                className={inputClassName}
+                value={form.contractIndefinite ? "yes" : "no"}
+                onChange={(e) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    contractIndefinite: e.target.value === "yes",
+                    contractEndDate: e.target.value === "yes" ? "" : prev.contractEndDate,
+                  }))
+                }
+                disabled={!canEditEmploymentStartDate}
+              >
+                <option value="yes">Sí</option>
+                <option value="no">No</option>
+              </select>
+            </Field>
+            <Field label="Fin de contrato" icon={<CalendarDays className="h-3.5 w-3.5" />}>
+              <input
+                type="date"
+                className={inputClassName}
+                value={form.contractEndDate ?? ""}
+                onChange={(e) => setForm((prev) => ({ ...prev, contractEndDate: e.target.value }))}
+                disabled={!canEditEmploymentStartDate || Boolean(form.contractIndefinite)}
+                readOnly={!canEditEmploymentStartDate || Boolean(form.contractIndefinite)}
+              />
             </Field>
             <Field label="Banco" icon={<Landmark className="h-3.5 w-3.5" />}>
               <input className={inputClassName} value={form.bankName ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, bankName: e.target.value }))} />
