@@ -480,6 +480,24 @@ export async function createCollaborator(input: Omit<Collaborator, "id" | "creat
   return { ...collaborator, id: docRef.id };
 }
 
+export async function upsertCollaborator(
+  id: string,
+  updates: Partial<Omit<Collaborator, "id" | "createdAt" | "updatedAt">>,
+) {
+  const now = new Date().toISOString();
+  const targetRef = doc(financeRefs.collaboratorsRef, id);
+  const existing = await getDoc(targetRef);
+  const normalized = {
+    ...updates,
+    isActive: updates.isActive ?? updates.activo ?? true,
+    activo: updates.activo ?? updates.isActive ?? true,
+    createdAt: existing.exists() ? existing.data().createdAt ?? now : now,
+    updatedAt: now,
+  };
+  await setDoc(targetRef, normalized, { merge: true });
+  return { ...normalized, id };
+}
+
 
 export async function updateCollaborator(
   id: string,
