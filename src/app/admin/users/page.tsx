@@ -2,6 +2,7 @@
 
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   setDoc,
@@ -61,6 +62,7 @@ const formatStatusLabel = (isActive?: boolean) => (isActive === false ? "Inactiv
 const badgeStyles = {
   active: "bg-emerald-50 text-emerald-700 border border-emerald-200",
   inactive: "bg-rose-50 text-rose-700 border border-rose-200",
+  pending: "bg-amber-50 text-amber-700 border border-amber-200",
 };
 
 const detailTabs: Array<{ id: DetailTab; label: string }> = [
@@ -364,6 +366,34 @@ export default function AdminUsersPage() {
     }
   };
 
+  const deleteUser = async (uid: string, displayName: string) => {
+    const confirmed = window.confirm(`¿Eliminar al usuario ${displayName}? Esta acción no se puede deshacer.`);
+    if (!confirmed) return;
+    try {
+      await deleteDoc(doc(db, "users", uid));
+      setToast({ message: "Usuario eliminado correctamente.", tone: "success" });
+      setError(null);
+    } catch (err) {
+      console.error("[admin/users] Error deleting user", err);
+      const message = err instanceof Error ? err.message : "No se pudo eliminar el usuario.";
+      setError(message);
+      setToast({ message, tone: "error" });
+    }
+  };
+
+  const getUserStatus = (item: FirestoreUser): "active" | "inactive" | "pending" => {
+    if (item.approved !== true) return "pending";
+    if (item.isActive === false) return "inactive";
+    return "active";
+  };
+
+  const getUserStatusLabel = (item: FirestoreUser) => {
+    const status = getUserStatus(item);
+    if (status === "pending") return "PENDIENTE";
+    if (status === "inactive") return "INACTIVO";
+    return "ACTIVO";
+  };
+
   const toggleActive = (uid: string, nextValue: boolean) => updateUserDoc(uid, { isActive: nextValue });
   const updateRole = (uid: string, role: UserProfile["role"]) => updateUserDoc(uid, { role });
   const updatePosition = (uid: string, position: string) => updateUserDoc(uid, { position });
@@ -530,8 +560,8 @@ export default function AdminUsersPage() {
                 {filteredUsers.map((item) => (
                   <article key={item.uid} className="rounded-xl border border-slate-300/70 bg-white p-3.5 shadow-[0_4px_14px_rgba(15,23,42,0.06)]">
                     <div className="flex items-center justify-between">
-                      <span className="rounded-full bg-teal-400 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-white">
-                        {item.isActive === false ? "INACTIVO" : "ACTIVO"}
+                      <span className={`rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wide ${badgeStyles[getUserStatus(item)]}`}>
+                        {getUserStatusLabel(item)}
                       </span>
                     </div>
 
@@ -567,7 +597,12 @@ export default function AdminUsersPage() {
                       <button type="button" title="Desactivar" className="hover:text-amber-600" onClick={() => toggleActive(item.uid, item.isActive === false)}>
                         <UserX className="h-4.5 w-4.5" />
                       </button>
-                      <button type="button" title="Eliminar" className="text-rose-400 hover:text-rose-500" onClick={() => setToast({ message: "Eliminación disponible en próxima iteración.", tone: "error" })}>
+                      {item.approved !== true ? (
+                        <button type="button" title="Admitir" className="text-emerald-500 hover:text-emerald-600" onClick={() => approveUser(item.uid)}>
+                          <UserPlus className="h-4.5 w-4.5" />
+                        </button>
+                      ) : null}
+                      <button type="button" title="Eliminar" className="text-rose-400 hover:text-rose-500" onClick={() => void deleteUser(item.uid, item.displayName)}>
                         <Trash2 className="h-4.5 w-4.5" />
                       </button>
                     </div>
