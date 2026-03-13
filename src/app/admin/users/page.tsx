@@ -35,6 +35,7 @@ import UserAvatar from "@/components/common/UserAvatar";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { db } from "@/services/firebase/client";
 import type { UserProfile, WorkSchedule } from "@/services/firebase/types";
+import { upsertCollaborator } from "@/services/finance";
 import {
   DEFAULT_WORK_SCHEDULES,
   DEFAULT_WORK_SCHEDULE_ID,
@@ -97,6 +98,8 @@ export default function AdminUsersPage() {
     middleName: "",
     birthDate: "",
     employmentStartDate: "",
+    contractEndDate: "",
+    contractIndefinite: false,
     phone: "",
     maritalStatus: "Soltero",
     gender: "No especificado",
@@ -138,6 +141,8 @@ export default function AdminUsersPage() {
             updatedAt,
             birthDate: data.birthDate ?? "",
             employmentStartDate: data.employmentStartDate ?? "",
+            contractEndDate: data.contractEndDate ?? "",
+            contractIndefinite: data.contractIndefinite ?? false,
             phone: data.phone ?? "",
             maritalStatus: data.maritalStatus ?? "",
             gender: data.gender ?? "",
@@ -291,6 +296,8 @@ export default function AdminUsersPage() {
       middleName: parts.slice(2).join(" "),
       birthDate: selectedUser.birthDate ?? "",
       employmentStartDate: selectedUser.employmentStartDate ?? "",
+      contractEndDate: selectedUser.contractEndDate ?? "",
+      contractIndefinite: selectedUser.contractIndefinite ?? false,
       phone: selectedUser.phone ?? "",
       maritalStatus: selectedUser.maritalStatus ?? "Soltero",
       gender: selectedUser.gender ?? "No especificado",
@@ -309,6 +316,8 @@ export default function AdminUsersPage() {
       position: detailForm.position.trim(),
       birthDate: detailForm.birthDate,
       employmentStartDate: detailForm.employmentStartDate,
+      contractEndDate: detailForm.contractIndefinite ? "" : detailForm.contractEndDate,
+      contractIndefinite: detailForm.contractIndefinite,
       phone: detailForm.phone,
       maritalStatus: detailForm.maritalStatus,
       gender: detailForm.gender,
@@ -316,6 +325,25 @@ export default function AdminUsersPage() {
       accountType: detailForm.accountType,
       accountNumber: detailForm.accountNumber,
       cci: detailForm.cci,
+    });
+
+    await upsertCollaborator(selectedUser.uid, {
+      nombreCompleto: detailForm.displayName.trim() || selectedUser.displayName,
+      correo: detailForm.email.trim() || selectedUser.email,
+      rolPuesto: detailForm.position.trim(),
+      tipoPago: "MENSUAL",
+      montoBase: 0,
+      moneda: "PEN",
+      cuentaPagoPreferida: "LUIS",
+      inicioContrato: detailForm.employmentStartDate ? new Date(detailForm.employmentStartDate).toISOString() : "",
+      finContrato:
+        detailForm.contractIndefinite || !detailForm.contractEndDate
+          ? null
+          : new Date(detailForm.contractEndDate).toISOString(),
+      contratoIndefinido: detailForm.contractIndefinite,
+      activo: selectedUser.isActive ?? true,
+      isActive: selectedUser.isActive ?? true,
+      userId: selectedUser.uid,
     });
   };
 
@@ -631,8 +659,17 @@ export default function AdminUsersPage() {
                           <label className="text-base font-semibold text-slate-600">Área / puesto
                             <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.position} onChange={(e) => setDetailForm((prev) => ({ ...prev, position: e.target.value }))} />
                           </label>
-                          <label className="text-base font-semibold text-slate-600">Inicio de funciones
+                          <label className="text-base font-semibold text-slate-600">Inicio de contrato
                             <input type="date" className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.employmentStartDate} onChange={(e) => setDetailForm((prev) => ({ ...prev, employmentStartDate: e.target.value }))} />
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Contrato indefinido
+                            <select className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.contractIndefinite ? "yes" : "no"} onChange={(e) => setDetailForm((prev) => ({ ...prev, contractIndefinite: e.target.value === "yes", contractEndDate: e.target.value === "yes" ? "" : prev.contractEndDate }))}>
+                              <option value="yes">Sí</option>
+                              <option value="no">No</option>
+                            </select>
+                          </label>
+                          <label className="text-base font-semibold text-slate-600">Fin de contrato
+                            <input type="date" className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={detailForm.contractEndDate} onChange={(e) => setDetailForm((prev) => ({ ...prev, contractEndDate: e.target.value }))} disabled={detailForm.contractIndefinite} />
                           </label>
                           <label className="text-base font-semibold text-slate-600">Rol en sistema
                             <input className="mt-1.5 w-full rounded-xl border-2 border-slate-300 px-3 py-2 text-base" value={selectedUser.role === "admin" ? "Administrador" : "Colaborador"} readOnly />
