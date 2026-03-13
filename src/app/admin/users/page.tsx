@@ -50,6 +50,9 @@ type FirestoreUser = UserProfile & {
   createdAt?: string;
   updatedAt?: string;
   workScheduleId?: string;
+  orgNodeType?: "root" | "leader" | "member";
+  orgParentId?: string;
+  orgTeam?: string;
 };
 
 type FirestoreTimestamp = {
@@ -155,6 +158,9 @@ export default function AdminUsersPage() {
             accountType: data.accountType ?? "",
             accountNumber: data.accountNumber ?? "",
             cci: data.cci ?? "",
+            orgNodeType: (data.orgNodeType as FirestoreUser["orgNodeType"]) ?? undefined,
+            orgParentId: data.orgParentId ?? "",
+            orgTeam: data.orgTeam ?? "",
           };
         });
         setUsers(nextUsers);
@@ -290,14 +296,19 @@ export default function AdminUsersPage() {
     }
 
     const rootCandidate =
+      filteredUsers.find((item) => item.orgNodeType === "root") ??
       filteredUsers.find((item) => item.role === "admin") ??
       filteredUsers.find((item) => /ceo|director|gerente/i.test(item.position ?? "")) ??
       filteredUsers[0];
 
     const remaining = filteredUsers.filter((item) => item.uid !== rootCandidate.uid);
-    const leaders = remaining.slice(0, 3);
+    const leadersByConfig = remaining.filter((item) => item.orgNodeType === "leader");
+    const leaders = leadersByConfig.length > 0 ? leadersByConfig.slice(0, 3) : remaining.slice(0, 3);
     const leaderIds = new Set(leaders.map((item) => item.uid));
-    const team = remaining.filter((item) => !leaderIds.has(item.uid)).slice(0, 6);
+    const team = remaining
+      .filter((item) => !leaderIds.has(item.uid))
+      .sort((a, b) => (a.orgParentId ?? "").localeCompare(b.orgParentId ?? ""))
+      .slice(0, 6);
 
     return { root: rootCandidate, leaders, team };
   }, [filteredUsers]);
@@ -420,6 +431,10 @@ export default function AdminUsersPage() {
   const updatePosition = (uid: string, position: string) => updateUserDoc(uid, { position });
   const updateWorkSchedule = (uid: string, workScheduleId: string) => updateUserDoc(uid, { workScheduleId });
   const approveUser = (uid: string) => updateUserDoc(uid, { approved: true, isActive: true });
+  const updateOrgNode = (
+    uid: string,
+    patch: Partial<Pick<FirestoreUser, "orgNodeType" | "orgParentId" | "orgTeam">>,
+  ) => updateUserDoc(uid, patch as Record<string, unknown>);
 
   if (user?.role !== "admin") {
     return (
@@ -584,6 +599,7 @@ export default function AdminUsersPage() {
                             </div>
                           </div>
                           <div className="mt-2 flex items-center justify-end gap-2 text-slate-500">
+                            <button type="button" title="Asignar como raíz" className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-indigo-200 hover:text-indigo-600" onClick={() => updateOrgNode(organigramData.root!.uid, { orgNodeType: "root", orgParentId: "" })}>RAÍZ</button>
                             <button type="button" title="Editar" className="hover:text-indigo-600" onClick={() => { setSelectedUserId(organigramData.root?.uid ?? null); setDetailTab("personal"); }}><Pencil className="h-4 w-4" /></button>
                             <button type="button" title="Eliminar" className="hover:text-rose-500" onClick={() => organigramData.root && void deleteUser(organigramData.root.uid, organigramData.root.displayName)}><Trash2 className="h-4 w-4" /></button>
                           </div>
@@ -607,6 +623,10 @@ export default function AdminUsersPage() {
                                 </div>
                               </div>
                               <div className="mt-2 flex items-center justify-end gap-2 text-slate-500">
+                                <select className="rounded border border-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600" value={leader.orgTeam ?? ""} onChange={(event) => updateOrgNode(leader.uid, { orgNodeType: "leader", orgTeam: event.target.value, orgParentId: organigramData.root?.uid ?? "" })}>
+                                  <option value="">Sin equipo</option>
+                                  {areaOptions.map((area) => <option key={area} value={area}>{area}</option>)}
+                                </select>
                                 {leader.approved !== true ? <button type="button" title="Admitir" className="hover:text-emerald-600" onClick={() => approveUser(leader.uid)}><UserPlus className="h-4 w-4" /></button> : null}
                                 <button type="button" title="Editar" className="hover:text-indigo-600" onClick={() => { setSelectedUserId(leader.uid); setDetailTab("personal"); }}><Pencil className="h-4 w-4" /></button>
                                 <button type="button" title="Eliminar" className="hover:text-rose-500" onClick={() => void deleteUser(leader.uid, leader.displayName)}><Trash2 className="h-4 w-4" /></button>
@@ -632,6 +652,16 @@ export default function AdminUsersPage() {
                                       <p className="line-clamp-1 text-xs font-semibold text-slate-900">{member.displayName}</p>
                                       <p className="line-clamp-1 text-[11px] text-slate-500">{member.position || "Colaborador"}</p>
                                     </div>
+                                  </div>
+                                  <div className="mt-2 flex flex-col gap-1">
+                                    <select className="w-full rounded border border-slate-200 px-1.5 py-1 text-[10px] text-slate-600" value={member.orgParentId ?? ""} onChange={(event) => updateOrgNode(member.uid, { orgNodeType: "member", orgParentId: event.target.value })}>
+                                      <option value="">Sin líder</option>
+                                      {organigramData.leaders.map((leader) => <option key={leader.uid} value={leader.uid}>{leader.displayName}</option>)}
+                                    </select>
+                                    <select className="w-full rounded border border-slate-200 px-1.5 py-1 text-[10px] text-slate-600" value={member.orgTeam ?? ""} onChange={(event) => updateOrgNode(member.uid, { orgNodeType: "member", orgTeam: event.target.value })}>
+                                      <option value="">Sin equipo</option>
+                                      {areaOptions.map((area) => <option key={area} value={area}>{area}</option>)}
+                                    </select>
                                   </div>
                                 </article>
                               </div>
