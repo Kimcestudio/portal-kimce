@@ -390,15 +390,9 @@ export default function FinanceModulePage() {
           };
         });
         setUsers(items);
-        if (!usersLoaded) {
-          usersLoaded = true;
-        }
-        markLoaded();
       },
       (error) => {
         handleSnapshotError("usuarios", error);
-        usersLoaded = true;
-        markLoaded();
       },
     );
 
