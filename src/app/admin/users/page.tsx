@@ -363,6 +363,29 @@ export default function AdminUsersPage() {
     }
   }, [orgSearch, orgUsers, viewMode]);
 
+  const organigramData = useMemo(() => {
+    if (filteredUsers.length === 0) {
+      return { root: null as FirestoreUser | null, leaders: [] as FirestoreUser[], team: [] as FirestoreUser[] };
+    }
+
+    const rootCandidate =
+      filteredUsers.find((item) => item.orgNodeType === "root") ??
+      filteredUsers.find((item) => item.role === "admin") ??
+      filteredUsers.find((item) => /ceo|director|gerente/i.test(item.position ?? "")) ??
+      filteredUsers[0];
+
+    const remaining = filteredUsers.filter((item) => item.uid !== rootCandidate.uid);
+    const leadersByConfig = remaining.filter((item) => item.orgNodeType === "leader");
+    const leaders = leadersByConfig.length > 0 ? leadersByConfig.slice(0, 3) : remaining.slice(0, 3);
+    const leaderIds = new Set(leaders.map((item) => item.uid));
+    const team = remaining
+      .filter((item) => !leaderIds.has(item.uid))
+      .sort((a, b) => (a.orgParentId ?? "").localeCompare(b.orgParentId ?? ""))
+      .slice(0, 6);
+
+    return { root: rootCandidate, leaders, team };
+  }, [filteredUsers]);
+
   const selectedUser = useMemo(
     () => (selectedUserId ? sortedUsers.find((item) => item.uid === selectedUserId) ?? null : null),
     [selectedUserId, sortedUsers],

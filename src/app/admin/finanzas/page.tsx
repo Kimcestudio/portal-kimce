@@ -60,7 +60,6 @@ import type {
 } from "@/lib/finance/types";
 import { collection, doc, onSnapshot, orderBy, query, updateDoc, type DocumentData } from "firebase/firestore";
 import {
-  createCollaborator,
   createCollaboratorPayment,
   createExpense,
   createIncomeMovement,
@@ -227,6 +226,7 @@ export default function FinanceModulePage() {
     let paymentsLoaded = false;
     let transfersLoaded = false;
     let collaboratorsLoaded = false;
+    let usersLoaded = false;
 
     const markLoaded = () => {
       if (movementsLoaded && expensesLoaded && paymentsLoaded) {
@@ -995,6 +995,10 @@ export default function FinanceModulePage() {
 
       if (type === "collaborator") {
         const payload = values as CollaboratorFormValues;
+        if (!editingCollaborator) {
+          setToast({ message: "Selecciona un colaborador activo para completar datos.", tone: "error" });
+          return false;
+        }
         const collaboratorPayload = {
           nombreCompleto: payload.nombreCompleto,
           rolPuesto: payload.rolPuesto,
@@ -2292,15 +2296,17 @@ export default function FinanceModulePage() {
                             >
                               <Power className="h-4 w-4" />
                             </button>
-                            <button
-                              type="button"
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-                              onClick={() => handleDeleteCollaborator(collaborator)}
-                              title="Eliminar"
-                              aria-label="Eliminar"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            {collaborator.userId ? null : (
+                              <button
+                                type="button"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+                                onClick={() => handleDeleteCollaborator(collaborator)}
+                                title="Eliminar"
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
