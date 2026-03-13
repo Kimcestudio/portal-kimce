@@ -12,11 +12,11 @@ import CelebrationsCard from "@/components/home/CelebrationsCard";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { formatISODate, getWeekStartMonday, minutesToHHMM } from "@/lib/attendanceUtils";
 import { listAllRecords } from "@/lib/storage/attendanceStorage";
+import { listUsers } from "@/services/firebase/db";
 import {
   homeEvents,
   homeRequests,
   homeTeamMembers,
-  homeCelebrations,
   homeQuickActions,
   homeNewEmployees,
   type HomeCelebration,
@@ -54,7 +54,7 @@ function getNextOccurrenceDistance(month: number, day: number) {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const [people, setPeople] = useState<UserProfile[]>([]);
+  const [people, setPeople] = useState<UserProfile[]>(() => listUsers());
   const records = user ? listAllRecords(user.uid) : [];
 
   useEffect(() => {
@@ -79,7 +79,7 @@ export default function DashboardPage() {
         });
         setPeople(next);
       },
-      () => setPeople([]),
+      () => undefined,
     );
     return () => unsubscribe();
   }, []);
@@ -101,8 +101,6 @@ export default function DashboardPage() {
   const userName = user?.displayName ?? user?.email ?? "Colaborador";
 
   const dynamicCelebrations = useMemo<HomeCelebration[]>(() => {
-    if (people.length === 0) return homeCelebrations;
-
     const events: Array<HomeCelebration & { sortDistance: number }> = [];
 
     people.forEach((person) => {
