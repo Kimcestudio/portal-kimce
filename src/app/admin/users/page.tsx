@@ -319,53 +319,15 @@ export default function AdminUsersPage() {
               : item.isActive === false;
       return matchesNodeSearch && matchesLeader && matchesContract;
     });
-  }, [filteredUsersBase, orgContractFilter, orgLeaderFilter, orgSearch]);
-
-  const organigramData = useMemo(() => {
-    if (orgUsers.length === 0) {
-      return { root: null as FirestoreUser | null, leaders: [] as FirestoreUser[], team: [] as FirestoreUser[] };
-    }
-
-    const rootCandidate =
-      orgUsers.find((item) => item.orgNodeType === "root") ??
-      orgUsers.find((item) => item.role === "admin") ??
-      orgUsers.find((item) => /ceo|director|gerente/i.test(item.position ?? "")) ??
-      orgUsers[0];
-
-    const remaining = orgUsers.filter((item) => item.uid !== rootCandidate.uid);
-    const leadersByConfig = remaining.filter((item) => item.orgNodeType === "leader");
-    const leaders = leadersByConfig.length > 0 ? leadersByConfig.slice(0, 3) : remaining.slice(0, 3);
-    const leaderIds = new Set(leaders.map((item) => item.uid));
-    const team = remaining
-      .filter((item) => !leaderIds.has(item.uid))
-      .sort((a, b) => (a.orgParentId ?? "").localeCompare(b.orgParentId ?? ""))
-      .slice(0, 6);
-
-    return { root: rootCandidate, leaders, team };
-  }, [orgUsers]);
-
-  useEffect(() => {
-    if (viewMode !== "organigrama") return;
-    if (!orgSearch.trim()) {
-      setFocusedOrgNodeId(null);
-      return;
-    }
-    const target = orgUsers.find((item) =>
-      `${item.displayName} ${item.position ?? ""} ${item.orgTeam ?? ""}`
-        .toLowerCase()
-        .includes(orgSearch.toLowerCase()),
-    );
-    if (!target) return;
-    setFocusedOrgNodeId(target.uid);
-    const node = orgNodeRefs.current[target.uid];
-    if (node) {
-      node.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
-    }
-  }, [orgSearch, orgUsers, viewMode]);
+    }, [filteredUsersBase, orgContractFilter, orgLeaderFilter, orgSearch]);
 
   const organigramData = useMemo(() => {
     if (filteredUsers.length === 0) {
-      return { root: null as FirestoreUser | null, leaders: [] as FirestoreUser[], team: [] as FirestoreUser[] };
+      return {
+        root: null as FirestoreUser | null,
+        leaders: [] as FirestoreUser[],
+        team: [] as FirestoreUser[],
+      };
     }
 
     const rootCandidate =
@@ -378,6 +340,7 @@ export default function AdminUsersPage() {
     const leadersByConfig = remaining.filter((item) => item.orgNodeType === "leader");
     const leaders = leadersByConfig.length > 0 ? leadersByConfig.slice(0, 3) : remaining.slice(0, 3);
     const leaderIds = new Set(leaders.map((item) => item.uid));
+
     const team = remaining
       .filter((item) => !leaderIds.has(item.uid))
       .sort((a, b) => (a.orgParentId ?? "").localeCompare(b.orgParentId ?? ""))
@@ -385,6 +348,30 @@ export default function AdminUsersPage() {
 
     return { root: rootCandidate, leaders, team };
   }, [filteredUsers]);
+
+  useEffect(() => {
+    if (viewMode !== "organigrama") return;
+
+    if (!orgSearch.trim()) {
+      setFocusedOrgNodeId(null);
+      return;
+    }
+
+    const target = filteredUsers.find((item) =>
+      `${item.displayName} ${item.position ?? ""} ${item.orgTeam ?? ""}`
+        .toLowerCase()
+        .includes(orgSearch.toLowerCase()),
+    );
+
+    if (!target) return;
+
+    setFocusedOrgNodeId(target.uid);
+
+    const node = orgNodeRefs.current[target.uid];
+    if (node) {
+      node.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    }
+  }, [orgSearch, filteredUsers, viewMode]);
 
   const selectedUser = useMemo(
     () => (selectedUserId ? sortedUsers.find((item) => item.uid === selectedUserId) ?? null : null),
