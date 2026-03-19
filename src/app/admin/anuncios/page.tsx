@@ -82,13 +82,28 @@ export default function AdminAnnouncementsPage() {
   const [items, setItems] = useState<Announcement[]>([]);
   const [editing, setEditing] = useState<Announcement | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [toast, setToast] = useState<{ tone: "error" | "success"; message: string } | null>(null);
   const [filter, setFilter] = useState<"all" | "active" | "scheduled" | "expired" | "disabled" | "draft">("all");
   const [form, setForm] = useState<FormState>(initialForm);
 
   useEffect(() => {
-    const unsubscribe = subscribeAnnouncements(setItems);
+    const unsubscribe = subscribeAnnouncements(setItems, (error) => {
+      setToast({
+        tone: "error",
+        message:
+          error.code === "permission-denied"
+            ? "No tienes permisos para leer anuncios en Firestore."
+            : "No se pudieron cargar los anuncios.",
+      });
+    });
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timeout = setTimeout(() => setToast(null), 3000);
+    return () => clearTimeout(timeout);
+  }, [toast]);
 
   const list = useMemo(() => {
     const enriched = sortAnnouncementsByPriority(items).map((item) => ({
@@ -175,29 +190,64 @@ export default function AdminAnnouncementsPage() {
 
       if (editing) {
         await updateAnnouncement(editing.id, payload);
+        setToast({ tone: "success", message: "Anuncio actualizado correctamente." });
       } else {
         await createAnnouncement(payload);
+        setToast({ tone: "success", message: "Anuncio creado correctamente." });
       }
       resetForm();
+    } catch (error) {
+      const firestoreError = error as { code?: string };
+      setToast({
+        tone: "error",
+        message:
+          firestoreError.code === "permission-denied"
+            ? "No tienes permisos para crear o editar anuncios (permission-denied)."
+            : "Ocurrió un error al guardar el anuncio.",
+      });
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleToggle = async (item: Announcement) => {
-    const nextStatus: AnnouncementAdminStatus = item.adminStatus === "disabled" ? "active" : "disabled";
-    await updateAnnouncement(item.id, {
-      adminStatus: nextStatus,
-      updatedBy: user?.uid ?? null,
-    });
+    try {
+      const nextStatus: AnnouncementAdminStatus = item.adminStatus === "disabled" ? "active" : "disabled";
+      await updateAnnouncement(item.id, {
+        adminStatus: nextStatus,
+        updatedBy: user?.uid ?? null,
+      });
+      setToast({ tone: "success", message: "Estado del anuncio actualizado." });
+    } catch (error) {
+      const firestoreError = error as { code?: string };
+      setToast({
+        tone: "error",
+        message:
+          firestoreError.code === "permission-denied"
+            ? "No tienes permisos para cambiar el estado del anuncio."
+            : "No se pudo actualizar el estado del anuncio.",
+      });
+    }
   };
 
   const handleDelete = async (item: Announcement) => {
     const confirmed = window.confirm(`¿Eliminar anuncio \"${item.title}\"?`);
     if (!confirmed) return;
-    await deleteAnnouncement(item.id);
-    if (editing?.id === item.id) {
-      resetForm();
+    try {
+      await deleteAnnouncement(item.id);
+      if (editing?.id === item.id) {
+        resetForm();
+      }
+      setToast({ tone: "success", message: "Anuncio eliminado." });
+    } catch (error) {
+      const firestoreError = error as { code?: string };
+      setToast({
+        tone: "error",
+        message:
+          firestoreError.code === "permission-denied"
+            ? "No tienes permisos para eliminar anuncios."
+            : "No se pudo eliminar el anuncio.",
+      });
     }
   };
 
@@ -240,6 +290,18 @@ export default function AdminAnnouncementsPage() {
           ))}
         </div>
       </div>
+
+      {toast ? (
+        <div
+          className={`rounded-2xl border px-4 py-3 text-sm font-semibold ${
+            toast.tone === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-rose-200 bg-rose-50 text-rose-700"
+          }`}
+        >
+          {toast.message}
+        </div>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
         <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">

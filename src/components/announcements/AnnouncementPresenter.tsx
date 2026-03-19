@@ -94,7 +94,10 @@ export default function AnnouncementPresenter() {
   useEffect(() => {
     if (!user?.uid) return;
 
-    const unsubscribe = subscribeAnnouncements(setAnnouncements);
+    const unsubscribe = subscribeAnnouncements(setAnnouncements, () => {
+      setAnnouncements([]);
+      setActiveAnnouncement(null);
+    });
     const unsubscribeProfile = onSnapshot(doc(db, "users", user.uid), (snapshot) => {
       if (!snapshot.exists()) return;
       const data = snapshot.data() as DocumentData;

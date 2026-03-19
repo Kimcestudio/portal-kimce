@@ -50,6 +50,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    match /announcements/{docId} {
+      allow read, list: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
     match /users/{uid}/hours/{hourId} {
       allow read, write: if isSignedIn() && request.auth.uid == uid;
       allow read, list: if isAdmin();

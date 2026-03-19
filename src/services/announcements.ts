@@ -44,13 +44,22 @@ const normalizeAnnouncement = (id: string, data: DocumentData): Announcement => 
   updatedBy: data.updatedBy ?? null,
 });
 
-export function subscribeAnnouncements(onChange: (items: Announcement[]) => void) {
+export function subscribeAnnouncements(
+  onChange: (items: Announcement[]) => void,
+  onError?: (error: { code?: string; message?: string }) => void,
+) {
   const announcementsQuery = query(announcementsRef, orderBy("updatedAt", "desc"));
 
-  return onSnapshot(announcementsQuery, (snapshot) => {
-    const normalized = snapshot.docs.map((item) => normalizeAnnouncement(item.id, item.data()));
-    onChange(normalized);
-  });
+  return onSnapshot(
+    announcementsQuery,
+    (snapshot) => {
+      const normalized = snapshot.docs.map((item) => normalizeAnnouncement(item.id, item.data()));
+      onChange(normalized);
+    },
+    (error) => {
+      onError?.({ code: error.code, message: error.message });
+    },
+  );
 }
 
 export async function createAnnouncement(input: AnnouncementInput) {
