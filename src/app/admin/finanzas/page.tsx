@@ -80,6 +80,7 @@ import {
   updateTransferStatus,
   getPreviousMonthCopyCandidates,
   copyItemsFromPreviousMonth,
+  createCollaborator,
   ensureRecurringMovementsForMonth,
   materializeRecurringMovementById,
   upsertCollaborator,
@@ -995,10 +996,6 @@ export default function FinanceModulePage() {
 
       if (type === "collaborator") {
         const payload = values as CollaboratorFormValues;
-        if (!editingCollaborator) {
-          setToast({ message: "Selecciona un colaborador activo para completar datos.", tone: "error" });
-          return false;
-        }
         const collaboratorPayload = {
           nombreCompleto: payload.nombreCompleto,
           rolPuesto: payload.rolPuesto,
