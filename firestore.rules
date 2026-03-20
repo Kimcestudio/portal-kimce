@@ -10,7 +10,10 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && userDoc(request.auth.uid).data.role == "admin";
+      return isSignedIn() && (
+        userDoc(request.auth.uid).data.role == "admin" ||
+        userDoc(request.auth.uid).data.role == "ADMIN"
+      );
     }
 
     match /users/{uid} {
@@ -47,6 +50,11 @@ service cloud.firestore {
 
     match /collaborators/{docId} {
       allow read, list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /announcements/{docId} {
+      allow read, list: if isSignedIn();
       allow write: if isAdmin();
     }
 
