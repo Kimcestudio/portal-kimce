@@ -129,6 +129,7 @@ export default function AnnouncementPresenter() {
       setAnnouncements([]);
       setActiveAnnouncement(null);
     });
+
     const unsubscribeProfile = onSnapshot(doc(db, "users", user.uid), (snapshot) => {
       if (!snapshot.exists()) return;
       const data = snapshot.data() as DocumentData;
@@ -178,6 +179,7 @@ export default function AnnouncementPresenter() {
     const key = getStorageKey(user.uid, activeAnnouncement.id);
     const state = safeJsonParse(window.localStorage.getItem(key));
     const nowIso = new Date().toISOString();
+
     window.localStorage.setItem(
       key,
       JSON.stringify({
@@ -192,6 +194,7 @@ export default function AnnouncementPresenter() {
       const timeout = setTimeout(() => {
         setActiveAnnouncement(null);
       }, activeAnnouncement.visibility.durationSeconds * 1000);
+
       return () => clearTimeout(timeout);
     }
 
@@ -203,6 +206,7 @@ export default function AnnouncementPresenter() {
 
     const key = getStorageKey(user.uid, activeAnnouncement.id);
     const state = safeJsonParse(window.localStorage.getItem(key));
+
     window.localStorage.setItem(
       key,
       JSON.stringify({
@@ -233,13 +237,19 @@ export default function AnnouncementPresenter() {
                 <TypeIcon className="h-4 w-4" />
               </span>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] opacity-75">{activeAnnouncement.type}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] opacity-75">
+                  {activeAnnouncement.type}
+                </p>
                 <h3 className="text-xl font-semibold">{activeAnnouncement.title}</h3>
                 <p className="mt-2 text-base leading-relaxed opacity-90">{activeAnnouncement.message}</p>
               </div>
             </div>
             {closeEnabled ? (
-              <button type="button" onClick={handleClose} className="rounded-2xl border border-current/15 p-2 transition hover:scale-105">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="rounded-2xl border border-current/15 p-2 transition hover:scale-105"
+              >
                 <X className="h-4 w-4" />
               </button>
             ) : null}
@@ -261,12 +271,18 @@ export default function AnnouncementPresenter() {
                   <TypeIcon className="h-4 w-4" />
                 </span>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] opacity-75">{activeAnnouncement.type}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] opacity-75">
+                    {activeAnnouncement.type}
+                  </p>
                   <h3 className="text-lg font-semibold">{activeAnnouncement.title}</h3>
                 </div>
               </div>
               {closeEnabled ? (
-                <button type="button" onClick={handleClose} className="rounded-2xl border border-current/15 p-2 transition hover:scale-105">
+                <button
+                  type="button"
+                  onClick={handleClose}
+                  className="rounded-2xl border border-current/15 p-2 transition hover:scale-105"
+                >
                   <X className="h-4 w-4" />
                 </button>
               ) : null}
@@ -280,39 +296,49 @@ export default function AnnouncementPresenter() {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#141332]/40 px-4 backdrop-blur-[2px]">
-      <div className={`${cardClass} max-w-4xl`}>
+      <div className={`${cardClass} max-w-[64rem]`}>
         <div className={`h-2 w-full bg-gradient-to-r ${tone.accent}`} />
-        <div className="p-6 sm:p-7">
+        <div className="p-8 sm:p-9">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-3">
               <span className={`mt-1 rounded-2xl p-2.5 ${tone.badge}`}>
                 <TypeIcon className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] opacity-70">{activeAnnouncement.type}</p>
-                <h3 className="text-[2rem] font-semibold leading-tight text-[#3b356f]">{activeAnnouncement.title}</h3>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] opacity-70">
+                  {activeAnnouncement.type}
+                </p>
+                <h3 className="text-[2.1rem] font-semibold leading-tight text-[#3b356f]">
+                  {activeAnnouncement.title}
+                </h3>
               </div>
             </div>
             {closeEnabled ? (
-              <button type="button" onClick={handleClose} className="rounded-2xl border border-[#d8d4eb] p-2.5 text-[#5b548f] transition hover:scale-105">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="rounded-2xl border border-[#d8d4eb] p-2.5 text-[#5b548f] transition hover:scale-105"
+              >
                 <X className="h-6 w-6" />
               </button>
             ) : null}
           </div>
-          <p className="mt-4 text-[1.05rem] leading-[1.65] text-[#2f3550]">{activeAnnouncement.message}</p>
+
+          <p className="mt-6 text-[2rem] leading-[1.4] text-[#2f3550]">{activeAnnouncement.message}</p>
+
           {closeEnabled ? (
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={handleClose}
-                className={`rounded-full border px-6 py-2 text-sm font-semibold transition ${tone.button}`}
+                className={`rounded-full border px-8 py-2.5 text-base font-semibold transition ${tone.button}`}
               >
                 Cerrar
               </button>
               <button
                 type="button"
                 onClick={() => setActiveAnnouncement(null)}
-                className="rounded-full bg-[#6ce3d4] px-6 py-2 text-sm font-semibold text-white shadow-[0_10px_25px_rgba(87,216,198,0.35)] transition hover:brightness-105"
+                className="rounded-full bg-[#6ce3d4] px-8 py-2.5 text-base font-semibold text-white shadow-[0_10px_25px_rgba(87,216,198,0.35)] transition hover:brightness-105"
               >
                 Entendido
               </button>
