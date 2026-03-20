@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useMemo, useState, type ComponentType } from "react";
+import { AlertTriangle, BellRing, Clock3, Info, Megaphone, Rocket, X } from "lucide-react";
 import { doc, onSnapshot, type DocumentData } from "firebase/firestore";
 import { useAuth } from "@/components/auth/AuthProvider";
 import type { Announcement } from "@/lib/announcements/types";
@@ -77,10 +77,37 @@ function matchesAudience(
   return false;
 }
 
-const toneByPriority: Record<Announcement["priority"], string> = {
-  normal: "border-slate-200 bg-white text-slate-800",
-  important: "border-amber-200 bg-amber-50 text-amber-900",
-  urgent: "border-rose-200 bg-rose-50 text-rose-900",
+const toneByPriority: Record<
+  Announcement["priority"],
+  {
+    shell: string;
+    accent: string;
+    badge: string;
+  }
+> = {
+  normal: {
+    shell: "border-indigo-100 bg-white/95 text-slate-800",
+    accent: "from-indigo-500 to-[#4f56d3]",
+    badge: "bg-indigo-50 text-indigo-700",
+  },
+  important: {
+    shell: "border-amber-200 bg-white/95 text-amber-950",
+    accent: "from-amber-400 to-orange-500",
+    badge: "bg-amber-100 text-amber-800",
+  },
+  urgent: {
+    shell: "border-rose-200 bg-white/95 text-rose-950",
+    accent: "from-rose-500 to-fuchsia-600",
+    badge: "bg-rose-100 text-rose-800",
+  },
+};
+
+const typeIcon: Record<Announcement["type"], ComponentType<{ className?: string }>> = {
+  informativo: Info,
+  urgente: AlertTriangle,
+  recordatorio: Clock3,
+  comunicado_interno: Megaphone,
+  operativo: Rocket,
 };
 
 export default function AnnouncementPresenter() {
@@ -186,21 +213,29 @@ export default function AnnouncementPresenter() {
 
   if (!activeAnnouncement || !user?.uid) return null;
 
-  const cardClass = `w-full rounded-2xl border p-4 shadow-xl ${toneByPriority[activeAnnouncement.priority]}`;
+  const tone = toneByPriority[activeAnnouncement.priority];
+  const TypeIcon = typeIcon[activeAnnouncement.type] ?? BellRing;
+  const cardClass = `w-full overflow-hidden rounded-3xl border shadow-[0_20px_45px_rgba(15,23,42,0.25)] backdrop-blur ${tone.shell}`;
   const closeEnabled = activeAnnouncement.visibility.dismissible;
 
   if (activeAnnouncement.displayMode === "banner") {
     return (
       <div className="fixed inset-x-4 top-4 z-[60] mx-auto max-w-3xl">
         <div className={cardClass}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.15em]">{activeAnnouncement.type}</p>
-              <h3 className="text-base font-bold">{activeAnnouncement.title}</h3>
-              <p className="mt-1 text-sm leading-relaxed">{activeAnnouncement.message}</p>
+          <div className={`h-1.5 w-full bg-gradient-to-r ${tone.accent}`} />
+          <div className="flex items-start justify-between gap-3 p-4 sm:p-5">
+            <div className="flex items-start gap-3">
+              <span className={`mt-0.5 rounded-xl p-2 ${tone.badge}`}>
+                <TypeIcon className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]">{activeAnnouncement.type}</p>
+                <h3 className="text-base font-bold">{activeAnnouncement.title}</h3>
+                <p className="mt-1 text-sm leading-relaxed">{activeAnnouncement.message}</p>
+              </div>
             </div>
             {closeEnabled ? (
-              <button type="button" onClick={handleClose} className="rounded-lg border border-current/30 p-1">
+              <button type="button" onClick={handleClose} className="rounded-xl border border-current/20 p-2 transition hover:scale-105">
                 <X className="h-4 w-4" />
               </button>
             ) : null}
@@ -214,17 +249,25 @@ export default function AnnouncementPresenter() {
     return (
       <div className="fixed bottom-6 right-6 z-[60] w-full max-w-sm px-4 sm:px-0">
         <div className={cardClass}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.15em]">{activeAnnouncement.type}</p>
-              <h3 className="text-base font-bold">{activeAnnouncement.title}</h3>
-              <p className="mt-1 text-sm leading-relaxed">{activeAnnouncement.message}</p>
+          <div className={`h-1.5 w-full bg-gradient-to-r ${tone.accent}`} />
+          <div className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <span className={`mt-0.5 rounded-xl p-2 ${tone.badge}`}>
+                  <TypeIcon className="h-4 w-4" />
+                </span>
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em]">{activeAnnouncement.type}</p>
+                  <h3 className="text-base font-bold">{activeAnnouncement.title}</h3>
+                </div>
+              </div>
+              {closeEnabled ? (
+                <button type="button" onClick={handleClose} className="rounded-xl border border-current/20 p-2 transition hover:scale-105">
+                  <X className="h-4 w-4" />
+                </button>
+              ) : null}
             </div>
-            {closeEnabled ? (
-              <button type="button" onClick={handleClose} className="rounded-lg border border-current/30 p-1">
-                <X className="h-4 w-4" />
-              </button>
-            ) : null}
+            <p className="mt-2 text-sm leading-relaxed">{activeAnnouncement.message}</p>
           </div>
         </div>
       </div>
@@ -233,19 +276,27 @@ export default function AnnouncementPresenter() {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/45 px-4">
-      <div className={`${cardClass} max-w-lg`}>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.15em]">{activeAnnouncement.type}</p>
-            <h3 className="text-lg font-bold">{activeAnnouncement.title}</h3>
+      <div className={`${cardClass} max-w-[64rem]`}>
+        <div className={`h-2 w-full bg-gradient-to-r ${tone.accent}`} />
+        <div className="p-8">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-start gap-3">
+              <span className={`mt-1 rounded-2xl p-2.5 ${tone.badge}`}>
+                <TypeIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em]">{activeAnnouncement.type}</p>
+                <h3 className="text-[3rem] font-bold leading-none">{activeAnnouncement.title}</h3>
+              </div>
+            </div>
+            {closeEnabled ? (
+              <button type="button" onClick={handleClose} className="rounded-2xl border border-current/20 p-2.5 transition hover:scale-105">
+                <X className="h-7 w-7" />
+              </button>
+            ) : null}
           </div>
-          {closeEnabled ? (
-            <button type="button" onClick={handleClose} className="rounded-lg border border-current/30 p-1">
-              <X className="h-4 w-4" />
-            </button>
-          ) : null}
+          <p className="mt-6 text-[2.8rem] leading-[1.28]">{activeAnnouncement.message}</p>
         </div>
-        <p className="mt-2 text-sm leading-relaxed">{activeAnnouncement.message}</p>
       </div>
     </div>
   );

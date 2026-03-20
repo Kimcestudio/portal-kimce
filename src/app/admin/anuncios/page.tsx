@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Pencil, Plus, Power, Trash2 } from "lucide-react";
+import { Bell, CalendarClock, Pencil, Plus, Power, Sparkles, Trash2 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/components/auth/AuthProvider";
 import type {
@@ -22,11 +22,11 @@ import {
 } from "@/services/announcements";
 
 const statusBadge: Record<string, string> = {
-  active: "bg-emerald-50 text-emerald-700",
-  scheduled: "bg-indigo-50 text-indigo-700",
-  expired: "bg-rose-50 text-rose-700",
-  disabled: "bg-slate-100 text-slate-600",
-  draft: "bg-amber-50 text-amber-700",
+  active: "bg-emerald-100 text-emerald-700 border border-emerald-200",
+  scheduled: "bg-indigo-100 text-indigo-700 border border-indigo-200",
+  expired: "bg-rose-100 text-rose-700 border border-rose-200",
+  disabled: "bg-slate-100 text-slate-600 border border-slate-200",
+  draft: "bg-amber-100 text-amber-700 border border-amber-200",
 };
 
 type FormState = {
@@ -255,19 +255,19 @@ export default function AdminAnnouncementsPage() {
     <div className="space-y-6">
       <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="rounded-3xl border border-indigo-100 bg-gradient-to-r from-white via-indigo-50/40 to-white p-6 shadow-[0_20px_45px_rgba(15,23,42,0.08)]">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
+            <p className="inline-flex items-center gap-2 rounded-full border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-700">
               <Bell className="h-3.5 w-3.5" />
               Módulo de anuncios internos
             </p>
-            <h1 className="mt-2 text-2xl font-bold text-slate-900">Gestión de anuncios</h1>
+            <h1 className="mt-2 text-3xl font-bold text-[#1f2a44]">Gestión de anuncios</h1>
             <p className="text-sm text-slate-500">Crea, programa y prioriza anuncios para colaboradores sin saturar la experiencia.</p>
           </div>
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white"
+            className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#4f56d3] to-[#6670ff] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(79,86,211,0.35)] transition hover:-translate-y-0.5"
             onClick={resetForm}
           >
             <Plus className="h-4 w-4" />
@@ -282,7 +282,7 @@ export default function AdminAnnouncementsPage() {
               type="button"
               onClick={() => setFilter(status)}
               className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                filter === status ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600"
+                filter === status ? "bg-[#1f2a44] text-white" : "bg-white text-slate-600 border border-slate-200"
               }`}
             >
               {status === "all" ? "Todos" : status} {status !== "all" ? `(${counters[status]})` : ""}
@@ -304,10 +304,10 @@ export default function AdminAnnouncementsPage() {
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
-        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-[0.15em] text-slate-500">
+              <thead className="bg-indigo-50/60 text-xs uppercase tracking-[0.18em] text-slate-500">
                 <tr>
                   <th className="px-3 py-3">Anuncio</th>
                   <th className="px-3 py-3">Tipo</th>
@@ -342,14 +342,14 @@ export default function AdminAnnouncementsPage() {
                           <button
                             type="button"
                             onClick={() => onEdit(item)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
                           >
                             <Pencil className="h-4 w-4" />
                           </button>
                           <button
                             type="button"
                             onClick={() => handleToggle(item)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-amber-200 hover:bg-amber-50 hover:text-amber-600"
                           >
                             <Power className="h-4 w-4" />
                           </button>
@@ -377,8 +377,11 @@ export default function AdminAnnouncementsPage() {
           </div>
         </div>
 
-        <form onSubmit={onSubmit} className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">{editing ? "Editar anuncio" : "Crear anuncio"}</h2>
+        <form onSubmit={onSubmit} className="space-y-4 rounded-3xl border border-indigo-100 bg-gradient-to-b from-white to-indigo-50/30 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.08)]">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-[#1f2a44]">
+            <Sparkles className="h-4 w-4 text-indigo-500" />
+            {editing ? "Editar anuncio" : "Crear anuncio"}
+          </h2>
           <label className="block text-xs font-semibold text-slate-600">
             Título
             <input
@@ -489,6 +492,7 @@ export default function AdminAnnouncementsPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-semibold text-slate-600">
               Inicio de vigencia
+              <span className="ml-1 inline-flex"><CalendarClock className="inline h-3 w-3 text-indigo-400" /></span>
               <input
                 type="datetime-local"
                 value={form.startAt}
@@ -498,6 +502,7 @@ export default function AdminAnnouncementsPage() {
             </label>
             <label className="text-xs font-semibold text-slate-600">
               Fin de vigencia
+              <span className="ml-1 inline-flex"><CalendarClock className="inline h-3 w-3 text-indigo-400" /></span>
               <input
                 type="datetime-local"
                 value={form.endAt}
@@ -587,7 +592,7 @@ export default function AdminAnnouncementsPage() {
             <button
               type="submit"
               disabled={isSaving}
-              className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="rounded-2xl bg-gradient-to-r from-[#4f56d3] to-[#6670ff] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(79,86,211,0.35)] disabled:opacity-50"
             >
               {isSaving ? "Guardando..." : editing ? "Actualizar anuncio" : "Crear anuncio"}
             </button>
