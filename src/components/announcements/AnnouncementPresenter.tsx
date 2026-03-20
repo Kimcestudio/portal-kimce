@@ -83,22 +83,26 @@ const toneByPriority: Record<
     shell: string;
     accent: string;
     badge: string;
+    button: string;
   }
 > = {
   normal: {
-    shell: "border-indigo-100 bg-white/95 text-slate-800",
-    accent: "from-indigo-500 to-[#4f56d3]",
-    badge: "bg-indigo-50 text-indigo-700",
+    shell: "border-[#e4e2ef] bg-white text-[#2f2b57]",
+    accent: "from-[#4c438f] to-[#5f56a9]",
+    badge: "bg-[#f2f0fb] text-[#4c438f]",
+    button: "border-[#8ff1e6] text-[#35cbbf] hover:bg-[#f2fffd]",
   },
   important: {
-    shell: "border-amber-200 bg-white/95 text-amber-950",
-    accent: "from-amber-400 to-orange-500",
-    badge: "bg-amber-100 text-amber-800",
+    shell: "border-[#f5dfc9] bg-white text-[#6b3f1f]",
+    accent: "from-[#f4a340] to-[#f58f5d]",
+    badge: "bg-[#fff4e8] text-[#c9761f]",
+    button: "border-[#f6c68d] text-[#da8532] hover:bg-[#fff8ef]",
   },
   urgent: {
-    shell: "border-rose-200 bg-white/95 text-rose-950",
-    accent: "from-rose-500 to-fuchsia-600",
-    badge: "bg-rose-100 text-rose-800",
+    shell: "border-[#f8d6de] bg-white text-[#7a2240]",
+    accent: "from-[#e34b83] to-[#d83d73]",
+    badge: "bg-[#fff0f5] text-[#bf3568]",
+    button: "border-[#f7b1cb] text-[#d43d75] hover:bg-[#fff5f8]",
   },
 };
 
@@ -215,27 +219,27 @@ export default function AnnouncementPresenter() {
 
   const tone = toneByPriority[activeAnnouncement.priority];
   const TypeIcon = typeIcon[activeAnnouncement.type] ?? BellRing;
-  const cardClass = `w-full overflow-hidden rounded-3xl border shadow-[0_20px_45px_rgba(15,23,42,0.25)] backdrop-blur ${tone.shell}`;
+  const cardClass = `w-full overflow-hidden rounded-[32px] border shadow-[0_22px_55px_rgba(31,42,68,0.18)] ${tone.shell}`;
   const closeEnabled = activeAnnouncement.visibility.dismissible;
 
   if (activeAnnouncement.displayMode === "banner") {
     return (
-      <div className="fixed inset-x-4 top-4 z-[60] mx-auto max-w-3xl">
+      <div className="fixed inset-x-4 top-4 z-[60] mx-auto max-w-4xl">
         <div className={cardClass}>
           <div className={`h-1.5 w-full bg-gradient-to-r ${tone.accent}`} />
-          <div className="flex items-start justify-between gap-3 p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3 p-5 sm:p-6">
             <div className="flex items-start gap-3">
-              <span className={`mt-0.5 rounded-xl p-2 ${tone.badge}`}>
+              <span className={`mt-0.5 rounded-2xl p-2.5 ${tone.badge}`}>
                 <TypeIcon className="h-4 w-4" />
               </span>
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em]">{activeAnnouncement.type}</p>
-                <h3 className="text-base font-bold">{activeAnnouncement.title}</h3>
-                <p className="mt-1 text-sm leading-relaxed">{activeAnnouncement.message}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] opacity-75">{activeAnnouncement.type}</p>
+                <h3 className="text-xl font-semibold">{activeAnnouncement.title}</h3>
+                <p className="mt-2 text-base leading-relaxed opacity-90">{activeAnnouncement.message}</p>
               </div>
             </div>
             {closeEnabled ? (
-              <button type="button" onClick={handleClose} className="rounded-xl border border-current/20 p-2 transition hover:scale-105">
+              <button type="button" onClick={handleClose} className="rounded-2xl border border-current/15 p-2 transition hover:scale-105">
                 <X className="h-4 w-4" />
               </button>
             ) : null}
@@ -250,24 +254,24 @@ export default function AnnouncementPresenter() {
       <div className="fixed bottom-6 right-6 z-[60] w-full max-w-sm px-4 sm:px-0">
         <div className={cardClass}>
           <div className={`h-1.5 w-full bg-gradient-to-r ${tone.accent}`} />
-          <div className="p-4">
+          <div className="p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3">
-                <span className={`mt-0.5 rounded-xl p-2 ${tone.badge}`}>
+                <span className={`mt-0.5 rounded-2xl p-2 ${tone.badge}`}>
                   <TypeIcon className="h-4 w-4" />
                 </span>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em]">{activeAnnouncement.type}</p>
-                  <h3 className="text-base font-bold">{activeAnnouncement.title}</h3>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] opacity-75">{activeAnnouncement.type}</p>
+                  <h3 className="text-lg font-semibold">{activeAnnouncement.title}</h3>
                 </div>
               </div>
               {closeEnabled ? (
-                <button type="button" onClick={handleClose} className="rounded-xl border border-current/20 p-2 transition hover:scale-105">
+                <button type="button" onClick={handleClose} className="rounded-2xl border border-current/15 p-2 transition hover:scale-105">
                   <X className="h-4 w-4" />
                 </button>
               ) : null}
             </div>
-            <p className="mt-2 text-sm leading-relaxed">{activeAnnouncement.message}</p>
+            <p className="mt-2 text-base leading-relaxed opacity-90">{activeAnnouncement.message}</p>
           </div>
         </div>
       </div>
@@ -275,27 +279,45 @@ export default function AnnouncementPresenter() {
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/45 px-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#141332]/40 px-4 backdrop-blur-[2px]">
       <div className={`${cardClass} max-w-[64rem]`}>
         <div className={`h-2 w-full bg-gradient-to-r ${tone.accent}`} />
-        <div className="p-8">
+        <div className="p-8 sm:p-9">
           <div className="flex items-start justify-between gap-4">
             <div className="flex items-start gap-3">
               <span className={`mt-1 rounded-2xl p-2.5 ${tone.badge}`}>
                 <TypeIcon className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em]">{activeAnnouncement.type}</p>
-                <h3 className="text-[3rem] font-bold leading-none">{activeAnnouncement.title}</h3>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] opacity-70">{activeAnnouncement.type}</p>
+                <h3 className="text-[2.1rem] font-semibold leading-tight text-[#3b356f]">{activeAnnouncement.title}</h3>
               </div>
             </div>
             {closeEnabled ? (
-              <button type="button" onClick={handleClose} className="rounded-2xl border border-current/20 p-2.5 transition hover:scale-105">
-                <X className="h-7 w-7" />
+              <button type="button" onClick={handleClose} className="rounded-2xl border border-[#d8d4eb] p-2.5 text-[#5b548f] transition hover:scale-105">
+                <X className="h-6 w-6" />
               </button>
             ) : null}
           </div>
-          <p className="mt-6 text-[2.8rem] leading-[1.28]">{activeAnnouncement.message}</p>
+          <p className="mt-6 text-[2rem] leading-[1.4] text-[#2f3550]">{activeAnnouncement.message}</p>
+          {closeEnabled ? (
+            <div className="mt-8 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleClose}
+                className={`rounded-full border px-8 py-2.5 text-base font-semibold transition ${tone.button}`}
+              >
+                Cerrar
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveAnnouncement(null)}
+                className="rounded-full bg-[#6ce3d4] px-8 py-2.5 text-base font-semibold text-white shadow-[0_10px_25px_rgba(87,216,198,0.35)] transition hover:brightness-105"
+              >
+                Entendido
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
