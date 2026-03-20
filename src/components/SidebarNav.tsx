@@ -13,6 +13,7 @@ import {
   LogOut,
   User,
   ClipboardList,
+  Bell,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -45,6 +46,7 @@ const buildAdminNavItems = (base: string): NavItem[] => [
   { icon: Mail, label: "Solicitudes", href: `${base}/requests` },
   { icon: Users, label: "Usuarios y Roles", href: `${base}/users` },
   { icon: Wallet, label: "Finanzas", href: `${base}/finanzas` },
+  { icon: Bell, label: "Anuncios", href: `${base}/anuncios` },
   { icon: BarChart3, label: "Reportes", href: `${base}/reports` },
   { icon: Clock, label: "Horarios", href: `${base}/hours` },
   { icon: Calendar, label: "Calendario", href: `${base}/calendar` },
