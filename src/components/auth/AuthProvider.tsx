@@ -146,6 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             photoURL: data.photoURL ?? localProfile?.photoURL ?? "",
             role: data.role ?? localProfile?.role ?? "collab",
             position: data.position ?? localProfile?.position ?? "Sin asignar",
+            area: data.area ?? localProfile?.area ?? null,
             workScheduleId:
               data.workScheduleId ?? localProfile?.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
             active: data.isActive ?? data.active ?? localProfile?.active ?? true,

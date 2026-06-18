@@ -32,6 +32,7 @@ export interface Brand {
   status: 'active' | 'paused' | 'closed'
   channels: Network[]
   observations?: string
+  calendarShareEnabled?: boolean
   links: {
     instagram?: string
     facebook?: string

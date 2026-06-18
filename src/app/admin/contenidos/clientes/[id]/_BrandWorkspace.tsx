@@ -1,7 +1,7 @@
 'use client'
 import React, { useState, useEffect, useMemo } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Edit2, Download, FileText, ExternalLink, Loader2, Presentation, BarChart2, Columns3, TrendingUp, Link2, Radio, MessageSquare, CheckCircle2, Lightbulb, Globe } from 'lucide-react'
+import { ArrowLeft, Plus, Edit2, Download, FileText, ExternalLink, Loader2, Presentation, BarChart2, Columns3, TrendingUp, Link2, Radio, MessageSquare, CheckCircle2, Lightbulb, Globe, Share2, Copy, Check } from 'lucide-react'
 import { useHub } from '@/cmhub/context'
 import { useHubBase } from '@/cmhub/useHubBase'
 import { useHubMeta } from '@/cmhub/theme'
@@ -41,7 +41,7 @@ export default function BrandWorkspace() {
   const router = useRouter()
   const BASE = useHubBase()
   const { NETWORK_META, STATUS_META, PRIORITY_META } = useHubMeta()
-  const { brands, getBrandById, getContentsByBrand, updateContent, loading } = useHub()
+  const { brands, getBrandById, getContentsByBrand, updateContent, updateBrand, loading } = useHub()
 
   // Con output:export + Firebase Hosting rewrite, useParams puede quedarse con '_'
   // (el shell pre-renderizado). Leemos el ID real de window.location en el cliente.
@@ -68,6 +68,22 @@ export default function BrandWorkspace() {
   const [pptLoading, setPptLoading] = useState(false)
   const [filterNetwork, setFilterNetwork] = useState('all')
   const [showMonthPicker, setShowMonthPicker] = useState(false)
+  const [showShareModal, setShowShareModal] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
+
+  const shareUrl = typeof window !== 'undefined' ? `${window.location.origin}/clientes/calendario/${id}` : ''
+
+  async function handleToggleShare() {
+    if (!brand) return
+    await updateBrand(brand.id, { calendarShareEnabled: !brand.calendarShareEnabled })
+  }
+
+  async function handleCopyShareLink() {
+    if (!shareUrl) return
+    await navigator.clipboard.writeText(shareUrl)
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 2000)
+  }
 
   async function handleExportCSV() {
     if (!brand) return
@@ -181,6 +197,9 @@ export default function BrandWorkspace() {
           <span className="text-[#d1d5db] mx-1.5">›</span>
           <span className="text-[13px] font-semibold text-[#111827]">{brand.name}</span>
         </div>
+        <button onClick={() => setShowShareModal(true)} className="flex items-center gap-1.5 border border-[#e5e7eb] text-[#6b7280] text-[12px] px-3 py-1.5 rounded-xl hover:bg-[#f9fafb] transition-colors">
+          <Share2 size={12} /> Compartir calendario
+        </button>
         <button onClick={() => setShowBrandModal(true)} className="flex items-center gap-1.5 border border-[#e5e7eb] text-[#6b7280] text-[12px] px-3 py-1.5 rounded-xl hover:bg-[#f9fafb] transition-colors">
           <Edit2 size={12} /> Editar marca
         </button>
@@ -537,6 +556,70 @@ export default function BrandWorkspace() {
       )}
       {showBrandModal && (
         <BrandModal initial={brand} onClose={() => setShowBrandModal(false)} />
+      )}
+
+      {showShareModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setShowShareModal(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border border-[#e5e7eb] p-6 w-[420px] max-w-[92vw]"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-[#ede9fe] flex items-center justify-center">
+                <Share2 size={15} className="text-[#7c3aed]" />
+              </div>
+              <div>
+                <div className="text-[14px] font-bold text-[#111827]">Compartir calendario</div>
+                <div className="text-[11px] text-[#9ca3af]">Enlace de solo lectura, actualizado en tiempo real.</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-[#e5e7eb] bg-[#f9fafb] mb-3">
+              <div>
+                <div className="text-[13px] font-semibold text-[#111827]">Calendario público</div>
+                <div className="text-[11px] text-[#9ca3af]">
+                  {brand.calendarShareEnabled ? 'Cualquiera con el enlace puede verlo.' : 'Actívalo para generar el enlace.'}
+                </div>
+              </div>
+              <button
+                onClick={handleToggleShare}
+                className={`relative w-10 h-6 rounded-full transition-colors shrink-0 ${brand.calendarShareEnabled ? 'bg-[#7c3aed]' : 'bg-[#d1d5db]'}`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${brand.calendarShareEnabled ? 'translate-x-4' : 'translate-x-0'}`}
+                />
+              </button>
+            </div>
+
+            {brand.calendarShareEnabled && (
+              <div className="flex items-center gap-2">
+                <input
+                  readOnly
+                  value={shareUrl}
+                  onFocus={e => e.target.select()}
+                  className="flex-1 text-[12px] text-[#374151] border border-[#e5e7eb] rounded-xl px-3 py-2 bg-[#f9fafb] truncate"
+                />
+                <button
+                  onClick={handleCopyShareLink}
+                  className="flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#5b21b6] text-white text-[12px] font-semibold px-3 py-2 rounded-xl transition-colors shrink-0"
+                >
+                  {linkCopied ? <Check size={13} /> : <Copy size={13} />}
+                  {linkCopied ? 'Copiado' : 'Copiar'}
+                </button>
+              </div>
+            )}
+
+            <button
+              onClick={() => setShowShareModal(false)}
+              className="w-full mt-4 text-[12px] font-semibold text-[#6b7280] hover:text-[#111827] transition-colors"
+            >
+              Cerrar
+            </button>
+          </div>
+        </div>
       )}
 
       {showMonthPicker && (

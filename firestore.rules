@@ -136,10 +136,12 @@ service cloud.firestore {
 
     // CM Hub — Content management tool (internal use, signed-in only)
     match /cmhub_brands/{docId} {
-      allow read, list, write: if isSignedIn();
+      allow read, list: if isSignedIn() || resource.data.calendarShareEnabled == true;
+      allow write: if isSignedIn();
     }
     match /cmhub_contents/{docId} {
-      allow read, list, write: if isSignedIn();
+      allow read, list: if isSignedIn() || get(/databases/$(database)/documents/cmhub_brands/$(resource.data.brandId)).data.calendarShareEnabled == true;
+      allow write: if isSignedIn();
     }
     match /cmhub_tareas_diarias/{docId} {
       allow read, list, write: if isSignedIn();
