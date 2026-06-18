@@ -28,6 +28,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     return null;
   }
 
+  const income = payload.find((entry: any) => entry.dataKey === "income")?.value ?? 0;
+  const net = payload.find((entry: any) => entry.dataKey === "net")?.value ?? 0;
+  const margin = income > 0 ? (net / income) * 100 : 0;
+
   return (
     <div className="rounded-xl bg-slate-900 px-3 py-2 text-xs text-white shadow-lg">
       <p className="text-xs font-semibold">{label}</p>
@@ -38,6 +42,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
             <span className="font-semibold">{formatCurrency(entry.value)}</span>
           </div>
         ))}
+        <div className="flex items-center justify-between gap-3 border-t border-white/10 pt-1">
+          <span className="text-white/70">Margen</span>
+          <span className="font-semibold">{margin.toFixed(0)}%</span>
+        </div>
       </div>
     </div>
   );

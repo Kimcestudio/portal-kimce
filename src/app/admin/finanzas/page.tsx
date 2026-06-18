@@ -10,6 +10,11 @@ import FinanceKpiCard from "@/components/finance/FinanceKpiCard";
 import CopyPreviousMonthModal from "@/components/finance/CopyPreviousMonthModal";
 import FinancePendingList from "@/components/finance/FinancePendingList";
 import FinanceMonthlyChart from "@/components/finance/FinanceMonthlyChart";
+import FinanceTrendLineChart from "@/components/finance/FinanceTrendLineChart";
+import FinanceChartCard from "@/components/finance/FinanceChartCard";
+import FinancePieChart from "@/components/finance/FinancePieChart";
+import FinanceBreakdownBarChart from "@/components/finance/FinanceBreakdownBarChart";
+import FinanceComparisonBarChart from "@/components/finance/FinanceComparisonBarChart";
 import FinanceModal, {
   type CollaboratorFormValues,
   type CollaboratorPaymentFormValues,
@@ -116,6 +121,42 @@ const monthInRange = (targetMonthKey: string, startDate?: string | null, endDate
   if (startMonthKey && targetMonthKey < startMonthKey) return false;
   if (endMonthKey && targetMonthKey > endMonthKey) return false;
   return true;
+};
+
+const buildExpenseCategoryBreakdown = (expenses: Expense[]) => {
+  const map = new Map<string, number>();
+  expenses.forEach((expense) => {
+    map.set(expense.categoria, (map.get(expense.categoria) ?? 0) + expense.monto);
+  });
+  return Array.from(map.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+};
+
+const buildEgresosBreakdown = (expenses: Expense[], payments: CollaboratorPayment[]) => {
+  const map = new Map<string, number>();
+  expenses.forEach((expense) => {
+    map.set(expense.categoria, (map.get(expense.categoria) ?? 0) + expense.monto);
+  });
+  const paymentsTotal = payments.reduce((sum, payment) => sum + payment.montoFinal, 0);
+  if (paymentsTotal > 0) {
+    map.set("Pagos a colaboradores", (map.get("Pagos a colaboradores") ?? 0) + paymentsTotal);
+  }
+  return Array.from(map.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+};
+
+const buildClientBreakdown = (movements: FinanceMovement[], limit = 8) => {
+  const map = new Map<string, number>();
+  movements.forEach((movement) => {
+    const amount = movement.tax?.total ?? movement.amount;
+    map.set(movement.clientName, (map.get(movement.clientName) ?? 0) + amount);
+  });
+  return Array.from(map.entries())
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, limit);
 };
 
 const tabLabels: Record<FinanceTabKey, string> = {
@@ -863,6 +904,56 @@ export default function FinanceModulePage() {
     });
     return Array.from(map.values()).sort((a, b) => b.total - a.total);
   }, [collaboratorLookup, filteredPayments]);
+
+  const expenseByCategoryChartData = useMemo(
+    () => buildExpenseCategoryBreakdown(filteredExpenses),
+    [filteredExpenses],
+  );
+
+  const egresosByCategoryChartData = useMemo(
+    () => buildEgresosBreakdown(filteredExpenses, filteredPayments),
+    [filteredExpenses, filteredPayments],
+  );
+
+  const incomeByClientChartData = useMemo(
+    () => buildClientBreakdown(filteredMovements),
+    [filteredMovements],
+  );
+
+  const monthlyTrendChartData = useMemo(
+    () =>
+      monthlySeries.map((row) => ({
+        month: formatMonthLabel(row.monthKey),
+        income: row.incomeTotal,
+        expenses: row.expensesTotal,
+        net: row.net,
+      })),
+    [monthlySeries],
+  );
+
+  const annualExpenseByCategoryChartData = useMemo(
+    () => buildExpenseCategoryBreakdown(ytdTotals.expenses),
+    [ytdTotals.expenses],
+  );
+
+  const annualEgresosByCategoryChartData = useMemo(
+    () => buildEgresosBreakdown(ytdTotals.expenses, ytdTotals.payments),
+    [ytdTotals.expenses, ytdTotals.payments],
+  );
+
+  const annualIncomeByClientChartData = useMemo(
+    () => buildClientBreakdown(ytdTotals.movements),
+    [ytdTotals.movements],
+  );
+
+  const annualRealVsProjectedRows = useMemo(
+    () => [
+      { label: "Ingresos", real: annualCashFlow.incomePaid, projected: annualStats.totalIncome },
+      { label: "Egresos", real: annualPaidExpenses, projected: annualStats.totalExpenses },
+      { label: "Resultado", real: annualCashFlow.net, projected: annualStats.net },
+    ],
+    [annualCashFlow.incomePaid, annualCashFlow.net, annualPaidExpenses, annualStats.net, annualStats.totalExpenses, annualStats.totalIncome],
+  );
 
   const exportDetailCsv = () => {
     const rows: string[][] = [
@@ -1755,6 +1846,48 @@ export default function FinanceModulePage() {
                           </div>
                         </div>
                       </div>
+                      <FinanceChartCard
+                        title="Real vs Acumulado"
+                        description="Caja real del año vs. acumulado proyectado."
+                      >
+                        <FinanceComparisonBarChart data={annualRealVsProjectedRows} />
+                      </FinanceChartCard>
+                      <div className="grid gap-4 lg:grid-cols-3">
+                        <FinanceChartCard
+                          title="Egresos por categoría"
+                          description="Gastos + pagos a colaboradores en el año seleccionado."
+                        >
+                          <FinancePieChart data={annualEgresosByCategoryChartData} emptyLabel="Sin egresos en el año." />
+                        </FinanceChartCard>
+                        <FinanceChartCard
+                          title="Gastos por categoría"
+                          description="Distribución del gasto en el año seleccionado."
+                        >
+                          <FinancePieChart data={annualExpenseByCategoryChartData} emptyLabel="Sin gastos en el año." />
+                        </FinanceChartCard>
+                        <FinanceChartCard
+                          title="Ingresos por cliente"
+                          description="Top clientes del año seleccionado."
+                        >
+                          <FinanceBreakdownBarChart
+                            data={annualIncomeByClientChartData}
+                            color="#4f46e5"
+                            emptyLabel="Sin ingresos en el año."
+                          />
+                        </FinanceChartCard>
+                      </div>
+                      <FinanceChartCard
+                        title="Evolución del año"
+                        description="Ingresos, egresos y utilidad mes a mes."
+                      >
+                        {annualChartData.length === 0 ? (
+                          <div className="flex h-64 items-center justify-center rounded-xl bg-slate-50 text-xs text-slate-400">
+                            Sin datos para el año seleccionado.
+                          </div>
+                        ) : (
+                          <FinanceTrendLineChart data={annualChartData} />
+                        )}
+                      </FinanceChartCard>
                     </>
                   ) : (
                     <>
@@ -1871,55 +2004,40 @@ export default function FinanceModulePage() {
                             ) : null}
                           </div>
                         </div>
-                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                            Real vs Proyectado
-                          </p>
-                          <div className="mt-4 space-y-4 text-sm">
-                            {realVsProjectedRows.map((row) => {
-                              const maxValue = Math.max(row.real, row.projected, 1);
-                              const realPercent = (row.real / maxValue) * 100;
-                              const projectedPercent = (row.projected / maxValue) * 100;
-                              return (
-                                <div key={row.label} className="space-y-2">
-                                  <div className="flex items-center justify-between gap-4">
-                                    <p className="text-xs font-semibold text-slate-500">{row.label}</p>
-                                    <p className="text-xs text-slate-500">
-                                      {formatCurrency(row.real)} / {formatCurrency(row.projected)}
-                                    </p>
-                                  </div>
-                                  <div className="space-y-2">
-                                    <div>
-                                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                                        <span>Real</span>
-                                        <span>{realPercent.toFixed(0)}%</span>
-                                      </div>
-                                      <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
-                                        <div
-                                          className="h-2 rounded-full bg-indigo-500"
-                                          style={{ width: `${realPercent}%` }}
-                                        />
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="flex items-center justify-between text-[10px] text-slate-400">
-                                        <span>Proyectado</span>
-                                        <span>{projectedPercent.toFixed(0)}%</span>
-                                      </div>
-                                      <div className="mt-1 h-2 w-full rounded-full bg-slate-100">
-                                        <div
-                                          className="h-2 rounded-full bg-slate-400"
-                                          style={{ width: `${projectedPercent}%` }}
-                                        />
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
+                        <FinanceChartCard title="Real vs Proyectado" description="Comparación del periodo seleccionado.">
+                          <FinanceComparisonBarChart data={realVsProjectedRows} />
+                        </FinanceChartCard>
                       </div>
+                      <div className="grid gap-4 lg:grid-cols-3">
+                        <FinanceChartCard
+                          title="Egresos por categoría"
+                          description="Gastos + pagos a colaboradores del periodo seleccionado."
+                        >
+                          <FinancePieChart data={egresosByCategoryChartData} emptyLabel="Sin egresos en el periodo." />
+                        </FinanceChartCard>
+                        <FinanceChartCard
+                          title="Gastos por categoría"
+                          description="Distribución del gasto del periodo seleccionado."
+                        >
+                          <FinancePieChart data={expenseByCategoryChartData} emptyLabel="Sin gastos en el periodo." />
+                        </FinanceChartCard>
+                        <FinanceChartCard
+                          title="Ingresos por cliente"
+                          description="Top clientes del periodo seleccionado."
+                        >
+                          <FinanceBreakdownBarChart
+                            data={incomeByClientChartData}
+                            color="#4f46e5"
+                            emptyLabel="Sin ingresos en el periodo."
+                          />
+                        </FinanceChartCard>
+                      </div>
+                      <FinanceChartCard
+                        title="Tendencia de los últimos 12 meses"
+                        description="Ingresos, egresos y utilidad mes a mes."
+                      >
+                        <FinanceTrendLineChart data={monthlyTrendChartData} />
+                      </FinanceChartCard>
                       <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
                           Acumulado YTD {selectedMonthInfo.year}
