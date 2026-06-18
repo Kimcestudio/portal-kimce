@@ -1,5 +1,6 @@
 const legendItems = [
   { label: "Feriado", color: "bg-[#6c63ff]" },
+  { label: "Dia libre global", color: "bg-[#ec4899]" },
   { label: "Vacaciones aprobadas", color: "bg-[#22c55e]" },
   { label: "Permiso aprobado", color: "bg-[#f59e0b]" },
   { label: "Evento interno", color: "bg-[#3b82f6]" },

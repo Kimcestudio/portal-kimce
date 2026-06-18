@@ -10,6 +10,55 @@ export function getMonthKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
+export function parseMonthKeyLike(value: unknown) {
+  if (!value || typeof value !== "string") return null;
+  const raw = value.trim();
+
+  const fullDateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (fullDateMatch) return `${fullDateMatch[1]}-${fullDateMatch[2]}`;
+
+  const slashMatch = raw.match(/^(\d{2})\/(\d{4})$/);
+  if (slashMatch) {
+    const month = Number(slashMatch[1]);
+    const year = Number(slashMatch[2]);
+    if (month >= 1 && month <= 12) {
+      return `${year}-${String(month).padStart(2, "0")}`;
+    }
+  }
+
+  const dashMatch = raw.match(/^(\d{4})-(\d{2})$/);
+  if (dashMatch) {
+    const month = Number(dashMatch[2]);
+    if (month >= 1 && month <= 12) {
+      return `${dashMatch[1]}-${String(month).padStart(2, "0")}`;
+    }
+  }
+
+  const localizedMatch = raw.match(/^([a-záéíóúñ]+)\s+de\s+(\d{4})$/i);
+  if (localizedMatch) {
+    const monthNames = [
+      "enero",
+      "febrero",
+      "marzo",
+      "abril",
+      "mayo",
+      "junio",
+      "julio",
+      "agosto",
+      "septiembre",
+      "octubre",
+      "noviembre",
+      "diciembre",
+    ];
+    const monthIndex = monthNames.indexOf(localizedMatch[1].toLowerCase());
+    if (monthIndex >= 0) {
+      return `${localizedMatch[2]}-${String(monthIndex + 1).padStart(2, "0")}`;
+    }
+  }
+
+  return null;
+}
+
 export function getMonthKeyFromDate(value: unknown) {
   const dateOnly = formatDateOnly(value);
   return dateOnly ? dateOnly.slice(0, 7) : null;
@@ -82,19 +131,23 @@ export function getTodayDateString() {
   return formatLocalDate(new Date());
 }
 
-export function getStatusLabel(status: "pending" | "cancelled") {
+export function getStatusLabel(status: "pending" | "paid" | "cancelled") {
   switch (status) {
-    case "cancelled":
+    case "paid":
       return "Pagado";
+    case "cancelled":
+      return "Cancelado";
     default:
       return "Pendiente";
   }
 }
 
-export function getStatusTone(status: "pending" | "cancelled") {
+export function getStatusTone(status: "pending" | "paid" | "cancelled") {
   switch (status) {
-    case "cancelled":
+    case "paid":
       return "success";
+    case "cancelled":
+      return "danger";
     default:
       return "warning";
   }

@@ -3,6 +3,7 @@ export { default as FinanceFiltersBar } from "./shared/FinanceFiltersBar";
 
 export { default as MovementsTab } from "./movements/MovementsTab";
 export { default as ExpensesTab } from "./expenses/ExpensesTab";
+export { default as ReimbursementsTab } from "./expenses/ReimbursementsTab";
 export { default as PaymentsTab } from "./payments/PaymentsTab";
 export { default as TransfersTab } from "./transfers/TransfersTab";
 export { default as AccountsTab } from "./accounts/AccountsTab";

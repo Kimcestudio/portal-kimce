@@ -357,3 +357,11 @@ exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 54
     });
   }
 });
+
+// Notion + Drive API handlers (replaces Next.js /api/* routes for static hosting)
+const notionApi = require('./notionApi')
+Object.assign(exports, notionApi)
+
+// IA (Claude) handlers
+const aiApi = require('./aiApi')
+Object.assign(exports, aiApi)

@@ -71,6 +71,24 @@ export async function signInWithGoogle() {
   return await signInWithPopup(auth, provider);
 }
 
+export async function connectGoogleCalendar() {
+  const provider = new GoogleAuthProvider();
+  provider.addScope("https://www.googleapis.com/auth/calendar.readonly");
+  provider.setCustomParameters({ prompt: "consent" });
+  const result = await signInWithPopup(auth, provider);
+  const credential = GoogleAuthProvider.credentialFromResult(result);
+  const accessToken = credential?.accessToken;
+
+  if (!accessToken) {
+    throw new Error("No se pudo obtener permiso para leer el calendario.");
+  }
+
+  return {
+    accessToken,
+    email: result.user.email ?? "",
+  };
+}
+
 export function signOut() {
   setStoredSession(null);
 }

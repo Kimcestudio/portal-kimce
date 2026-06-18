@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import UserAvatar from "@/components/common/UserAvatar";
 import DashboardCard from "@/components/home/DashboardCard";
 import type { HomeNewEmployee } from "@/lib/homeDashboardMocks";
@@ -9,11 +9,19 @@ interface NewEmployeesCardProps {
   items: HomeNewEmployee[];
 }
 
-const periods: HomeNewEmployee["period"][] = ["Este mes", "2025"];
-
 export default function NewEmployeesCard({ items }: NewEmployeesCardProps) {
+  const periods = useMemo(() => {
+    const unique = Array.from(new Set(items.map((item) => item.period).filter(Boolean)));
+    return unique.length > 0 ? unique : ["Este mes"];
+  }, [items]);
   const [period, setPeriod] = useState<HomeNewEmployee["period"]>("Este mes");
   const filtered = useMemo(() => items.filter((item) => item.period === period), [items, period]);
+
+  useEffect(() => {
+    if (!periods.includes(period) && periods.length > 0) {
+      setPeriod(periods[0]);
+    }
+  }, [period, periods]);
 
   return (
     <DashboardCard title={`Nuevos empleados (${filtered.length})`} subtitle="Ingresos recientes" className="lg:col-span-2">

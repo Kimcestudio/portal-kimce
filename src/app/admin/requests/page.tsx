@@ -1,679 +1,683 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
-  collection,
-  collectionGroup,
-  deleteDoc,
-  doc,
-  getDocs,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  startAfter,
-  updateDoc,
-  where,
-  type DocumentData,
-  type QueryDocumentSnapshot,
-} from "firebase/firestore";
+  BellDot,
+  CalendarRange,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  FileClock,
+  History,
+  PenLine,
+  Search,
+  Sparkles,
+} from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import UserAvatar from "@/components/common/UserAvatar";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { db } from "@/services/firebase/client";
-import { formatISODate, getWeekDates, getWeekKey, getWeekStartMonday } from "@/lib/attendanceUtils";
-import type { UserProfile } from "@/services/firebase/types";
+import AdminAttendanceMonitorTabs from "@/app/admin/attendance/AdminAttendanceMonitorTabs";
+import { formatISODate, getWeekStartMonday } from "@/lib/attendanceUtils";
+import {
+  getRequestCategory,
+  getRequestKey,
+  getRequestSummaryLines,
+  getRequestTitle,
+  getUserDisplayName,
+  useAdminRequestsMonitor,
+  type AdminRequestItem,
+} from "@/app/admin/requests/useAdminRequestsMonitor";
 
-type FirestoreUser = UserProfile & {
-  name?: string;
-  fullName?: string;
-  avatarUrl?: string;
-  profilePhoto?: string;
+type RequestWorkspaceTab = "pending" | "permits" | "extras" | "corrections" | "history";
+
+const STATUS_STYLES = {
+  pending: "bg-amber-100 text-amber-700",
+  approved: "bg-emerald-100 text-emerald-700",
+  rejected: "bg-rose-100 text-rose-700",
+} as const;
+
+const STATUS_LABELS = {
+  pending: "Pendiente",
+  approved: "Aprobada",
+  rejected: "Rechazada",
+} as const;
+
+const TAB_META: Record<RequestWorkspaceTab, { label: string; icon: React.ComponentType<{ size?: number; className?: string }> }> = {
+  pending: { label: "Pendientes", icon: BellDot },
+  permits: { label: "Permisos", icon: CalendarRange },
+  extras: { label: "Extras", icon: Sparkles },
+  corrections: { label: "Correcciones", icon: PenLine },
+  history: { label: "Historial", icon: History },
 };
-
-type FirestoreTimestamp = {
-  toDate?: () => Date;
-};
-
-type HourRequestStatus = "pending" | "approved" | "rejected";
-
-type AdminRequestItem = {
-  docId: string;
-  uid: string;
-  type?: string;
-  status: HourRequestStatus;
-  createdAt: string;
-  date?: string;
-  endDate?: string;
-  weekKey: string;
-  hours?: number;
-  reason?: string;
-  source: "hourRequest" | "extraActivity";
-  collectionPath: "hourRequests" | "extraActivities";
-  sourceTag: string;
-  documentPath: string;
-};
-
-const REQUEST_SOURCES = [
-  { key: "hourRequests:root", collectionName: "hourRequests", mode: "root" as const },
-  { key: "hourRequests:group", collectionName: "hourRequests", mode: "group" as const },
-  { key: "extraActivities:root", collectionName: "extraActivities", mode: "root" as const },
-  { key: "extraActivities:group", collectionName: "extraActivities", mode: "group" as const },
-];
-
-const EXTRA_ACTIVITY_TYPE = "EXTRA_ACTIVIDAD";
-const PERMIT_TYPES = new Set(["DIA_LIBRE", "PERMISO_HORAS", "VACACIONES", "MEDICO", "HOURS", "PERMISO"]);
-
-const normalizeStatus = (value: unknown): HourRequestStatus => {
-  if (typeof value === "string") {
-    const lower = value.toLowerCase();
-    if (lower === "pending" || lower === "approved" || lower === "rejected") return lower;
-  }
-  return "pending";
-};
-
-const normalizeTimestamp = (value: unknown) => {
-  if (!value) return null;
-  if (typeof value === "string") return value;
-  const candidate = value as FirestoreTimestamp;
-  if (candidate.toDate) return candidate.toDate().toISOString();
-  return null;
-};
-
-const normalizeRequestType = (type: string | undefined) => (typeof type === "string" ? type.toUpperCase() : "");
-
-const getRequestCategory = (request: AdminRequestItem): "permit" | "extra" => {
-  const normalizedType = normalizeRequestType(request.type);
-  if (normalizedType === EXTRA_ACTIVITY_TYPE || request.source === "extraActivity") return "extra";
-  if (PERMIT_TYPES.has(normalizedType)) return "permit";
-  return "permit";
-};
-
-const getRequestTitle = (request: AdminRequestItem) =>
-  getRequestCategory(request) === "extra" ? "Actividad extra" : "Libre / Permiso";
-
-const getUserDisplayName = (user: FirestoreUser) =>
-  user.displayName || user.fullName || user.name || user.email || "Colaborador";
 
 export default function AdminRequestsPage() {
   const { user } = useAuth();
-  const [weekStart, setWeekStart] = useState(() => getWeekStartMonday(new Date()));
-  const [selectedUserId, setSelectedUserId] = useState<string>("all");
-  const [users, setUsers] = useState<FirestoreUser[]>([]);
-  const [requestSources, setRequestSources] = useState<Record<string, AdminRequestItem[]>>({});
-  const [permitFilter, setPermitFilter] = useState<HourRequestStatus | "all">("all");
-  const [extraFilter, setExtraFilter] = useState<HourRequestStatus | "all">("all");
-  const [requestsLoading, setRequestsLoading] = useState(true);
-  const [historyItems, setHistoryItems] = useState<AdminRequestItem[]>([]);
-  const [historyCursorHourRequests, setHistoryCursorHourRequests] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [historyCursorExtraActivities, setHistoryCursorExtraActivities] = useState<QueryDocumentSnapshot<DocumentData> | null>(null);
-  const [historyHasMore, setHistoryHasMore] = useState(true);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [deletingRequestKey, setDeletingRequestKey] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const {
+    weekStart,
+    setWeekStart,
+    weekKey,
+    selectedUserId,
+    setSelectedUserId,
+    collaboratorUsers,
+    requestsLoading,
+    permitFilter,
+    setPermitFilter,
+    extraFilter,
+    setExtraFilter,
+    allPendingRequests,
+    freePermissionRequests,
+    extraActivityRequests,
+    freePermissionRequestsFilteredByTab,
+    extraRequestsFilteredByTab,
+    weeklySummaries,
+    historyItems,
+    historyHasMore,
+    historyLoading,
+    deletingRequestKey,
+    updatingRequestKey,
+    loadMoreHistory,
+    handleUpdateRequest,
+    handleDeleteRequest,
+    correctionItems,
+    correctionFilter,
+    setCorrectionFilter,
+    handleUpdateCorrection,
+    correctionsPendingCount,
+  } = useAdminRequestsMonitor(user);
 
-  const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
-  const weekKey = useMemo(() => getWeekKey(formatISODate(weekStart)), [weekStart]);
-  const weekDateSet = useMemo(() => new Set(weekDates.map((date) => formatISODate(date))), [weekDates]);
+  const [collaboratorQuery, setCollaboratorQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<RequestWorkspaceTab>("pending");
+  const [selectedRequestKey, setSelectedRequestKey] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (user?.role !== "admin") return;
-    const usersRef = collection(db, "users");
-    const unsubscribe = onSnapshot(usersRef, (snapshot) => {
-      const nextUsers = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data() as DocumentData;
-        return {
-          uid: data.uid ?? docSnap.id,
-          email: data.email ?? "",
-          displayName: data.displayName ?? "",
-          name: data.name,
-          fullName: data.fullName,
-          photoURL: data.photoURL ?? "",
-          avatarUrl: data.avatarUrl,
-          profilePhoto: data.profilePhoto,
-          role: (data.role as UserProfile["role"]) ?? "collab",
-          position: data.position ?? "",
-          active: data.active ?? data.isActive ?? true,
-          workScheduleId: data.workScheduleId,
-        } as FirestoreUser;
-      });
-      setUsers(nextUsers);
-    });
-    return () => unsubscribe();
-  }, [user?.role]);
-
-  useEffect(() => {
-    if (user?.role !== "admin") return;
-    const unsubscribers = REQUEST_SOURCES.map(({ key, collectionName, mode }) => {
-      const ref = mode === "group" ? collectionGroup(db, collectionName) : collection(db, collectionName);
-      const q = query(ref);
-      return onSnapshot(
-        q,
-        (snapshot) => {
-          const nextRequests = snapshot.docs
-            .map((docSnap) => {
-              const data = docSnap.data() as DocumentData;
-              const parentUserId = docSnap.ref.parent.parent?.id;
-              const uid = data.uid ?? data.userId ?? data.createdBy ?? parentUserId ?? "unknown";
-              const dateValue =
-                (typeof data.date === "string" ? data.date : null) ??
-                normalizeTimestamp(data.date) ??
-                normalizeTimestamp(data.createdAt) ??
-                "";
-              const dateISO = dateValue ? dateValue.slice(0, 10) : "";
-              const weekKeyValue = typeof data.weekKey === "string" && data.weekKey.length > 0
-                ? data.weekKey
-                : dateISO
-                  ? getWeekKey(dateISO)
-                  : "";
-              return {
-                docId: docSnap.id,
-                uid,
-                type: data.type ?? data.requestType,
-                status: normalizeStatus(data.status ?? data.state),
-                createdAt: normalizeTimestamp(data.createdAt) ?? new Date().toISOString(),
-                date: data.date,
-                endDate: data.endDate,
-                weekKey: weekKeyValue,
-                hours: typeof data.hours === "number"
-                  ? data.hours
-                  : typeof data.minutes === "number"
-                    ? Math.round((data.minutes / 60) * 10) / 10
-                    : undefined,
-                reason: data.reason ?? data.motivo ?? data.note,
-                source: collectionName === "extraActivities" ? "extraActivity" : "hourRequest",
-                collectionPath: collectionName === "extraActivities" ? "extraActivities" : "hourRequests",
-                sourceTag: key,
-                documentPath: docSnap.ref.path,
-              } satisfies AdminRequestItem;
-            });
-          setRequestSources((prev) => ({ ...prev, [key]: nextRequests }));
-          setRequestsLoading(false);
-        },
-        () => setRequestsLoading(false)
-      );
-    });
-
-    return () => {
-      unsubscribers.forEach((unsubscribe) => unsubscribe());
-    };
-  }, [user?.role]);
-
-  const getRequestKey = (request: Pick<AdminRequestItem, "documentPath">) => request.documentPath;
-
-  const requests = useMemo(() => {
-    const merged = Object.values(requestSources).flat();
-    const deduped = new Map<string, AdminRequestItem>();
-    merged.forEach((item) => deduped.set(getRequestKey(item), item));
-    return Array.from(deduped.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }, [requestSources]);
-
-  const weeklyFiltered = useMemo(() => {
-    return requests.filter((item) => {
-      const dateISO = typeof item.date === "string" ? item.date.slice(0, 10) : "";
-      const matchesWeek = item.weekKey === weekKey || (dateISO && weekDateSet.has(dateISO));
-      const matchesUser = selectedUserId === "all" || item.uid === selectedUserId;
-      return matchesWeek && matchesUser;
-    });
-  }, [requests, selectedUserId, weekDateSet, weekKey]);
-
-  const freePermissionRequests = useMemo(
-    () => weeklyFiltered.filter((item) => getRequestCategory(item) === "permit"),
-    [weeklyFiltered]
-  );
-  const extraActivityRequests = useMemo(
-    () => weeklyFiltered.filter((item) => getRequestCategory(item) === "extra"),
-    [weeklyFiltered]
-  );
-
-  const freePermissionRequestsFilteredByTab = useMemo(() => {
-    if (permitFilter === "all") return freePermissionRequests;
-    return freePermissionRequests.filter((item) => item.status === permitFilter);
-  }, [freePermissionRequests, permitFilter]);
-
-  const extraRequestsFilteredByTab = useMemo(() => {
-    if (extraFilter === "all") return extraActivityRequests;
-    return extraActivityRequests.filter((item) => item.status === extraFilter);
-  }, [extraActivityRequests, extraFilter]);
-
-  const mapDocToRequest = (collectionName: string, docSnap: QueryDocumentSnapshot<DocumentData>) => {
-    const data = docSnap.data() as DocumentData;
-    const parentUserId = docSnap.ref.parent.parent?.id;
-    const uid = data.uid ?? data.userId ?? data.createdBy ?? parentUserId ?? "unknown";
-    const dateValue =
-      (typeof data.date === "string" ? data.date : null) ??
-      normalizeTimestamp(data.date) ??
-      normalizeTimestamp(data.createdAt) ??
-      "";
-    const dateISO = dateValue ? dateValue.slice(0, 10) : "";
-    const weekKeyValue = typeof data.weekKey === "string" && data.weekKey.length > 0
-      ? data.weekKey
-      : dateISO
-        ? getWeekKey(dateISO)
-        : "";
-    return {
-      docId: docSnap.id,
-      uid,
-      type: data.type ?? data.requestType,
-      status: normalizeStatus(data.status ?? data.state),
-      createdAt: normalizeTimestamp(data.createdAt) ?? new Date().toISOString(),
-      date: data.date,
-      endDate: data.endDate,
-      weekKey: weekKeyValue,
-      hours: typeof data.hours === "number"
-        ? data.hours
-        : typeof data.minutes === "number"
-          ? Math.round((data.minutes / 60) * 10) / 10
-          : undefined,
-      reason: data.reason ?? data.motivo ?? data.note,
-      source: collectionName === "extraActivities" ? "extraActivity" : "hourRequest",
-      collectionPath: collectionName === "extraActivities" ? "extraActivities" : "hourRequests",
-      sourceTag: `history:${collectionName}`,
-      documentPath: docSnap.ref.path,
-    } satisfies AdminRequestItem;
+  const prevWeek = () => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() - 7);
+    setWeekStart(getWeekStartMonday(d));
   };
 
-  const loadMoreHistory = async (reset = false) => {
-    if (user?.role !== "admin" || historyLoading) return;
-    setHistoryLoading(true);
-    try {
-      const hourBase = selectedUserId === "all"
-        ? query(collection(db, "hourRequests"), orderBy("createdAt", "desc"), limit(20))
-        : query(collection(db, "hourRequests"), where("uid", "==", selectedUserId), orderBy("createdAt", "desc"), limit(20));
-      const extraBase = selectedUserId === "all"
-        ? query(collection(db, "extraActivities"), orderBy("createdAt", "desc"), limit(20))
-        : query(collection(db, "extraActivities"), where("uid", "==", selectedUserId), orderBy("createdAt", "desc"), limit(20));
-
-      const hourQuery = reset || !historyCursorHourRequests
-        ? hourBase
-        : query(
-            collection(db, "hourRequests"),
-            ...(selectedUserId === "all" ? [] : [where("uid", "==", selectedUserId)]),
-            orderBy("createdAt", "desc"),
-            startAfter(historyCursorHourRequests),
-            limit(20)
-          );
-      const extraQuery = reset || !historyCursorExtraActivities
-        ? extraBase
-        : query(
-            collection(db, "extraActivities"),
-            ...(selectedUserId === "all" ? [] : [where("uid", "==", selectedUserId)]),
-            orderBy("createdAt", "desc"),
-            startAfter(historyCursorExtraActivities),
-            limit(20)
-          );
-
-      const [hourSnapshot, extraSnapshot] = await Promise.all([getDocs(hourQuery), getDocs(extraQuery)]);
-      const merged = [
-        ...hourSnapshot.docs.map((docSnap) => mapDocToRequest("hourRequests", docSnap)),
-        ...extraSnapshot.docs.map((docSnap) => mapDocToRequest("extraActivities", docSnap)),
-      ].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-
-      setHistoryItems((prev) => {
-        const base = reset ? [] : prev;
-        const deduped = new Map<string, AdminRequestItem>();
-        [...base, ...merged].forEach((item) => deduped.set(getRequestKey(item), item));
-        return Array.from(deduped.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      });
-
-      setHistoryCursorHourRequests(hourSnapshot.docs[hourSnapshot.docs.length - 1] ?? null);
-      setHistoryCursorExtraActivities(extraSnapshot.docs[extraSnapshot.docs.length - 1] ?? null);
-      setHistoryHasMore(hourSnapshot.docs.length === 20 || extraSnapshot.docs.length === 20);
-    } finally {
-      setHistoryLoading(false);
-    }
+  const nextWeek = () => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + 7);
+    setWeekStart(getWeekStartMonday(d));
   };
 
   useEffect(() => {
-    void loadMoreHistory(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedUserId, user?.role]);
+    const weekParam = searchParams.get("week");
+    const userParam = searchParams.get("user");
 
-  const handleUpdateRequest = async (request: AdminRequestItem, status: HourRequestStatus) => {
-    if (!user || user.role !== "admin") return;
-    await updateDoc(doc(db, request.collectionPath, request.docId), {
-      status,
-      reviewedBy: user.uid,
-      reviewedAt: new Date().toISOString(),
-    });
-  };
-
-  const handleDeleteRequest = async (request: AdminRequestItem) => {
-    if (!user || user.role !== "admin") return;
-
-    const confirmed = typeof window === "undefined"
-      ? true
-      : window.confirm("¿Eliminar esta solicitud? Esta acción no se puede deshacer.");
-    if (!confirmed) return;
-
-    const requestKey = getRequestKey(request);
-    setDeletingRequestKey(requestKey);
-
-    try {
-      await deleteDoc(doc(db, request.documentPath));
-
-      setHistoryItems((prev) => prev.filter((item) => getRequestKey(item) !== requestKey));
-      setRequestSources((prev) => {
-        const next: Record<string, AdminRequestItem[]> = {};
-        Object.entries(prev).forEach(([key, items]) => {
-          next[key] = items.filter((item) => getRequestKey(item) !== requestKey);
-        });
-        return next;
-      });
-    } catch (error) {
-      const firebaseCode =
-        typeof error === "object" && error !== null && "code" in error
-          ? String((error as { code?: unknown }).code)
-          : "unknown";
-      console.error(`[admin/requests] No se pudo eliminar la solicitud (code: ${firebaseCode})`, error);
-      if (typeof window !== "undefined") {
-        window.alert("No se pudo eliminar la solicitud. Intenta nuevamente.");
+    if (weekParam) {
+      const nextWeekDate = new Date(weekParam);
+      if (!Number.isNaN(nextWeekDate.getTime())) {
+        setWeekStart(getWeekStartMonday(nextWeekDate));
       }
-    } finally {
-      setDeletingRequestKey(null);
     }
-  };
 
-  const collaboratorUsers = useMemo(() => users.filter((item) => item.role !== "admin"), [users]);
+    if (userParam) {
+      setSelectedUserId(userParam);
+    }
+  }, [searchParams, setSelectedUserId, setWeekStart]);
+
+  const summaryByUid = useMemo(
+    () => new Map(weeklySummaries.map((item) => [item.user.uid, item])),
+    [weeklySummaries],
+  );
+
+  const visibleCollaborators = useMemo(() => {
+    const query = collaboratorQuery.trim().toLowerCase();
+    if (!query) return collaboratorUsers;
+    return collaboratorUsers.filter((item) => {
+      const haystack = [
+        getUserDisplayName(item),
+        item.position,
+        item.email,
+        item.orgTeam,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [collaboratorQuery, collaboratorUsers]);
+
+  const pendingRequests = allPendingRequests;
+
+  const activeList = useMemo<AdminRequestItem[]>(() => {
+    switch (activeTab) {
+      case "permits":
+        return freePermissionRequestsFilteredByTab;
+      case "extras":
+        return extraRequestsFilteredByTab;
+      case "history":
+        return historyItems;
+      case "corrections":
+        return [];
+      case "pending":
+      default:
+        return pendingRequests;
+    }
+  }, [
+    activeTab,
+    extraRequestsFilteredByTab,
+    freePermissionRequestsFilteredByTab,
+    historyItems,
+    pendingRequests,
+  ]);
 
   useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      console.log("[admin] hourRequests total:", requests.length);
-      console.log("[admin] unique types:", Array.from(new Set(requests.map((r) => r.type).filter(Boolean))));
-      console.log("[admin] freePermission:", freePermissionRequests.length);
-      console.log("[admin] extras:", extraActivityRequests.length);
-      console.log("[admin] history count:", historyItems.length);
+    if (activeTab === "corrections") {
+      setSelectedRequestKey((current) => {
+        if (current && correctionItems.some((c) => c.docId === current)) return current;
+        return correctionItems[0]?.docId ?? null;
+      });
+      return;
     }
-  }, [extraActivityRequests.length, freePermissionRequests.length, historyItems.length, requests]);
+    setSelectedRequestKey((current) => {
+      if (current && activeList.some((item) => getRequestKey(item) === current)) return current;
+      return activeList[0] ? getRequestKey(activeList[0]) : null;
+    });
+  }, [activeList, activeTab, correctionItems]);
+
+  const selectedRequest = useMemo(
+    () => activeList.find((item) => getRequestKey(item) === selectedRequestKey) ?? activeList[0] ?? null,
+    [activeList, selectedRequestKey],
+  );
+
+  const selectedRequestOwner = selectedRequest
+    ? collaboratorUsers.find((item) => item.uid === selectedRequest.uid) ?? null
+    : null;
+
+  const selectedCorrection = activeTab === "corrections"
+    ? correctionItems.find((c) => c.docId === selectedRequestKey) ?? null
+    : null;
+  const selectedCorrectionOwner = selectedCorrection
+    ? collaboratorUsers.find((u) => u.uid === selectedCorrection.uid) ?? null
+    : null;
+
+  const tabCounts: Record<RequestWorkspaceTab, number> = {
+    pending: pendingRequests.length,
+    permits: freePermissionRequests.length,
+    extras: extraActivityRequests.length,
+    corrections: correctionsPendingCount,
+    history: historyItems.length,
+  };
+
+  const showFilterPills = activeTab === "permits" || activeTab === "extras" || activeTab === "corrections";
+  const currentFilter =
+    activeTab === "permits" ? permitFilter :
+    activeTab === "extras" ? extraFilter :
+    correctionFilter;
+  const setCurrentFilter =
+    activeTab === "permits" ? setPermitFilter :
+    activeTab === "extras" ? setExtraFilter :
+    setCorrectionFilter;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
-      <div className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900">Solicitudes</h2>
-            <p className="text-xs text-slate-500">Revisión por semana y colaborador.</p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <label className="text-xs font-semibold text-slate-500">
-              Semana
-              <input
-                className="mt-2 block rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
-                type="date"
-                value={formatISODate(weekStart)}
-                onChange={(event) => {
-                  const next = new Date(event.target.value);
-                  if (!Number.isNaN(next.getTime())) {
-                    setWeekStart(getWeekStartMonday(next));
-                  }
-                }}
-              />
-            </label>
-            <label className="text-xs font-semibold text-slate-500">
-              Colaborador
-              <select
-                className="mt-2 block rounded-xl border border-slate-200/60 px-3 py-2 text-sm"
-                value={selectedUserId}
-                onChange={(event) => setSelectedUserId(event.target.value)}
-              >
-                <option value="all">Todos</option>
-                {collaboratorUsers.map((item) => (
-                  <option key={item.uid} value={item.uid}>
-                    {getUserDisplayName(item)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+
+      <AdminAttendanceMonitorTabs
+        current="requests"
+        week={formatISODate(weekStart)}
+        selectedUserId={selectedUserId}
+      />
+
+      {/* ── Compact toolbar: week nav + user filter + stat chips ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Week navigation */}
+        <div className="flex items-center gap-0.5 rounded-full border border-slate-200 bg-white px-1 py-1">
+          <button
+            type="button"
+            onClick={prevWeek}
+            className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            <ChevronLeft size={13} />
+          </button>
+          <span className="min-w-[100px] text-center text-xs font-semibold text-slate-700">
+            {weekKey}
+          </span>
+          <button
+            type="button"
+            onClick={nextWeek}
+            className="flex h-6 w-6 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          >
+            <ChevronRight size={13} />
+          </button>
+        </div>
+
+        {/* User filter */}
+        <select
+          value={selectedUserId}
+          onChange={(e) => setSelectedUserId(e.target.value)}
+          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 outline-none focus:border-indigo-400"
+        >
+          <option value="all">Todos los colaboradores</option>
+          {collaboratorUsers.map((u) => (
+            <option key={u.uid} value={u.uid}>
+              {getUserDisplayName(u)}
+            </option>
+          ))}
+        </select>
+
+        {/* Stat chips */}
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <span className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold ${pendingRequests.length > 0 ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-white text-slate-500"}`}>
+            <BellDot size={11} />
+            Pendientes · {pendingRequests.length}
+          </span>
+          <span className="flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700">
+            <CalendarRange size={11} />
+            Permisos · {freePermissionRequests.length}
+          </span>
+          <span className="flex items-center gap-1.5 rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-[11px] font-semibold text-cyan-700">
+            <Sparkles size={11} />
+            Extras · {extraActivityRequests.length}
+          </span>
+          <span className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold ${correctionsPendingCount > 0 ? "border-violet-200 bg-violet-50 text-violet-700" : "border-slate-200 bg-white text-slate-400"}`}>
+            <PenLine size={11} />
+            Correcciones · {correctionsPendingCount}
+          </span>
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        {[
-          {
-            title: "Libre / Permiso",
-            list: freePermissionRequestsFilteredByTab,
-            total: freePermissionRequests.length,
-            pending: freePermissionRequests.filter((item) => item.status === "pending").length,
-            filter: permitFilter,
-            setFilter: setPermitFilter,
-          },
-          {
-            title: "Actividades extra",
-            list: extraRequestsFilteredByTab,
-            total: extraActivityRequests.length,
-            pending: extraActivityRequests.filter((item) => item.status === "pending").length,
-            filter: extraFilter,
-            setFilter: setExtraFilter,
-          },
-        ].map((section) => (
-          <div key={section.title} className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900">{section.title}</h3>
-                <p className="text-xs text-slate-500">
-                  {section.pending} pendientes · {section.total} en semana {weekKey}
-                </p>
+      {/* ── 3-column flat workspace ── */}
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="grid min-h-[600px] divide-x divide-slate-200 xl:grid-cols-[240px_1fr_320px]">
+
+          {/* LEFT: collaborator list */}
+          <aside className="flex flex-col bg-slate-50">
+            {/* Header */}
+            <div className="border-b border-slate-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <ClipboardList size={12} className="text-slate-400" />
+                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Equipo</span>
+                <span className="ml-auto text-[11px] font-semibold text-slate-400">{visibleCollaborators.length}</span>
               </div>
-              <div className="flex flex-wrap gap-2">
-                {[
+              <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5">
+                <Search size={11} className="shrink-0 text-slate-400" />
+                <input
+                  value={collaboratorQuery}
+                  onChange={(e) => setCollaboratorQuery(e.target.value)}
+                  placeholder="Buscar..."
+                  className="w-full bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400"
+                />
+              </div>
+            </div>
+
+            {/* Rows */}
+            <div className="flex-1 divide-y divide-slate-100 overflow-y-auto">
+              {visibleCollaborators.map((item) => {
+                const summary = summaryByUid.get(item.uid);
+                const isActive = selectedUserId === item.uid;
+                const hasPending = (summary?.pendingCount ?? 0) > 0;
+                return (
+                  <button
+                    key={item.uid}
+                    type="button"
+                    onClick={() => setSelectedUserId(item.uid)}
+                    className={`flex w-full items-center gap-2.5 px-4 py-3 text-left transition ${
+                      isActive
+                        ? "border-l-2 border-indigo-500 bg-indigo-50 pl-[14px]"
+                        : "border-l-2 border-transparent hover:bg-white"
+                    }`}
+                  >
+                    <UserAvatar
+                      name={getUserDisplayName(item)}
+                      photoURL={item.photoURL}
+                      avatarUrl={item.avatarUrl}
+                      profilePhoto={item.profilePhoto}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${hasPending ? "bg-amber-400" : summary?.approvedCount ? "bg-emerald-400" : "bg-slate-300"}`} />
+                        <p className={`truncate text-sm font-semibold ${isActive ? "text-indigo-700" : "text-slate-800"}`}>
+                          {getUserDisplayName(item)}
+                        </p>
+                      </div>
+                      <p className="truncate text-[11px] text-slate-400">{item.position || "Sin puesto"}</p>
+                    </div>
+                    {hasPending ? (
+                      <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700">
+                        {summary?.pendingCount}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+              {visibleCollaborators.length === 0 ? (
+                <p className="px-4 py-8 text-center text-xs text-slate-400">
+                  {requestsLoading ? "Cargando..." : "Sin resultados."}
+                </p>
+              ) : null}
+            </div>
+          </aside>
+
+          {/* CENTER: request list */}
+          <div className="flex flex-col">
+            {/* Tab pills */}
+            <div className="flex flex-wrap items-center gap-1 border-b border-slate-200 px-4 py-2.5">
+              {(Object.entries(TAB_META) as [RequestWorkspaceTab, typeof TAB_META[RequestWorkspaceTab]][]).map(([key, meta]) => {
+                const count = tabCounts[key];
+                const isActive = activeTab === key;
+                const Icon = meta.icon;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActiveTab(key)}
+                    className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                      isActive
+                        ? "bg-indigo-600 text-white"
+                        : "text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                    }`}
+                  >
+                    <Icon size={11} />
+                    {meta.label}
+                    {count > 0 ? (
+                      <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold leading-none ${isActive ? "bg-white/25 text-white" : "bg-slate-200 text-slate-600"}`}>
+                        {count}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Filter pills */}
+            {showFilterPills ? (
+              <div className="flex items-center gap-1.5 border-b border-slate-100 px-4 py-2">
+                {([
                   { label: "Todas", value: "all" },
                   { label: "Pendientes", value: "pending" },
                   { label: "Aprobadas", value: "approved" },
                   { label: "Rechazadas", value: "rejected" },
-                ].map((item) => (
+                ] as const).map((f) => (
                   <button
-                    key={`${section.title}-${item.value}`}
+                    key={f.value}
                     type="button"
-                    onClick={() => section.setFilter(item.value as HourRequestStatus | "all")}
-                    className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                      section.filter === item.value
-                        ? "bg-indigo-600 text-white shadow-[0_8px_18px_rgba(79,70,229,0.35)]"
-                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                    onClick={() => setCurrentFilter(f.value)}
+                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                      currentFilter === f.value
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-500 hover:bg-slate-100"
                     }`}
                   >
-                    {item.label}
+                    {f.label}
                   </button>
                 ))}
               </div>
-            </div>
-            <div className="mt-4 space-y-3">
-              {section.list.map((request) => {
-                const createdBy = collaboratorUsers.find((item) => item.uid === request.uid) ?? null;
-                const statusLabel =
-                  request.status === "pending"
-                    ? "Pendiente"
-                    : request.status === "approved"
-                    ? "Aprobada"
-                    : "Rechazada";
-                return (
-                  <div
-                    key={getRequestKey(request)}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
-                  >
-                    <div>
-                      <p className="font-semibold text-slate-900">{getRequestTitle(request)}</p>
-                      <p className="text-xs text-slate-500">
-                        {request.date ?? request.weekKey}
-                        {request.endDate ? ` - ${request.endDate}` : ""} · {" "}
-                        {request.hours ? `${request.hours}h` : "Jornada completa"} · {" "}
-                        {request.reason ?? "Sin motivo"}
-                      </p>
-                      <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
-                        <UserAvatar
-                          name={createdBy ? getUserDisplayName(createdBy) : "Usuario desconocido"}
-                          photoURL={createdBy?.photoURL}
-                          avatarUrl={createdBy?.avatarUrl}
-                          profilePhoto={createdBy?.profilePhoto}
-                        />
-                        <span>
-                          {getUserDisplayName(createdBy ?? {
-                            uid: request.uid,
-                            email: "",
-                            displayName: "",
-                            photoURL: "",
-                            role: "collab",
-                            position: "",
-                            active: true,
-                          })} · {new Date(request.createdAt).toLocaleDateString("es-ES")}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          request.status === "pending"
-                            ? "bg-amber-100 text-amber-700"
-                            : request.status === "approved"
-                            ? "bg-green-100 text-green-700"
-                            : "bg-rose-100 text-rose-700"
+            ) : null}
+
+            {/* Request rows */}
+            <div className="flex-1 divide-y divide-slate-100 overflow-y-auto">
+              {activeTab === "corrections" ? (
+                <>
+                  {(currentFilter === "all" ? correctionItems : correctionItems.filter((c) => c.status === currentFilter)).map((item) => {
+                    const owner = collaboratorUsers.find((u) => u.uid === item.uid) ?? null;
+                    const isSelected = selectedRequestKey === item.docId;
+                    return (
+                      <button
+                        key={item.docId}
+                        type="button"
+                        onClick={() => setSelectedRequestKey(item.docId)}
+                        className={`flex w-full items-center gap-3 border-l-2 px-5 py-3.5 text-left transition ${
+                          isSelected
+                            ? "border-indigo-500 bg-indigo-50"
+                            : "border-transparent hover:bg-slate-50"
                         }`}
                       >
-                        {statusLabel}
-                      </span>
-                      <button
-                        className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 transition hover:-translate-y-0.5"
-                        onClick={() => handleUpdateRequest(request, "approved")}
-                        type="button"
-                      >
-                        Aprobar
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">Corrección</span>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_STYLES[item.status]}`}>
+                              {STATUS_LABELS[item.status]}
+                            </span>
+                          </div>
+                          <p className="mt-1.5 text-sm font-semibold text-slate-900">Fecha: {item.date}</p>
+                          <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{item.proposedChanges}</p>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            {owner ? getUserDisplayName(owner) : "Desconocido"} · {new Date(item.createdAt).toLocaleDateString("es-ES")}
+                          </p>
+                        </div>
+                        <ChevronRight size={13} className={`shrink-0 ${isSelected ? "text-indigo-400" : "text-slate-300"}`} />
                       </button>
+                    );
+                  })}
+                  {correctionItems.length === 0 ? (
+                    <p className="px-5 py-10 text-center text-sm text-slate-400">No hay correcciones.</p>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  {activeList.map((request) => {
+                    const createdBy = collaboratorUsers.find((item) => item.uid === request.uid) ?? null;
+                    const isSelected = selectedRequest && getRequestKey(selectedRequest) === getRequestKey(request);
+                    const category = getRequestCategory(request);
+                    return (
                       <button
-                        className="rounded-full border border-rose-200 bg-white px-3 py-1 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-50"
-                        onClick={() => handleUpdateRequest(request, "rejected")}
+                        key={getRequestKey(request)}
                         type="button"
+                        onClick={() => setSelectedRequestKey(getRequestKey(request))}
+                        className={`flex w-full items-center gap-3 border-l-2 px-5 py-3.5 text-left transition ${
+                          isSelected
+                            ? "border-indigo-500 bg-indigo-50"
+                            : "border-transparent hover:bg-slate-50"
+                        }`}
                       >
-                        Rechazar
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${category === "extra" ? "bg-cyan-100 text-cyan-700" : "bg-indigo-100 text-indigo-700"}`}>
+                              {category === "extra" ? "Extra" : "Permiso"}
+                            </span>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${STATUS_STYLES[request.status]}`}>
+                              {STATUS_LABELS[request.status]}
+                            </span>
+                          </div>
+                          <p className="mt-1.5 text-sm font-semibold text-slate-900">{getRequestTitle(request)}</p>
+                          <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">
+                            {getRequestSummaryLines(request)[0] ?? ""}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-slate-400">
+                            {createdBy ? getUserDisplayName(createdBy) : "Desconocido"} · {new Date(request.createdAt).toLocaleDateString("es-ES")}
+                          </p>
+                        </div>
+                        <ChevronRight size={13} className={`shrink-0 ${isSelected ? "text-indigo-400" : "text-slate-300"}`} />
                       </button>
-                      {user?.role === "admin" ? (
-                        <button
-                          className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
-                          disabled={deletingRequestKey === getRequestKey(request)}
-                          onClick={() => void handleDeleteRequest(request)}
-                          type="button"
-                        >
-                          {deletingRequestKey === getRequestKey(request) ? "Eliminando..." : "Eliminar"}
-                        </button>
-                      ) : null}
+                    );
+                  })}
+                  {activeList.length === 0 ? (
+                    <p className="px-5 py-10 text-center text-sm text-slate-400">
+                      {requestsLoading ? "Cargando..." : "Sin elementos para esta vista."}
+                    </p>
+                  ) : null}
+
+                  {activeTab === "history" && historyHasMore ? (
+                    <div className="border-t border-slate-100 px-5 py-3">
+                      <button
+                        type="button"
+                        onClick={() => void loadMoreHistory(false)}
+                        className="w-full rounded-lg bg-slate-100 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-200"
+                      >
+                        {historyLoading ? "Cargando..." : "Cargar más historial"}
+                      </button>
                     </div>
-                  </div>
-                );
-              })}
-              {section.list.length === 0 ? (
-                <p className="text-sm text-slate-500">
-                  {requestsLoading ? "Cargando solicitudes..." : "Sin solicitudes."}
-                </p>
-              ) : null}
+                  ) : null}
+                </>
+              )}
             </div>
           </div>
-        ))}
-      </div>
 
-      <div className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">Historial (Siempre)</h3>
-            <p className="text-xs text-slate-500">{historyItems.length} registros</p>
-          </div>
-        </div>
-        <div className="mt-4 space-y-3">
-          {historyItems.map((request) => {
-            const createdBy = collaboratorUsers.find((item) => item.uid === request.uid) ?? null;
-            const statusLabel =
-              request.status === "pending"
-                ? "Pendiente"
-                : request.status === "approved"
-                ? "Aprobada"
-                : "Rechazada";
-            return (
-              <div
-                key={`history-${getRequestKey(request)}`}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200/60 px-4 py-3 text-sm"
-              >
-                <div>
-                  <p className="font-semibold text-slate-900">{request.type ?? "Solicitud"}</p>
-                  <p className="text-xs text-slate-500">
-                    {request.date ?? request.weekKey} · {request.reason ?? "Sin motivo"}
-                  </p>
-                  <div className="mt-1 flex items-center gap-2 text-xs text-slate-400">
+          {/* RIGHT: inspector */}
+          <aside className="flex flex-col overflow-y-auto">
+            <div className="border-b border-slate-200 px-5 py-3">
+              <div className="flex items-center gap-2">
+                <FileClock size={12} className="text-slate-400" />
+                <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Inspector</span>
+              </div>
+            </div>
+
+            <div className="flex-1 p-5">
+              {selectedCorrection && selectedCorrectionOwner ? (
+                <>
+                  <div className="flex items-center gap-3">
                     <UserAvatar
-                      name={createdBy ? getUserDisplayName(createdBy) : "Usuario desconocido"}
-                      photoURL={createdBy?.photoURL}
-                      avatarUrl={createdBy?.avatarUrl}
-                      profilePhoto={createdBy?.profilePhoto}
+                      name={getUserDisplayName(selectedCorrectionOwner)}
+                      photoURL={selectedCorrectionOwner.photoURL}
+                      avatarUrl={selectedCorrectionOwner.avatarUrl}
+                      profilePhoto={selectedCorrectionOwner.profilePhoto}
                     />
-                    <span>
-                      {getUserDisplayName(createdBy ?? {
-                        uid: request.uid,
-                        email: "",
-                        displayName: "",
-                        photoURL: "",
-                        role: "collab",
-                        position: "",
-                        active: true,
-                      })} · {new Date(request.createdAt).toLocaleDateString("es-ES")}
-                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{getUserDisplayName(selectedCorrectionOwner)}</p>
+                      <p className="text-xs text-slate-400">{selectedCorrectionOwner.position || "Sin puesto"}</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                    {getRequestCategory(request) === "extra" ? "Extra" : "Libre/Permiso"}
+
+                  <span className={`mt-3 inline-block rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_STYLES[selectedCorrection.status]}`}>
+                    {STATUS_LABELS[selectedCorrection.status]}
                   </span>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      request.status === "pending"
-                        ? "bg-amber-100 text-amber-700"
-                        : request.status === "approved"
-                        ? "bg-green-100 text-green-700"
-                        : "bg-rose-100 text-rose-700"
-                    }`}
-                  >
-                    {statusLabel}
-                  </span>
-                  {request.status === "pending" ? (
-                    <>
+
+                  <div className="mt-4 space-y-2">
+                    <div className="rounded-lg bg-slate-50 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Fecha del registro</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">{selectedCorrection.date}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Cambios propuestos</p>
+                      <p className="mt-1 text-sm text-slate-700">{selectedCorrection.proposedChanges}</p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Motivo</p>
+                      <p className="mt-1 text-sm text-slate-700">{selectedCorrection.reason}</p>
+                    </div>
+                  </div>
+
+                  {selectedCorrection.status === "pending" ? (
+                    <div className="mt-4 flex gap-2">
                       <button
-                        className="rounded-full bg-green-100 px-3 py-1 text-xs font-semibold text-green-700 transition hover:-translate-y-0.5"
-                        onClick={() => handleUpdateRequest(request, "approved")}
                         type="button"
+                        onClick={() => void handleUpdateCorrection(selectedCorrection, "approved")}
+                        className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-200"
                       >
                         Aprobar
                       </button>
                       <button
-                        className="rounded-full border border-rose-200 bg-white px-3 py-1 text-xs font-semibold text-rose-700 transition hover:-translate-y-0.5 hover:bg-rose-50"
-                        onClick={() => handleUpdateRequest(request, "rejected")}
                         type="button"
+                        onClick={() => void handleUpdateCorrection(selectedCorrection, "rejected")}
+                        className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50"
                       >
                         Rechazar
                       </button>
-                    </>
+                    </div>
                   ) : null}
-                  {user?.role === "admin" ? (
-                    <button
-                      className="rounded-full bg-red-600 px-3 py-1 text-xs font-semibold text-white transition hover:-translate-y-0.5 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-70"
-                      disabled={deletingRequestKey === getRequestKey(request)}
-                      onClick={() => void handleDeleteRequest(request)}
-                      type="button"
+                </>
+              ) : selectedRequest && selectedRequestOwner ? (
+                <>
+                  <div className="flex items-center gap-3">
+                    <UserAvatar
+                      name={getUserDisplayName(selectedRequestOwner)}
+                      photoURL={selectedRequestOwner.photoURL}
+                      avatarUrl={selectedRequestOwner.avatarUrl}
+                      profilePhoto={selectedRequestOwner.profilePhoto}
+                    />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-slate-900">{getUserDisplayName(selectedRequestOwner)}</p>
+                      <p className="text-xs text-slate-400">{selectedRequestOwner.position || "Sin puesto"}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${STATUS_STYLES[selectedRequest.status]}`}>
+                      {STATUS_LABELS[selectedRequest.status]}
+                    </span>
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${getRequestCategory(selectedRequest) === "extra" ? "bg-cyan-100 text-cyan-700" : "bg-indigo-100 text-indigo-700"}`}>
+                      {getRequestCategory(selectedRequest) === "extra" ? "Extra" : "Permiso"}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 rounded-lg bg-slate-50 p-3.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Detalle</p>
+                    <p className="mt-1.5 text-sm font-semibold text-slate-900">{getRequestTitle(selectedRequest)}</p>
+                    <div className="mt-2 space-y-1">
+                      {getRequestSummaryLines(selectedRequest).map((line) => (
+                        <p key={`detail-${getRequestKey(selectedRequest)}-${line}`} className="text-sm text-slate-600">
+                          {line}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-slate-50 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Creada</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">
+                        {new Date(selectedRequest.createdAt).toLocaleDateString("es-ES")}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">Semana</p>
+                      <p className="mt-1 text-sm font-semibold text-slate-900">{selectedRequest.weekKey}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {selectedRequest.status === "pending" ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void handleUpdateRequest(selectedRequest, "approved")}
+                          disabled={updatingRequestKey === getRequestKey(selectedRequest)}
+                          className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-200 disabled:opacity-60"
+                        >
+                          {updatingRequestKey === getRequestKey(selectedRequest) ? "Guardando..." : "Aprobar"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleUpdateRequest(selectedRequest, "rejected")}
+                          disabled={updatingRequestKey === getRequestKey(selectedRequest)}
+                          className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-60"
+                        >
+                          Rechazar
+                        </button>
+                      </>
+                    ) : null}
+                    {user?.role === "admin" ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteRequest(selectedRequest)}
+                        disabled={deletingRequestKey === getRequestKey(selectedRequest)}
+                        className="rounded-full bg-red-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+                      >
+                        {deletingRequestKey === getRequestKey(selectedRequest) ? "Eliminando..." : "Eliminar"}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 border-t border-slate-100 pt-4 flex flex-wrap gap-x-4 gap-y-2">
+                    <Link
+                      href={`/admin/hours?user=${encodeURIComponent(selectedRequestOwner.uid)}&week=${encodeURIComponent(formatISODate(weekStart))}`}
+                      className="text-xs font-semibold text-indigo-600 hover:underline"
                     >
-                      {deletingRequestKey === getRequestKey(request) ? "Eliminando..." : "Eliminar"}
-                    </button>
-                  ) : null}
+                      Ver en Horas →
+                    </Link>
+                    <Link
+                      href={`/admin/users?user=${encodeURIComponent(selectedRequestOwner.uid)}&tab=laboral&from=requests&week=${encodeURIComponent(formatISODate(weekStart))}`}
+                      className="text-xs font-semibold text-slate-500 hover:text-slate-800 hover:underline"
+                    >
+                      Perfil laboral →
+                    </Link>
+                  </div>
+                </>
+              ) : (
+                <div className="flex h-full items-center justify-center">
+                  <p className="text-center text-sm text-slate-400">
+                    Selecciona una solicitud<br />para ver el detalle.
+                  </p>
                 </div>
-              </div>
-            );
-          })}
-          {historyItems.length === 0 ? (
-            <p className="text-sm text-slate-500">{historyLoading ? "Cargando historial..." : "Sin historial."}</p>
-          ) : null}
-          {historyHasMore ? (
-            <button
-              type="button"
-              onClick={() => void loadMoreHistory(false)}
-              className="rounded-full border border-slate-200/60 px-4 py-2 text-xs font-semibold text-slate-600"
-            >
-              {historyLoading ? "Cargando..." : "Ver más"}
-            </button>
-          ) : null}
+              )}
+            </div>
+          </aside>
         </div>
       </div>
     </div>

@@ -7,6 +7,7 @@ export interface UserProfile {
   photoURL: string;
   role: UserRole;
   position: string;
+  area?: string | null;
   workScheduleId?: string;
   active: boolean;
   approved?: boolean;
@@ -23,6 +24,8 @@ export interface UserProfile {
   accountType?: string;
   accountNumber?: string;
   cci?: string;
+  onlineStatus?: "online" | "offline";
+  lastSeenAt?: string;
 }
 
 export type WorkScheduleDays = {

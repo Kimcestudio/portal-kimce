@@ -35,9 +35,9 @@ export default function WeeklySummaryMiniCards({
         progress={progress}
         pill={`${Math.round(progress)}%`}
       />
-      <div className="rounded-2xl border border-line bg-white p-4 shadow-soft">
-        <p className="text-xs text-muted">Balance</p>
-        <p className="text-lg font-semibold text-ink">
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-xs text-slate-400">Balance</p>
+        <p className="text-lg font-semibold text-slate-900">
           {balanceLabel} {balanceValue}
         </p>
         <span className={`mt-3 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${balanceStyle}`}>
@@ -45,23 +45,23 @@ export default function WeeklySummaryMiniCards({
           {diffMinutes >= 0 ? "A favor" : "Pendiente"}
         </span>
       </div>
-      <div className="rounded-2xl border border-line bg-white p-4 shadow-soft">
-        <p className="text-xs text-muted">Días completados</p>
-        <p className="text-lg font-semibold text-ink">{completedDays}/6</p>
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-xs text-slate-400">Días completados</p>
+        <p className="text-lg font-semibold text-slate-900">{completedDays}/6</p>
         <div className="mt-3 flex items-center gap-1">
           {Array.from({ length: 6 }).map((_, index) => (
             <span
               key={index}
               className={`h-2 w-2 rounded-full ${
-                index < completedDays ? "bg-[#22c55e]" : "bg-line"
+                index < completedDays ? "bg-emerald-500" : "bg-slate-200"
               }`}
             />
           ))}
         </div>
       </div>
-      <div className="rounded-2xl border border-line bg-white p-4 shadow-soft">
-        <p className="text-xs text-muted">Balance total</p>
-        <p className="text-lg font-semibold text-ink">
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
+        <p className="text-xs text-slate-400">Balance total</p>
+        <p className="text-lg font-semibold text-slate-900">
           {totalBalanceLabel} {totalBalanceValue}
         </p>
         <span className={`mt-3 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${totalBalanceStyle}`}>

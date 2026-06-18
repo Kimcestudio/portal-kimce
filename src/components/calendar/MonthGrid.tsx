@@ -1,13 +1,30 @@
-import { isSameDate } from "@/lib/calendarUtils";
-import type { Absence, CalendarEvent, Holiday } from "@/data/calendar";
+import { isSameDate, isInRange } from "@/lib/calendarUtils";
 import DayCell from "./DayCell";
+
+type CalendarGridHoliday = {
+  date: string;
+  name: string;
+  kind?: "HOLIDAY" | "DAY_OFF";
+};
+
+type CalendarGridEvent = {
+  date: string;
+  title: string;
+};
+
+type CalendarGridAbsence = {
+  dateStart: string;
+  dateEnd: string;
+  type: "VACATION" | "PERMIT";
+  status: "APPROVED" | "PENDING";
+};
 
 interface MonthGridProps {
   weeks: Date[][];
   month: number;
-  holidays: Holiday[];
-  events: CalendarEvent[];
-  absences: Absence[];
+  holidays: CalendarGridHoliday[];
+  events: CalendarGridEvent[];
+  absences: CalendarGridAbsence[];
   onSelectDate: (date: Date) => void;
 }
 
@@ -39,13 +56,9 @@ export default function MonthGrid({
           const isToday = isSameDate(date, today);
           const holidayItems = holidays.filter((item) => item.date === dateISO);
           const eventItems = events.filter((item) => item.date === dateISO);
-          const absenceItems = absences.filter(
-            (item) =>
-              item.status === "APPROVED" &&
-              date >= new Date(item.dateStart) &&
-              date <= new Date(item.dateEnd)
-          );
+          const absenceItems = absences.filter((item) => item.status === "APPROVED" && isInRange(date, item.dateStart, item.dateEnd));
           const hasHoliday = holidayItems.length > 0;
+          const hasDayOff = holidayItems.some((item) => item.kind === "DAY_OFF");
 
           return (
             <DayCell
@@ -56,9 +69,10 @@ export default function MonthGrid({
               dayNumber={date.getDate()}
               onClick={() => onSelectDate(date)}
             >
-              {holidayItems.length ? (
+              {holidayItems.some((item) => item.kind !== "DAY_OFF") ? (
                 <span className="h-2 w-2 rounded-full bg-[#6c63ff]" />
               ) : null}
+              {hasDayOff ? <span className="h-2 w-2 rounded-full bg-[#ec4899]" /> : null}
               {absenceItems.some((item) => item.type === "VACATION") ? (
                 <span className="h-2 w-2 rounded-full bg-[#22c55e]" />
               ) : null}

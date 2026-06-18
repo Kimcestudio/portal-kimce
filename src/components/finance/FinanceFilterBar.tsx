@@ -38,7 +38,8 @@ export default function FinanceFilterBar({ filters, onChange }: FinanceFilterBar
         options={[
           { value: "all", label: "Todo" },
           { value: "pending", label: "Pendiente" },
-          { value: "cancelled", label: "Pagado" },
+          { value: "paid", label: "Pagado" },
+          { value: "cancelled", label: "Cancelado" },
         ]}
       />
       <Select

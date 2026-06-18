@@ -76,6 +76,10 @@ export type ExpenseFormValues = {
   status: FinanceStatus;
   requiereDevolucion: boolean;
   devolucionMonto: number;
+  clienteReembolso: string;
+  estadoReembolso: "pending" | "reimbursed";
+  fechaEsperadaReembolso: string;
+  fechaReembolsoRecibido: string;
   referencia: string;
   notas: string;
 };
@@ -131,7 +135,8 @@ const s = (v?: string) => (v ?? "").trim();
 
 const statusOptions = [
   { value: "pending", label: "Pendiente" },
-  { value: "cancelled", label: "Pagado" },
+  { value: "paid", label: "Pagado" },
+  { value: "cancelled", label: "Cancelado" },
 ];
 
 const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> } = {
@@ -371,6 +376,10 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       status: "pending",
       requiereDevolucion: false,
       devolucionMonto: 0,
+      clienteReembolso: "",
+      estadoReembolso: "pending",
+      fechaEsperadaReembolso: "",
+      fechaReembolsoRecibido: "",
       referencia: "",
       notas: "",
     },
@@ -381,6 +390,19 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
       if (!values.fechaGasto) errors.fechaGasto = "Fecha requerida";
       if (values.requiereDevolucion && values.devolucionMonto <= 0) {
         errors.devolucionMonto = "Devolución requerida";
+      }
+      if (values.requiereDevolucion && !s(values.clienteReembolso)) {
+        errors.clienteReembolso = "Cliente requerido";
+      }
+      if (values.requiereDevolucion && !values.fechaEsperadaReembolso) {
+        errors.fechaEsperadaReembolso = "Fecha esperada requerida";
+      }
+      if (
+        values.requiereDevolucion &&
+        values.estadoReembolso === "reimbursed" &&
+        !values.fechaReembolsoRecibido
+      ) {
+        errors.fechaReembolsoRecibido = "Fecha de recepción requerida";
       }
       return errors;
     },
@@ -417,14 +439,45 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
         options: accountOptions,
       },
       { name: "status", label: "Estado", type: "select", options: statusOptions },
-      { name: "requiereDevolucion", label: "Requiere devolución", type: "checkbox" },
+      { name: "requiereDevolucion", label: "Cliente debe reembolsar este gasto", type: "checkbox" },
       {
         name: "devolucionMonto",
-        label: "Monto de devolución",
+        label: "Monto a recuperar",
         type: "number",
         placeholder: "0",
         min: 0,
         showWhen: (values) => Boolean((values as ExpenseFormValues).requiereDevolucion),
+      },
+      {
+        name: "clienteReembolso",
+        label: "Cliente que reembolsa",
+        type: "text",
+        placeholder: "Ej: Cliente X",
+        showWhen: (values) => Boolean((values as ExpenseFormValues).requiereDevolucion),
+      },
+      {
+        name: "estadoReembolso",
+        label: "Estado del reembolso",
+        type: "select",
+        options: [
+          { value: "pending", label: "Pendiente" },
+          { value: "reimbursed", label: "Reembolsado" },
+        ],
+        showWhen: (values) => Boolean((values as ExpenseFormValues).requiereDevolucion),
+      },
+      {
+        name: "fechaEsperadaReembolso",
+        label: "Fecha esperada de devolución",
+        type: "date",
+        showWhen: (values) => Boolean((values as ExpenseFormValues).requiereDevolucion),
+      },
+      {
+        name: "fechaReembolsoRecibido",
+        label: "Fecha en que ingresó la devolución",
+        type: "date",
+        showWhen: (values) =>
+          Boolean((values as ExpenseFormValues).requiereDevolucion) &&
+          (values as ExpenseFormValues).estadoReembolso === "reimbursed",
       },
       {
         name: "referencia",
@@ -511,6 +564,7 @@ const financeFormRegistry: { [Key in FinanceModalType]: FinanceFormConfig<Key> }
 interface FinanceModalProps {
   isOpen: boolean;
   modalType: FinanceModalType;
+  expenseMode?: "expense" | "reimbursement";
   onClose: () => void;
   onSubmit: (
     modalType: FinanceModalType,
@@ -525,6 +579,7 @@ interface FinanceModalProps {
 export default function FinanceModal({
   isOpen,
   modalType,
+  expenseMode = "expense",
   onClose,
   onSubmit,
   disabled,
@@ -649,17 +704,62 @@ export default function FinanceModal({
 
   if (!isOpen) return null;
 
-  const fields = config.fields({ collaborators }).filter((field) =>
-    field.showWhen ? field.showWhen(form) : true,
-  );
+  const displayTitle =
+    modalType === "expense" && expenseMode === "reimbursement" ? "Nuevo reembolso" : config.title;
+  const displayDescription =
+    modalType === "expense" && expenseMode === "reimbursement"
+      ? "Registra un desembolso que luego será devuelto por el cliente."
+      : config.description;
+  const isReimbursementMode = modalType === "expense" && expenseMode === "reimbursement";
+
+  const fields = config
+    .fields({ collaborators })
+    .map((field) => {
+      if (modalType !== "expense" || expenseMode !== "reimbursement") return field;
+
+      if (field.name === "tipoGasto") {
+        return { ...field, label: "Tipo de desembolso" };
+      }
+      if (field.name === "categoria") {
+        return { ...field, label: "Categoría interna" };
+      }
+      if (field.name === "descripcion") {
+        return { ...field, label: "Descripción del desembolso", placeholder: "Ej: Pago solicitado por cliente" };
+      }
+      if (field.name === "monto") {
+        return { ...field, label: "Monto desembolsado" };
+      }
+      if (field.name === "fechaGasto") {
+        return { ...field, label: "Fecha del desembolso" };
+      }
+      if (field.name === "cuentaOrigen") {
+        return { ...field, label: "Cuenta desde la que se pagó" };
+      }
+      if (field.name === "status") {
+        return { ...field, label: "Estado del desembolso" };
+      }
+      if (field.name === "referencia") {
+        return { ...field, label: "Referencia / sustento" };
+      }
+      if (field.name === "notas") {
+        return { ...field, label: "Notas del reembolso", placeholder: "Detalle del pedido del cliente…" };
+      }
+      return field;
+    })
+    .filter((field) => (field.showWhen ? field.showWhen(form) : true));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4">
       <div className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-[0_30px_60px_rgba(15,23,42,0.35)]">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">{config.title}</h3>
-            <p className="text-xs text-slate-500">{config.description}</p>
+            {isReimbursementMode ? (
+              <span className="inline-flex rounded-full bg-emerald-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
+                Reembolsos
+              </span>
+            ) : null}
+            <h3 className="text-lg font-semibold text-slate-900">{displayTitle}</h3>
+            <p className="text-xs text-slate-500">{displayDescription}</p>
           </div>
           <button
             type="button"
@@ -858,7 +958,11 @@ export default function FinanceModal({
           </button>
           <button
             type="button"
-            className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)]"
+            className={`rounded-xl px-4 py-2 text-sm font-semibold text-white ${
+              isReimbursementMode
+                ? "bg-emerald-600 shadow-[0_12px_28px_rgba(5,150,105,0.28)]"
+                : "bg-[#4f56d3] shadow-[0_12px_28px_rgba(79,70,229,0.3)]"
+            }`}
             onClick={async () => {
               if (!isValid) return;
               if (disabled) return;

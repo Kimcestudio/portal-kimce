@@ -105,6 +105,10 @@ function updateRecord(record: AttendanceRecord) {
   return record;
 }
 
+export function upsertAttendanceRecord(record: AttendanceRecord) {
+  return updateRecord(record);
+}
+
 export function getTodayRecord(userId: string, dateISO: string) {
   const records = getStore<AttendanceRecord[]>(STORAGE_KEYS.records, []);
   return records.find((record) => record.userId === userId && record.date === dateISO) ?? null;

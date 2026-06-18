@@ -1,739 +1,186 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, where } from "firebase/firestore";
 import PageHeader from "@/components/PageHeader";
+import Modal from "@/components/attendance/Modal";
+import ExtrasPermitsTab from "@/components/attendance/ExtrasPermitsTab";
 import TodayAttendanceCard from "@/components/attendance/TodayAttendanceCard";
+import WeekStatusSummary from "@/components/attendance/WeekStatusSummary";
+import WeeklyProgressChart from "@/components/attendance/WeeklyProgressChart";
 import WeeklySummaryMiniCards from "@/components/attendance/WeeklySummaryMiniCards";
 import WeeklyTable from "@/components/attendance/WeeklyTable";
-import ExtrasPermitsTab from "@/components/attendance/ExtrasPermitsTab";
-import WeeklyProgressChart from "@/components/attendance/WeeklyProgressChart";
-import WeekStatusSummary from "@/components/attendance/WeekStatusSummary";
-import Modal from "@/components/attendance/Modal";
-import {
-  formatISODate,
-  getWeekDates,
-  getWeekKey,
-  getWeekStartMonday,
-  minutesToHHMM,
-  expectedMinutesForDate,
-} from "@/lib/attendanceUtils";
-import {
-  AttendanceRecord,
-  CorrectionRequest,
-  ExtraActivity,
-  Request,
-  checkOut,
-  createCheckIn,
-  createCorrectionRequest,
-  createExtraActivity,
-  createRequest,
-  endBreak,
-  getTodayRecord,
-  listAllRecords,
-  listRecentCorrections,
-  listRecentExtras,
-  listRecentRequests,
-  listRecordsForWeek,
-  saveNote,
-  startBreak,
-} from "@/lib/storage/attendanceStorage";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { db } from "@/services/firebase/client";
-import type { WorkSchedule } from "@/services/firebase/types";
-import { DEFAULT_WORK_SCHEDULES, DEFAULT_WORK_SCHEDULE_ID } from "@/services/firebase/workSchedules";
-
-type AttendanceStatus = "OFF" | "IN_SHIFT" | "ON_BREAK" | "CLOSED";
-
-type CorrectionDraft = {
-  date: string;
-  attendanceId: string;
-  proposedChanges: string;
-  reason: string;
-};
-
-const emptyCorrection: CorrectionDraft = {
-  date: "",
-  attendanceId: "",
-  proposedChanges: "",
-  reason: "",
-};
-
-const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
-const LOCAL_SYNC_KEY_PREFIX = "attendance_time_entries_synced";
-
-type TimeEntryType = "clock_in" | "clock_out" | "manual";
-
-async function upsertTimeEntry(params: {
-  uid: string;
-  type: TimeEntryType;
-  tsISO: string;
-  totalMinutes?: number;
-}) {
-  const dayKey = params.tsISO.slice(0, 10);
-  const weekKey = getWeekKey(dayKey);
-  const timeEntryId = `${params.uid}_${dayKey}_${params.type}`;
-  await setDoc(
-    doc(db, "timeEntries", timeEntryId),
-    {
-      uid: params.uid,
-      type: params.type,
-      ts: params.tsISO,
-      dayKey,
-      weekKey,
-      totalMinutes: typeof params.totalMinutes === "number" ? params.totalMinutes : null,
-      updatedAt: serverTimestamp(),
-      createdAt: serverTimestamp(),
-    },
-    { merge: true }
-  );
-}
+import { formatISODate, minutesToHHMM } from "@/lib/attendanceUtils";
+import { useAttendanceRequests } from "@/components/attendance/useAttendanceRequests";
+import { useAttendanceSession } from "@/components/attendance/useAttendanceSession";
 
 const formatGoalHours = (minutes: number) => {
   const hours = minutes / 60;
   return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
 };
 
-function computeBreakMinutes(record: AttendanceRecord | null) {
-  if (!record) return 0;
-  return record.breaks.reduce((total, current) => {
-    if (!current.endAt) return total;
-    const start = new Date(current.startAt).getTime();
-    const end = new Date(current.endAt).getTime();
-    return total + Math.max(0, Math.round((end - start) / 60000));
-  }, 0);
-}
-
-function computeStatus(record: AttendanceRecord | null): AttendanceStatus {
-  if (!record) return "OFF";
-  if (record.checkOutAt) return "CLOSED";
-  const hasOpenBreak = record.breaks.some((item) => !item.endAt);
-  return hasOpenBreak ? "ON_BREAK" : "IN_SHIFT";
-}
-
 export default function AttendancePageContent() {
   const { user } = useAuth();
-  const [todayRecord, setTodayRecord] = useState<AttendanceRecord | null>(null);
-  const [note, setNote] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [weekRecords, setWeekRecords] = useState<AttendanceRecord[]>([]);
-  const [extras, setExtras] = useState<ExtraActivity[]>([]);
-  const [requests, setRequests] = useState<Request[]>([]);
-  const [corrections, setCorrections] = useState<CorrectionRequest[]>([]);
-  const [filter, setFilter] = useState<"ALL" | "PENDING" | "APPROVED" | "REJECTED">("ALL");
-  const [extraOpen, setExtraOpen] = useState(false);
-  const [requestOpen, setRequestOpen] = useState(false);
-  const [correctionOpen, setCorrectionOpen] = useState(false);
-  const [extraDraft, setExtraDraft] = useState({
-    date: formatISODate(new Date()),
-    minutes: 60,
-    type: "Reunión",
-    project: "",
-    note: "",
+
+  const requestsState = useAttendanceRequests(user);
+  const attendance = useAttendanceSession({
+    user,
+    approvedExtraActivities: requestsState.approvedExtraActivities,
+    approvedHourRequests: requestsState.approvedHourRequests,
   });
-  const [requestDraft, setRequestDraft] = useState({
-    type: "DIA_LIBRE",
-    date: formatISODate(new Date()),
-    endDate: "",
-    hours: 1,
-    reason: "",
-  });
-  const [correctionDraft, setCorrectionDraft] = useState<CorrectionDraft>(emptyCorrection);
-  const [schedule, setSchedule] = useState<WorkSchedule>(DEFAULT_WORK_SCHEDULES[0]);
-  const [pendingHourRequestsCount, setPendingHourRequestsCount] = useState(0);
-  const [pendingExtraActivitiesCount, setPendingExtraActivitiesCount] = useState(0);
-  const [approvedExtraActivities, setApprovedExtraActivities] = useState<{ date: string; minutes: number }[]>([]);
-
-  const weekStart = useMemo(() => {
-    const base = new Date();
-    base.setDate(base.getDate() + weekOffset * 7);
-    return getWeekStartMonday(base);
-  }, [weekOffset]);
-
-  const weekDates = useMemo(() => getWeekDates(weekStart), [weekStart]);
-  const todayKey = DAY_KEYS[new Date().getDay()];
-  const dailyGoalMinutes = schedule.days[todayKey] ?? DEFAULT_WORK_SCHEDULES[0].days[todayKey];
-  const weeklyGoalMinutes = schedule.weeklyMinutes ?? DEFAULT_WORK_SCHEDULES[0].weeklyMinutes;
-
-  useEffect(() => {
-    if (!user?.uid) return;
-    let isMounted = true;
-    const loadSchedule = async () => {
-      try {
-        const userRef = doc(db, "users", user.uid);
-        const userSnapshot = await getDoc(userRef);
-        const userData = userSnapshot.exists() ? userSnapshot.data() : null;
-        const scheduleId =
-          (userData?.workScheduleId as string | undefined) ??
-          user.workScheduleId ??
-          DEFAULT_WORK_SCHEDULE_ID;
-        const scheduleRef = doc(db, "workSchedules", scheduleId);
-        const scheduleSnapshot = await getDoc(scheduleRef);
-        if (!isMounted) return;
-        if (scheduleSnapshot.exists()) {
-          const data = scheduleSnapshot.data();
-          setSchedule({
-            id: scheduleSnapshot.id,
-            name: (data.name as string) ?? "Jornada",
-            weeklyMinutes: (data.weeklyMinutes as number) ?? DEFAULT_WORK_SCHEDULES[0].weeklyMinutes,
-            days: (data.days as WorkSchedule["days"]) ?? DEFAULT_WORK_SCHEDULES[0].days,
-          });
-        } else {
-          setSchedule(DEFAULT_WORK_SCHEDULES[0]);
-        }
-      } catch (error) {
-        console.error("[attendance] Error loading work schedule", error);
-        if (isMounted) {
-          setSchedule(DEFAULT_WORK_SCHEDULES[0]);
-        }
-      }
-    };
-    loadSchedule();
-    return () => {
-      isMounted = false;
-    };
-  }, [user?.uid, user?.workScheduleId]);
-
-  useEffect(() => {
-    if (!user?.uid) return;
-    const syncKey = `${LOCAL_SYNC_KEY_PREFIX}:${user.uid}`;
-    if (typeof window === "undefined") return;
-    if (window.localStorage.getItem(syncKey) === "true") return;
-    const syncLocalEntries = async () => {
-      try {
-        const storedRecords = listAllRecords(user.uid);
-        for (const record of storedRecords) {
-          if (record.checkInAt) {
-            await upsertTimeEntry({ uid: user.uid, type: "clock_in", tsISO: record.checkInAt });
-          }
-          if (record.checkOutAt) {
-            await upsertTimeEntry({
-              uid: user.uid,
-              type: "clock_out",
-              tsISO: record.checkOutAt,
-              totalMinutes: record.totalMinutes,
-            });
-          }
-        }
-        window.localStorage.setItem(syncKey, "true");
-        if (process.env.NODE_ENV === "development") {
-          console.log("[attendance] local records synced to timeEntries", storedRecords.length);
-        }
-      } catch (error) {
-        console.error("[attendance] Error syncing local attendance to timeEntries", error);
-      }
-    };
-    void syncLocalEntries();
-  }, [user?.uid]);
-
-  useEffect(() => {
-    if (!user?.uid) return;
-    const hourRequestsRef = query(collection(db, "hourRequests"), where("uid", "==", user.uid));
-    const extraActivitiesRef = query(collection(db, "extraActivities"), where("uid", "==", user.uid));
-
-    const unsubscribeHourRequests = onSnapshot(
-      hourRequestsRef,
-      (snapshot) => {
-        const count = snapshot.docs.filter((docSnap) => {
-          const data = docSnap.data() as { status?: string };
-          return (data.status ?? "").toLowerCase() === "pending";
-        }).length;
-        setPendingHourRequestsCount(count);
-        if (process.env.NODE_ENV === "development") {
-          console.log("[requests] pending hourRequests:", count);
-        }
-      },
-      (error) => {
-        console.error("[attendance] Error loading hourRequests pending count", error);
-      }
-    );
-
-    const unsubscribeExtraActivities = onSnapshot(
-      extraActivitiesRef,
-      (snapshot) => {
-        const count = snapshot.docs.filter((docSnap) => {
-          const data = docSnap.data() as { status?: string };
-          return (data.status ?? "").toLowerCase() === "pending";
-        }).length;
-        setPendingExtraActivitiesCount(count);
-        if (process.env.NODE_ENV === "development") {
-          console.log("[requests] pending extraActivities:", count);
-        }
-      },
-      (error) => {
-        console.error("[attendance] Error loading extraActivities pending count", error);
-      }
-    );
-
-    return () => {
-      unsubscribeHourRequests();
-      unsubscribeExtraActivities();
-    };
-  }, [user?.uid]);
-
-  useEffect(() => {
-    if (process.env.NODE_ENV === "development") {
-      console.log("[requests] pending total:", pendingHourRequestsCount + pendingExtraActivitiesCount);
-    }
-  }, [pendingExtraActivitiesCount, pendingHourRequestsCount]);
-
-  useEffect(() => {
-    if (!user?.uid) return;
-
-    const approvedExtrasRef = query(collection(db, "extraActivities"), where("uid", "==", user.uid));
-    const unsubscribe = onSnapshot(
-      approvedExtrasRef,
-      (snapshot) => {
-        const approved = snapshot.docs
-          .map((docSnap) => docSnap.data() as { status?: string; date?: string; minutes?: number; hours?: number })
-          .filter((item) => (item.status ?? "").toLowerCase() === "approved")
-          .map((item) => ({
-            date: typeof item.date === "string" ? item.date : "",
-            minutes:
-              typeof item.minutes === "number"
-                ? item.minutes
-                : typeof item.hours === "number"
-                  ? Math.round(item.hours * 60)
-                  : 0,
-          }))
-          .filter((item) => item.date);
-
-        setApprovedExtraActivities(approved);
-      },
-      (error) => {
-        console.error("[attendance] Error loading approved extra activities", error);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [user?.uid]);
-
-  const reloadToday = () => {
-    if (!user) return;
-    const todayISO = formatISODate(new Date());
-    const record = getTodayRecord(user.uid, todayISO);
-    setTodayRecord(record);
-    setNote(record?.notes ?? "");
-  };
-
-  const reloadWeek = () => {
-    if (!user) return;
-    const records = listRecordsForWeek(user.uid, formatISODate(weekStart));
-    const end = new Date(weekStart);
-    end.setDate(end.getDate() + 7);
-    const filtered = records.filter((record) => {
-      const date = new Date(`${record.date}T00:00:00`);
-      return date >= weekStart && date < end;
-    });
-    setWeekRecords(filtered);
-  };
-
-  const reloadExtras = () => {
-    if (!user) return;
-    setExtras(listRecentExtras(user.uid, 6));
-    setRequests(listRecentRequests(user.uid, 6));
-    setCorrections(listRecentCorrections(user.uid, 6));
-  };
-
-  useEffect(() => {
-    reloadToday();
-  }, [user]);
-
-  useEffect(() => {
-    reloadWeek();
-  }, [weekStart, user]);
-
-  useEffect(() => {
-    reloadExtras();
-  }, [extraOpen, requestOpen, correctionOpen, user]);
-
-  const status = computeStatus(todayRecord);
-  const breakMinutes = computeBreakMinutes(todayRecord);
-  const totalMinutes = todayRecord?.totalMinutes ?? 0;
-
-  const expectedMinutesWeek = weekDates.reduce(
-    (total, date) => total + expectedMinutesForDate(date, schedule),
-    0
-  );
-  const weekDateSet = new Set(weekDates.map((date) => formatISODate(date)));
-  const workedMinutesWeekBase = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
-  const approvedExtraMinutesWeek = approvedExtraActivities.reduce((total, item) => {
-    if (!item.date || !weekDateSet.has(item.date)) return total;
-    return total + item.minutes;
-  }, 0);
-  const workedMinutesWeek = workedMinutesWeekBase + approvedExtraMinutesWeek;
-  const diffMinutes = workedMinutesWeek - expectedMinutesWeek;
-  const totalBalanceMinutes = user
-    ? listAllRecords(user.uid).reduce((sum, record) => {
-        const recordDate = new Date(`${record.date}T00:00:00`);
-        return sum + (record.totalMinutes - expectedMinutesForDate(recordDate, schedule));
-      }, 0) + approvedExtraActivities.reduce((sum, item) => sum + item.minutes, 0)
-    : 0;
-  const completedDays = weekRecords.filter(
-    (record) => record.status === "CLOSED" && new Date(`${record.date}T00:00:00`).getDay() !== 0
-  ).length;
-
-  const handleInvalid = (text: string) => {
-    setMessage(text);
-    setTimeout(() => setMessage(null), 2500);
-  };
-
-  const handleCheckIn = async () => {
-    if (status !== "OFF") {
-      handleInvalid("Ya existe un registro abierto hoy.");
-      return;
-    }
-    if (!user) return;
-    const record = createCheckIn(user.uid, new Date());
-    if (record?.checkInAt) {
-      try {
-        await upsertTimeEntry({ uid: user.uid, type: "clock_in", tsISO: record.checkInAt });
-      } catch (error) {
-        console.error("[attendance] Error saving clock-in in timeEntries", error);
-      }
-    }
-    reloadToday();
-    reloadWeek();
-  };
-
-  const handleStartBreak = () => {
-    if (status !== "IN_SHIFT") {
-      handleInvalid("No puedes iniciar descanso ahora.");
-      return;
-    }
-    if (!user) return;
-    startBreak(user.uid, new Date());
-    reloadToday();
-  };
-
-  const handleEndBreak = () => {
-    if (status !== "ON_BREAK") {
-      handleInvalid("No hay descanso activo.");
-      return;
-    }
-    if (!user) return;
-    endBreak(user.uid, new Date());
-    reloadToday();
-  };
-
-  const handleCheckOut = async () => {
-    if (status !== "IN_SHIFT") {
-      handleInvalid("Debes finalizar descanso antes de salir.");
-      return;
-    }
-    if (!user) return;
-    const record = checkOut(user.uid, new Date());
-    reloadToday();
-    reloadWeek();
-    if (!record) return;
-    try {
-      const weekKey = getWeekKey(record.date);
-      const hoursValue = Math.round((record.totalMinutes / 60) * 10) / 10;
-      const hoursDocId = record.id || `${user.uid}_${record.date}`;
-      await setDoc(
-        doc(db, "users", user.uid, "hours", hoursDocId),
-        {
-          uid: user.uid,
-          date: record.date,
-          weekKey,
-          createdAt: serverTimestamp(),
-          hours: hoursValue,
-          totalMinutes: record.totalMinutes,
-          checkInAt: record.checkInAt ?? null,
-          checkOutAt: record.checkOutAt ?? null,
-          breaks: record.breaks ?? [],
-          status: record.status,
-          notes: record.notes ?? null,
-        },
-        { merge: true }
-      );
-      if (record.checkOutAt) {
-        await upsertTimeEntry({
-          uid: user.uid,
-          type: "clock_out",
-          tsISO: record.checkOutAt,
-          totalMinutes: record.totalMinutes,
-        });
-      }
-    } catch (error) {
-      const err = error as { code?: string; message?: string };
-      console.error("[attendance] Error saving hours record", err?.code, err?.message, error);
-      setMessage("No se pudo guardar el registro de horas. Verifica tus permisos.");
-    }
-  };
-
-  const handleSaveNote = () => {
-    const dateISO = formatISODate(new Date());
-    if (!todayRecord) {
-      handleInvalid("Primero marca tu entrada.");
-      return;
-    }
-    if (!user) return;
-    saveNote(user.uid, dateISO, note.trim());
-    reloadToday();
-  };
-
-  const handleSubmitExtra = async () => {
-    if (!user) return;
-    createExtraActivity(user.uid, {
-      date: extraDraft.date,
-      minutes: extraDraft.minutes,
-      type: extraDraft.type as ExtraActivity["type"],
-      project: extraDraft.project || undefined,
-      note: extraDraft.note || undefined,
-    });
-    const payload = {
-      uid: user.uid,
-      weekKey: getWeekKey(extraDraft.date),
-      status: "pending",
-      createdAt: serverTimestamp(),
-      type: extraDraft.type,
-      date: extraDraft.date,
-      minutes: extraDraft.minutes,
-      hours: Math.round((extraDraft.minutes / 60) * 10) / 10,
-      project: extraDraft.project || null,
-      note: extraDraft.note || null,
-      reason: extraDraft.note || null,
-    };
-    try {
-      const docRef = await addDoc(collection(db, "extraActivities"), {
-        ...payload,
-        type: "EXTRA_ACTIVIDAD",
-        updatedAt: serverTimestamp(),
-      });
-      if (process.env.NODE_ENV === "development") {
-        console.log("[attendance] extraActivities saved", { uid: user.uid, payload, id: docRef.id });
-      }
-    } catch (error) {
-      const err = error as { code?: string; message?: string };
-      console.error("[attendance] Error creating extra activity", {
-        collection: "extraActivities",
-        uid: user.uid,
-        payload,
-        code: err?.code,
-        message: err?.message,
-      });
-      setMessage(`No se pudo registrar actividad extra (${err?.code ?? "unknown"}).`);
-      return;
-    }
-    setExtraOpen(false);
-    setExtraDraft({ ...extraDraft, project: "", note: "" });
-    reloadExtras();
-  };
-
-  const handleSubmitRequest = async () => {
-    if (!user) return;
-    createRequest(user.uid, {
-      type: requestDraft.type as Request["type"],
-      date: requestDraft.date,
-      endDate: requestDraft.endDate || undefined,
-      hours: requestDraft.type === "PERMISO_HORAS" ? requestDraft.hours : undefined,
-      reason: requestDraft.reason,
-    });
-    try {
-      const weekKey = getWeekKey(requestDraft.date);
-      await addDoc(collection(db, "hourRequests"), {
-        uid: user.uid,
-        weekKey,
-        status: "pending",
-        createdAt: serverTimestamp(),
-        type: requestDraft.type,
-        date: requestDraft.date,
-        endDate: requestDraft.endDate || null,
-        hours: requestDraft.type === "PERMISO_HORAS" ? requestDraft.hours : null,
-        reason: requestDraft.reason,
-      });
-    } catch (error) {
-      const err = error as { code?: string; message?: string };
-      console.error("[attendance] Error creating hour request", err?.code, err?.message, error);
-      setMessage("No se pudo enviar la solicitud. Verifica tus permisos.");
-    }
-    setRequestOpen(false);
-    setRequestDraft({ ...requestDraft, reason: "" });
-    reloadExtras();
-  };
-
-  const handleSubmitCorrection = () => {
-    if (!user) return;
-    createCorrectionRequest(user.uid, {
-      date: correctionDraft.date,
-      attendanceId: correctionDraft.attendanceId,
-      proposedChanges: correctionDraft.proposedChanges,
-      reason: correctionDraft.reason,
-    });
-    setCorrectionOpen(false);
-    setCorrectionDraft(emptyCorrection);
-    reloadExtras();
-  };
-
-  const handleOpenCorrection = (dateISO: string, attendanceId: string) => {
-    setCorrectionDraft({ date: dateISO, attendanceId, proposedChanges: "", reason: "" });
-    setCorrectionOpen(true);
-  };
-
-  const chartData = weekDates
-    .filter((date) => date.getDay() !== 0)
-    .map((date) => {
-      const dateISO = formatISODate(date);
-      const record = weekRecords.find((item) => item.date === dateISO);
-      const targetHours = expectedMinutesForDate(date, schedule) / 60;
-      const approvedExtraMinutes = approvedExtraActivities
-        .filter((item) => item.date === dateISO)
-        .reduce((sum, item) => sum + item.minutes, 0);
-      const totalMinutesDay = (record?.totalMinutes ?? 0) + approvedExtraMinutes;
-      return {
-        label: date.toLocaleDateString("es-ES", { weekday: "short" }),
-        hours: Math.round((totalMinutesDay / 60) * 10) / 10,
-        target: targetHours,
-      };
-    });
 
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
         userName={user?.displayName ?? user?.email ?? undefined}
         rightSlot={
-          <div className="flex flex-wrap items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-semibold text-muted shadow-soft">
-            <span>Semana actual · {formatISODate(weekStart)}</span>
-            <span className="h-3 w-px bg-line/80" />
-            <span>Jornada: {schedule.name}</span>
-            <span className="h-3 w-px bg-line/80" />
-            <span>Meta semanal {formatGoalHours(weeklyGoalMinutes)}</span>
-            <span className="h-3 w-px bg-line/80" />
-            <span>Meta diaria {formatGoalHours(dailyGoalMinutes)}</span>
+          <div className="flex flex-wrap items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-500">
+            <span>{formatISODate(attendance.weekStart)}</span>
+            <span className="h-3 w-px bg-slate-200" />
+            <span>{attendance.schedule.name}</span>
+            <span className="h-3 w-px bg-slate-200" />
+            <span>Meta {formatGoalHours(attendance.weeklyGoalMinutes)}/sem · {formatGoalHours(attendance.dailyGoalMinutes)}/día</span>
           </div>
         }
       />
 
       <TodayAttendanceCard
-        status={status}
-        record={todayRecord}
-        breakMinutes={breakMinutes}
-        totalMinutes={totalMinutes}
-        note={note}
-        onNoteChange={setNote}
-        onSaveNote={handleSaveNote}
-        onCheckIn={handleCheckIn}
-        onStartBreak={handleStartBreak}
-        onEndBreak={handleEndBreak}
-        onCheckOut={handleCheckOut}
-        message={message}
+        status={attendance.status}
+        record={attendance.todayRecord}
+        breakMinutes={attendance.breakMinutes}
+        totalMinutes={attendance.totalMinutes}
+        note={attendance.note}
+        onNoteChange={attendance.setNote}
+        onSaveNote={attendance.handleSaveNote}
+        onCheckIn={attendance.handleCheckIn}
+        onStartBreak={attendance.handleStartBreak}
+        onEndBreak={attendance.handleEndBreak}
+        onCheckOut={attendance.handleCheckOut}
+        message={attendance.message}
       />
 
       <WeeklySummaryMiniCards
-        workedMinutes={workedMinutesWeek}
-        expectedMinutes={expectedMinutesWeek}
-        diffMinutes={diffMinutes}
-        completedDays={completedDays}
-        totalBalanceMinutes={totalBalanceMinutes}
+        workedMinutes={attendance.workedMinutesWeek}
+        expectedMinutes={attendance.expectedMinutesWeek}
+        diffMinutes={attendance.diffMinutes}
+        completedDays={attendance.completedDays}
+        totalBalanceMinutes={attendance.totalBalanceMinutes}
       />
 
       <WeeklyProgressChart
-        data={chartData}
-        totalMinutes={workedMinutesWeek}
-        expectedMinutes={expectedMinutesWeek}
-        diffMinutes={diffMinutes}
-        completedDays={completedDays}
+        data={attendance.chartData}
+        totalMinutes={attendance.workedMinutesWeek}
+        expectedMinutes={attendance.expectedMinutesWeek}
+        diffMinutes={attendance.diffMinutes}
+        completedDays={attendance.completedDays}
       />
 
-      <div className="rounded-2xl border border-line bg-white p-6 shadow-soft">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white p-5">
         <div className="mb-4">
-          <h2 className="text-lg font-semibold text-ink">Extras y Permisos</h2>
-          <p className="text-xs text-muted">
+          <h2 className="text-sm font-semibold text-slate-900">Extras y Permisos</h2>
+          <p className="text-xs text-slate-400">
             Registra actividades extra o solicita permisos/vacaciones.
           </p>
         </div>
         <ExtrasPermitsTab
-          extras={extras}
-          requests={requests}
-          corrections={corrections}
-          filter={filter}
-          onFilterChange={setFilter}
-          onOpenExtra={() => setExtraOpen(true)}
-          onOpenRequest={() => setRequestOpen(true)}
-          pendingCount={pendingHourRequestsCount + pendingExtraActivitiesCount}
+          extras={requestsState.extras}
+          requests={requestsState.requests}
+          corrections={requestsState.corrections}
+          filter={requestsState.filter}
+          onFilterChange={requestsState.setFilter}
+          onOpenExtra={() => requestsState.setExtraOpen(true)}
+          onOpenRequest={() => requestsState.setRequestOpen(true)}
+          pendingCount={
+            requestsState.pendingHourRequestsCount + requestsState.pendingExtraActivitiesCount
+          }
         />
       </div>
 
-      <div className="rounded-2xl border border-line bg-white p-6 shadow-soft" id="mi-semana">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white p-5" id="mi-semana">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-ink">Mi semana</h2>
-            <p className="text-xs text-muted">Tu registro diario y horas por día.</p>
+            <h2 className="text-sm font-semibold text-slate-900">Mi semana</h2>
+            <p className="text-xs text-slate-400">Tu registro diario y horas por día.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
-              className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-muted"
-              onClick={() => setWeekOffset((prev) => prev - 1)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+              onClick={() => attendance.setWeekOffset((prev) => prev - 1)}
               type="button"
             >
-              Semana anterior
+              ← Anterior
             </button>
             <button
-              className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-muted"
-              onClick={() => setWeekOffset(0)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+              onClick={() => attendance.setWeekOffset(0)}
               type="button"
             >
-              Semana actual
+              Hoy
             </button>
             <button
-              className="rounded-full border border-line px-3 py-1 text-xs font-semibold text-muted"
-              onClick={() => setWeekOffset((prev) => prev + 1)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+              onClick={() => attendance.setWeekOffset((prev) => prev + 1)}
               type="button"
             >
-              Semana siguiente
+              Siguiente →
             </button>
           </div>
         </div>
-        <div className="mb-4 rounded-2xl border border-line bg-white px-4 py-3 shadow-soft">
-          <p className="text-xs font-semibold text-muted">Resumen visual</p>
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-xs font-semibold text-slate-400">Resumen visual</p>
           <div className="mt-2">
-            <WeekStatusSummary weekDates={weekDates} records={weekRecords} />
+            <WeekStatusSummary weekDates={attendance.weekDates} records={attendance.weekRecords} />
           </div>
         </div>
         <WeeklyTable
-          weekDates={weekDates}
-          records={weekRecords}
-          onRequestCorrection={handleOpenCorrection}
+          weekDates={attendance.weekDates}
+          records={attendance.weekRecords}
+          credits={attendance.approvedCredits}
+          onRequestCorrection={requestsState.handleOpenCorrection}
         />
       </div>
 
-      <Modal title="Registrar actividad extra" open={extraOpen} onClose={() => setExtraOpen(false)}>
+      <Modal
+        title="Registrar actividad extra"
+        open={requestsState.extraOpen}
+        onClose={() => requestsState.setExtraOpen(false)}
+      >
         <div className="space-y-4">
-          <label className="block text-xs font-semibold text-muted">
+          <label className="block text-xs font-semibold text-slate-500">
             Fecha
             <input
-              className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               type="date"
-              value={extraDraft.date}
+              value={requestsState.extraDraft.date}
               onChange={(event) =>
-                setExtraDraft((prev) => ({ ...prev, date: event.target.value }))
+                requestsState.setExtraDraft((prev) => ({ ...prev, date: event.target.value }))
               }
             />
           </label>
-          <label className="block text-xs font-semibold text-muted">
+          <label className="block text-xs font-semibold text-slate-500">
             Duración (minutos)
             <input
-              className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               type="number"
               min={15}
-              value={extraDraft.minutes}
+              value={requestsState.extraDraft.minutes}
               onChange={(event) =>
-                setExtraDraft((prev) => ({ ...prev, minutes: Number(event.target.value) }))
+                requestsState.setExtraDraft((prev) => ({
+                  ...prev,
+                  minutes: Number(event.target.value),
+                }))
               }
             />
           </label>
           <p className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
             Nota: las actividades extra aprobadas sí se suman a tus horas trabajadas y al balance general.
           </p>
-          <label className="block text-xs font-semibold text-muted">
+          <label className="block text-xs font-semibold text-slate-500">
             Tipo
             <select
-              className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
-              value={extraDraft.type}
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={requestsState.extraDraft.type}
               onChange={(event) =>
-                setExtraDraft((prev) => ({ ...prev, type: event.target.value }))
+                requestsState.setExtraDraft((prev) => ({ ...prev, type: event.target.value }))
               }
             >
               <option>Reunión</option>
@@ -743,50 +190,59 @@ export default function AttendancePageContent() {
               <option>Otro</option>
             </select>
           </label>
-          <label className="block text-xs font-semibold text-muted">
+          <label className="block text-xs font-semibold text-slate-500">
             Proyecto
             <input
-              className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               type="text"
-              value={extraDraft.project}
+              value={requestsState.extraDraft.project}
               onChange={(event) =>
-                setExtraDraft((prev) => ({ ...prev, project: event.target.value }))
+                requestsState.setExtraDraft((prev) => ({ ...prev, project: event.target.value }))
               }
             />
           </label>
-          <label className="block text-xs font-semibold text-muted">
+          <label className="block text-xs font-semibold text-slate-500">
             Nota
             <textarea
-              className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               rows={3}
-              value={extraDraft.note}
+              value={requestsState.extraDraft.note}
               onChange={(event) =>
-                setExtraDraft((prev) => ({ ...prev, note: event.target.value }))
+                requestsState.setExtraDraft((prev) => ({ ...prev, note: event.target.value }))
               }
             />
           </label>
+          {requestsState.requestsMessage ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              {requestsState.requestsMessage}
+            </p>
+          ) : null}
           <button
-            className="w-full rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white"
-            onClick={handleSubmitExtra}
+            className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            onClick={requestsState.handleSubmitExtra}
             type="button"
           >
-            Guardar actividad ({minutesToHHMM(extraDraft.minutes)})
+            Guardar actividad ({minutesToHHMM(requestsState.extraDraft.minutes)})
           </button>
         </div>
       </Modal>
 
-      <Modal title="Pedir libre / permiso" open={requestOpen} onClose={() => setRequestOpen(false)}>
+      <Modal
+        title="Pedir libre / permiso"
+        open={requestsState.requestOpen}
+        onClose={() => requestsState.setRequestOpen(false)}
+      >
         <div className="space-y-4">
           <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
             Nota: pedir libre/permiso no suma horas trabajadas. Solo documenta la ausencia y el saldo de horas se mantiene según los registros de entrada/salida.
           </p>
-          <label className="block text-xs font-semibold text-muted">
+          <label className="block text-xs font-semibold text-slate-500">
             Tipo
             <select
-              className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
-              value={requestDraft.type}
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+              value={requestsState.requestDraft.type}
               onChange={(event) =>
-                setRequestDraft((prev) => ({ ...prev, type: event.target.value }))
+                requestsState.setRequestDraft((prev) => ({ ...prev, type: event.target.value }))
               }
             >
               <option value="DIA_LIBRE">Día libre</option>
@@ -794,59 +250,71 @@ export default function AttendancePageContent() {
               <option value="MEDICO">Permiso médico</option>
             </select>
           </label>
-          <label className="block text-xs font-semibold text-muted">
+          <label className="block text-xs font-semibold text-slate-500">
             Fecha
             <input
-              className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               type="date"
-              value={requestDraft.date}
+              value={requestsState.requestDraft.date}
               onChange={(event) =>
-                setRequestDraft((prev) => ({ ...prev, date: event.target.value }))
+                requestsState.setRequestDraft((prev) => ({ ...prev, date: event.target.value }))
               }
             />
           </label>
-          {requestDraft.type === "DIA_LIBRE" || requestDraft.type === "MEDICO" ? (
-            <label className="block text-xs font-semibold text-muted">
+          {requestsState.requestDraft.type === "DIA_LIBRE" ||
+          requestsState.requestDraft.type === "MEDICO" ? (
+            <label className="block text-xs font-semibold text-slate-500">
               Fecha fin (opcional)
               <input
-                className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 type="date"
-                value={requestDraft.endDate}
+                value={requestsState.requestDraft.endDate}
                 onChange={(event) =>
-                  setRequestDraft((prev) => ({ ...prev, endDate: event.target.value }))
+                  requestsState.setRequestDraft((prev) => ({
+                    ...prev,
+                    endDate: event.target.value,
+                  }))
                 }
               />
             </label>
           ) : null}
-          {requestDraft.type === "PERMISO_HORAS" ? (
-            <label className="block text-xs font-semibold text-muted">
+          {requestsState.requestDraft.type === "PERMISO_HORAS" ? (
+            <label className="block text-xs font-semibold text-slate-500">
               Horas
               <input
-                className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
                 type="number"
                 min={1}
                 max={8}
-                value={requestDraft.hours}
+                value={requestsState.requestDraft.hours}
                 onChange={(event) =>
-                  setRequestDraft((prev) => ({ ...prev, hours: Number(event.target.value) }))
+                  requestsState.setRequestDraft((prev) => ({
+                    ...prev,
+                    hours: Number(event.target.value),
+                  }))
                 }
               />
             </label>
           ) : null}
-          <label className="block text-xs font-semibold text-muted">
+          <label className="block text-xs font-semibold text-slate-500">
             Motivo
             <textarea
-              className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               rows={3}
-              value={requestDraft.reason}
+              value={requestsState.requestDraft.reason}
               onChange={(event) =>
-                setRequestDraft((prev) => ({ ...prev, reason: event.target.value }))
+                requestsState.setRequestDraft((prev) => ({ ...prev, reason: event.target.value }))
               }
             />
           </label>
+          {requestsState.requestsMessage ? (
+            <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+              {requestsState.requestsMessage}
+            </p>
+          ) : null}
           <button
-            className="w-full rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white"
-            onClick={handleSubmitRequest}
+            className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            onClick={requestsState.handleSubmitRequest}
             type="button"
           >
             Enviar solicitud
@@ -854,36 +322,47 @@ export default function AttendancePageContent() {
         </div>
       </Modal>
 
-      <Modal title="Solicitar corrección" open={correctionOpen} onClose={() => setCorrectionOpen(false)}>
+      <Modal
+        title="Solicitar corrección"
+        open={requestsState.correctionOpen}
+        onClose={() => requestsState.setCorrectionOpen(false)}
+      >
         <div className="space-y-4">
-          <p className="text-sm text-muted">
-            Día: <span className="font-semibold text-ink">{correctionDraft.date}</span>
+          <p className="text-sm text-slate-400">
+            Día:{" "}
+            <span className="font-semibold text-slate-900">{requestsState.correctionDraft.date}</span>
           </p>
-          <label className="block text-xs font-semibold text-muted">
+          <label className="block text-xs font-semibold text-slate-500">
             ¿Qué quieres corregir?
             <input
-              className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               type="text"
-              value={correctionDraft.proposedChanges}
+              value={requestsState.correctionDraft.proposedChanges}
               onChange={(event) =>
-                setCorrectionDraft((prev) => ({ ...prev, proposedChanges: event.target.value }))
+                requestsState.setCorrectionDraft((prev) => ({
+                  ...prev,
+                  proposedChanges: event.target.value,
+                }))
               }
             />
           </label>
-          <label className="block text-xs font-semibold text-muted">
+          <label className="block text-xs font-semibold text-slate-500">
             Motivo
             <textarea
-              className="mt-2 w-full rounded-xl border border-line px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
               rows={3}
-              value={correctionDraft.reason}
+              value={requestsState.correctionDraft.reason}
               onChange={(event) =>
-                setCorrectionDraft((prev) => ({ ...prev, reason: event.target.value }))
+                requestsState.setCorrectionDraft((prev) => ({
+                  ...prev,
+                  reason: event.target.value,
+                }))
               }
             />
           </label>
           <button
-            className="w-full rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-white"
-            onClick={handleSubmitCorrection}
+            className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+            onClick={requestsState.handleSubmitCorrection}
             type="button"
           >
             Enviar corrección

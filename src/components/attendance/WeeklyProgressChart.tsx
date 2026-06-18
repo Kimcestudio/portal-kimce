@@ -22,7 +22,7 @@ interface WeeklyProgressChartProps {
 const CustomTooltip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-xl bg-[#10163d] px-3 py-2 text-xs text-white shadow-soft">
+    <div className="rounded-xl bg-slate-900 px-3 py-2 text-xs text-white">
       <div className="font-semibold">{payload[0].payload.label}</div>
       <div className="text-white/70">{payload[0].value}h</div>
     </div>
@@ -42,22 +42,23 @@ export default function WeeklyProgressChart({
   const targetLabel = minutesToHHMM(expectedMinutes);
 
   return (
-    <div className="rounded-2xl border border-primary/10 bg-gradient-to-br from-[#eef0ff] via-[#f7f7ff] to-white p-6 shadow-soft">
-      <div className="flex flex-wrap items-start justify-between gap-6">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold text-ink">Progreso semanal</h2>
-          <p className="text-xs text-muted">Horas registradas vs objetivo ({targetLabel}).</p>
+          <h2 className="text-sm font-semibold text-slate-900">Progreso semanal</h2>
+          <p className="text-xs text-slate-400">Horas registradas vs objetivo ({targetLabel}).</p>
         </div>
-        <span className="rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-primary shadow-soft">
-          Objetivo {targetLabel}
-        </span>
-        <div className="flex flex-col gap-2 rounded-2xl bg-white/80 px-4 py-3 text-sm text-ink shadow-soft">
-          <div className="text-xs text-muted">Total semana</div>
-          <div className="font-semibold">
-            {minutesToHHMM(totalMinutes)} / {minutesToHHMM(expectedMinutes)}
-          </div>
-          <div className="text-xs text-muted">
-            {diffLabel} {diffValue} · Días completados {completedDays}/6
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-indigo-600">
+            Objetivo {targetLabel}
+          </span>
+          <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm">
+            <span className="font-semibold text-slate-900">
+              {minutesToHHMM(totalMinutes)} / {minutesToHHMM(expectedMinutes)}
+            </span>
+            <span className="text-xs text-slate-400">
+              {diffLabel} {diffValue} · {completedDays}/6 días
+            </span>
           </div>
         </div>
       </div>
@@ -89,7 +90,7 @@ export default function WeeklyProgressChart({
             </LineChart>
           </ResponsiveContainer>
         ) : (
-          <div className="flex h-full items-center justify-center rounded-2xl border border-dashed border-line bg-white text-sm text-muted">
+          <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm text-slate-400">
             Aún no registras horas esta semana.
           </div>
         )}

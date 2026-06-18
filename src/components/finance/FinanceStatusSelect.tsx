@@ -3,7 +3,7 @@ import Badge from "@/components/ui/Badge";
 import type { FinanceStatus } from "@/lib/finance/types";
 import { getStatusLabel, getStatusTone } from "@/lib/finance/utils";
 
-const statusOptions: FinanceStatus[] = ["pending", "cancelled"];
+const statusOptions: FinanceStatus[] = ["pending", "paid", "cancelled"];
 
 interface FinanceStatusSelectProps {
   status: FinanceStatus;
@@ -34,7 +34,12 @@ export default function FinanceStatusSelect({
       {open ? (
         <div className="absolute left-0 top-9 z-30 min-w-[180px] rounded-xl border border-slate-200 bg-white p-2 text-xs shadow-[0_12px_24px_rgba(15,23,42,0.18)]">
           {options.map((option) => {
-            const dotClass = option === "cancelled" ? "bg-emerald-500" : "bg-amber-500";
+            const dotClass =
+              option === "paid"
+                ? "bg-emerald-500"
+                : option === "cancelled"
+                  ? "bg-rose-500"
+                  : "bg-amber-500";
             return (
               <button
                 key={option}

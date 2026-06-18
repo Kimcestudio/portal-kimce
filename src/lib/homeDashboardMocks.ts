@@ -3,6 +3,8 @@ export type HomeTeamMember = {
   name: string;
   role: string;
   photoURL?: string;
+  isOnline?: boolean;
+  lastSeenAt?: string;
 };
 
 export type CelebrationType = "birthday" | "anniversary";
@@ -28,7 +30,7 @@ export type HomeNewEmployee = {
   role: string;
   startDate: string;
   elapsedDays: number;
-  period: "Este mes" | "2025";
+  period: string;
   photoURL?: string;
 };
 
@@ -37,7 +39,7 @@ export type HomeRequest = {
   name: string;
   type: string;
   status: "Pendiente" | "Aprobada" | "Observada";
-  period: "Este mes" | "2025";
+  period: string;
   photoURL?: string;
 };
 
@@ -46,6 +48,11 @@ export type HomeEvent = {
   dateLabel: string;
   title: string;
   description?: string;
+  source?: string;
+  sortKey?: string;
+  href?: string;
+  location?: string;
+  meetingUrl?: string;
 };
 
 export const homeTeamMembers: HomeTeamMember[] = [

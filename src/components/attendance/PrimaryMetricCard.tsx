@@ -16,7 +16,7 @@ export default function PrimaryMetricCard({
   pill,
 }: PrimaryMetricCardProps) {
   return (
-    <div className="rounded-3xl bg-gradient-to-br from-[#4F56D3] to-[#3F46C6] p-5 text-white shadow-soft">
+    <div className="rounded-xl bg-gradient-to-br from-[#4F56D3] to-[#3F46C6] p-5 text-white">
       <div className="flex items-center justify-between text-sm font-semibold text-white/80">
         <span>{title}</span>
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15">

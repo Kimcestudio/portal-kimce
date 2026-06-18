@@ -25,6 +25,7 @@ import {
   FinanceTabs,
   MovementsTab,
   PaymentsTab,
+  ReimbursementsTab,
 } from "@/modules/finanzas";
 import Card from "@/components/ui/Card";
 import {
@@ -46,6 +47,7 @@ import {
   getStatusLabel,
   getMonthKey,
   getMonthKeyFromDate,
+  parseMonthKeyLike,
 } from "@/lib/finance/utils";
 import type {
   Collaborator,
@@ -88,29 +90,13 @@ import {
 import { db } from "@/services/firebase/client";
 
 
-const parsePaymentPeriodToMonthKey = (periodo?: string | null) => {
-  if (!periodo) return null;
-  const raw = periodo.trim();
-  const slashMatch = raw.match(/^(\d{2})\/(\d{4})$/);
-  if (slashMatch) {
-    const month = Number(slashMatch[1]);
-    const year = Number(slashMatch[2]);
-    if (month >= 1 && month <= 12) {
-      return `${year}-${String(month).padStart(2, "0")}`;
-    }
-  }
+const parsePaymentPeriodToMonthKey = (periodo?: string | null) => parseMonthKeyLike(periodo);
 
-  const dashMatch = raw.match(/^(\d{4})-(\d{2})$/);
-  if (dashMatch) {
-    const year = Number(dashMatch[1]);
-    const month = Number(dashMatch[2]);
-    if (month >= 1 && month <= 12) {
-      return `${year}-${String(month).padStart(2, "0")}`;
-    }
-  }
-
-  return null;
-};
+const normalizePaymentMonthKey = (payment: CollaboratorPayment) =>
+  parsePaymentPeriodToMonthKey(payment.periodo) ??
+  payment.monthKey ??
+  getMonthKeyFromDate(payment.fechaPago) ??
+  getMonthKey(new Date());
 
 const getLastDayOfMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
 
@@ -137,6 +123,7 @@ const tabLabels: Record<FinanceTabKey, string> = {
   movimientos: "Movimientos",
   pagos: "Pagos a colaboradores",
   gastos: "Gastos",
+  prestamos: "Reembolsos",
   cuentas: "Cuentas & Caja",
   cierre: "Cierre de mes",
 };
@@ -175,6 +162,7 @@ export default function FinanceModulePage() {
   const [editingPayment, setEditingPayment] = useState<CollaboratorPayment | null>(null);
   const [editingTransfer, setEditingTransfer] = useState<TransferMovement | null>(null);
   const [editingCollaborator, setEditingCollaborator] = useState<Collaborator | null>(null);
+  const [expenseDraftInitialValues, setExpenseDraftInitialValues] = useState<Partial<ExpenseFormValues> | null>(null);
   const [isCollaboratorsModalOpen, setIsCollaboratorsModalOpen] = useState(false);
   const [collaboratorsFilter, setCollaboratorsFilter] = useState<"all" | "active" | "inactive">("active");
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -307,6 +295,7 @@ export default function FinanceModulePage() {
           return {
             ...data,
             id: doc.id,
+            monthKey: normalizePaymentMonthKey(data as CollaboratorPayment),
           };
         });
         setPayments(items);
@@ -429,6 +418,19 @@ export default function FinanceModulePage() {
   const filteredMovements = useMemo(() => filterMovements(movements, filters), [movements, filters]);
   const filteredExpenses = useMemo(() => {
     return expenses.filter((expense) => {
+      if (expense.requiereDevolucion) return false;
+      const monthKey = getMonthKeyFromDate(expense.fechaGasto);
+      if (monthKey && monthKey !== filters.monthKey) return false;
+      if (!filters.includeCancelled && expense.status === "cancelled") return false;
+      if (filters.status !== "all" && expense.status !== filters.status) return false;
+      if (filters.account !== "all" && expense.cuentaOrigen !== filters.account) return false;
+      return true;
+    });
+  }, [expenses, filters]);
+
+  const filteredReimbursements = useMemo(() => {
+    return expenses.filter((expense) => {
+      if (!expense.requiereDevolucion) return false;
       const monthKey = getMonthKeyFromDate(expense.fechaGasto);
       if (monthKey && monthKey !== filters.monthKey) return false;
       if (!filters.includeCancelled && expense.status === "cancelled") return false;
@@ -561,13 +563,21 @@ export default function FinanceModulePage() {
   );
 
   const projection = useMemo(
-    () => getMonthlyProjection(movements, expenses, payments, filters.monthKey),
-    [expenses, filters.monthKey, movements, payments],
+    () => getMonthlyProjection(movements, expenses, payments, filters.monthKey, filters.account),
+    [expenses, filters.account, filters.monthKey, movements, payments],
   );
 
   const monthlyStatusMetrics = useMemo(
-    () => getMonthlyStatusMetrics(movements, expenses, payments, transfers, filters.monthKey),
-    [expenses, filters.monthKey, movements, payments, transfers],
+    () =>
+      getMonthlyStatusMetrics(
+        movements,
+        expenses,
+        payments,
+        transfers,
+        filters.monthKey,
+        filters.account,
+      ),
+    [expenses, filters.account, filters.monthKey, movements, payments, transfers],
   );
 
   const selectedMonthInfo = useMemo(() => {
@@ -578,6 +588,16 @@ export default function FinanceModulePage() {
     };
   }, [filters.monthKey]);
 
+  const annualCutoffMonth = useMemo(() => {
+    if (annualYear === selectedMonthInfo.year && !Number.isNaN(selectedMonthInfo.month)) {
+      return Math.max(1, Math.min(12, selectedMonthInfo.month));
+    }
+    if (annualYear === currentYear) {
+      return currentMonth;
+    }
+    return 12;
+  }, [annualYear, currentMonth, currentYear, selectedMonthInfo.month, selectedMonthInfo.year]);
+
   const monthlySeries = useMemo(
     () => computeMonthlySeries(movements, expenses, payments, filters.monthKey, 12, filters.account),
     [expenses, filters.account, filters.monthKey, movements, payments],
@@ -585,27 +605,21 @@ export default function FinanceModulePage() {
 
   const annualSeries = useMemo(
     () => {
-      const endMonth = annualYear === currentYear ? currentMonth : 12;
       return computeMonthlySeries(
         movements,
         expenses,
         payments,
-        `${annualYear}-${String(endMonth).padStart(2, "0")}`,
-        endMonth,
+        `${annualYear}-${String(annualCutoffMonth).padStart(2, "0")}`,
+        annualCutoffMonth,
         filters.account,
       );
     },
-    [annualYear, currentMonth, currentYear, expenses, filters.account, movements, payments],
+    [annualCutoffMonth, annualYear, expenses, filters.account, movements, payments],
   );
 
   const ytdTotals = useMemo(() => {
     const year = isAnnualView ? annualYear : selectedMonthInfo.year;
-    const endMonth =
-      isAnnualView
-        ? annualYear === currentYear
-          ? currentMonth
-          : 12
-        : selectedMonthInfo.month;
+    const endMonth = isAnnualView ? annualCutoffMonth : selectedMonthInfo.month;
     return computeYearToDateTotals(
       movements,
       expenses,
@@ -615,9 +629,8 @@ export default function FinanceModulePage() {
       filters.account,
     );
   }, [
+    annualCutoffMonth,
     annualYear,
-    currentMonth,
-    currentYear,
     expenses,
     filters.account,
     isAnnualView,
@@ -635,9 +648,10 @@ export default function FinanceModulePage() {
         payments,
         transfers,
         year: annualYear,
+        endMonth: annualCutoffMonth,
         account: filters.account,
       }),
-    [annualYear, expenses, filters.account, movements, payments, transfers],
+    [annualCutoffMonth, annualYear, expenses, filters.account, movements, payments, transfers],
   );
 
   const annualStats = useMemo(() => {
@@ -677,8 +691,28 @@ export default function FinanceModulePage() {
     }));
   }, [annualSeries]);
 
-  const actualExpenses = kpis.expensesPaid + projection.paymentsPaid;
-  const actualNet = kpis.incomePaid - actualExpenses;
+  const annualCashChartData = useMemo(() => {
+    return annualSeries.map((row) => {
+      const monthCash = computeCashFlow({
+        movements,
+        expenses,
+        payments,
+        transfers,
+        monthKey: row.monthKey,
+        account: filters.account,
+      });
+      return {
+        month: formatMonthLabel(row.monthKey),
+        income: monthCash.incomePaid,
+        expenses: monthCash.cashOut,
+        net: monthCash.net,
+      };
+    });
+  }, [annualSeries, expenses, filters.account, movements, payments, transfers]);
+
+  const annualPaidExpenses = annualCashFlow.expensesPaid + annualCashFlow.paymentsPaid;
+  const actualExpenses = monthlyStatusMetrics.expensesPaid;
+  const actualNet = monthlyStatusMetrics.cashFlow;
   const realVsProjectedRows = useMemo(
     () => [
       {
@@ -692,7 +726,7 @@ export default function FinanceModulePage() {
         projected: projection.expensesProjected,
       },
       {
-        label: "Utilidad",
+        label: "Resultado",
         real: actualNet,
         projected: projection.projectedNet,
       },
@@ -709,13 +743,16 @@ export default function FinanceModulePage() {
 
   const heroContent = useMemo(() => {
     if (isAnnualView) {
+      const annualCutoffLabel = formatMonthLabel(
+        `${annualYear}-${String(annualCutoffMonth).padStart(2, "0")}`,
+      );
       return {
-        title: `Estado del año – ${annualYear}`,
-        incomeLabel: "Ingresos totales",
-        expensesLabel: "Egresos totales",
+        title: `Estado del año – ${annualYear} (corte hasta ${annualCutoffLabel})`,
+        incomeLabel: "Ingresos del periodo",
+        expensesLabel: "Egresos del periodo",
         cashFlowLabel: "Flujo de caja anual",
-        netLabel: "Utilidad anual",
-        marginLabel: "Margen anual",
+        netLabel: "Utilidad del periodo",
+        marginLabel: "Margen del periodo",
         incomePaid: annualStats.totalIncome,
         expensesPaid: annualStats.totalExpenses,
         cashFlow: annualCashFlow.net,
@@ -725,18 +762,19 @@ export default function FinanceModulePage() {
     }
     return {
       title: `Estado del mes – ${formatMonthLabel(filters.monthKey)}`,
-      incomeLabel: "Ingresos cobrados",
-      expensesLabel: "Gastos pagados",
+      incomeLabel: "Ingresos del periodo",
+      expensesLabel: "Egresos del periodo",
       cashFlowLabel: "Flujo de caja",
-      netLabel: "Utilidad neta",
-      marginLabel: "Margen neto",
-      incomePaid: monthlyStatusMetrics.incomePaid,
-      expensesPaid: monthlyStatusMetrics.expensesPaid,
+      netLabel: "Utilidad del periodo",
+      marginLabel: "Margen del periodo",
+      incomePaid: projection.incomeProjected,
+      expensesPaid: projection.expensesProjected,
       cashFlow: monthlyStatusMetrics.cashFlow,
-      netIncome: monthlyStatusMetrics.netIncome,
-      margin: monthlyStatusMetrics.margin,
+      netIncome: projection.projectedNet,
+      margin: projection.projectedMargin,
     };
   }, [
+    annualCutoffMonth,
     annualCashFlow.net,
     annualStats.margin,
     annualStats.net,
@@ -746,10 +784,10 @@ export default function FinanceModulePage() {
     filters.monthKey,
     isAnnualView,
     monthlyStatusMetrics.cashFlow,
-    monthlyStatusMetrics.expensesPaid,
-    monthlyStatusMetrics.incomePaid,
-    monthlyStatusMetrics.margin,
-    monthlyStatusMetrics.netIncome,
+    projection.expensesProjected,
+    projection.incomeProjected,
+    projection.projectedMargin,
+    projection.projectedNet,
   ]);
 
   const alerts = useMemo(() => {
@@ -917,6 +955,22 @@ export default function FinanceModulePage() {
     setModalType(type);
     setIsModalOpen(true);
     setIsSubmitting(false);
+    setExpenseDraftInitialValues(null);
+    setEditingMovement(null);
+    setEditingExpense(null);
+    setEditingPayment(null);
+    setEditingTransfer(null);
+  };
+
+  const openReimbursementModal = () => {
+    setModalType("expense");
+    setIsModalOpen(true);
+    setIsSubmitting(false);
+    setExpenseDraftInitialValues({
+      requiereDevolucion: true,
+      estadoReembolso: "pending",
+      devolucionMonto: 0,
+    });
     setEditingMovement(null);
     setEditingExpense(null);
     setEditingPayment(null);
@@ -1060,6 +1114,12 @@ export default function FinanceModulePage() {
 
       if (type === "expense") {
         const payload = values as ExpenseFormValues;
+        const normalizedRefundAmount =
+          payload.requiereDevolucion
+            ? payload.devolucionMonto > 0
+              ? payload.devolucionMonto
+              : payload.monto
+            : null;
         const expensePayload = {
           tipoGasto: payload.tipoGasto,
           categoria: payload.categoria,
@@ -1069,7 +1129,17 @@ export default function FinanceModulePage() {
           cuentaOrigen: payload.cuentaOrigen,
           status: payload.status,
           requiereDevolucion: payload.requiereDevolucion,
-          devolucionMonto: payload.requiereDevolucion ? payload.devolucionMonto : null,
+          devolucionMonto: normalizedRefundAmount,
+          clienteReembolso: payload.requiereDevolucion ? payload.clienteReembolso.trim() || null : null,
+          estadoReembolso: payload.requiereDevolucion ? payload.estadoReembolso : null,
+          fechaEsperadaReembolso:
+            payload.requiereDevolucion && payload.fechaEsperadaReembolso ? payload.fechaEsperadaReembolso : null,
+          fechaReembolsoRecibido:
+            payload.requiereDevolucion &&
+            payload.estadoReembolso === "reimbursed" &&
+            payload.fechaReembolsoRecibido
+              ? payload.fechaReembolsoRecibido
+              : null,
           referencia: payload.referencia,
           notas: payload.notas,
           recurrenceId:
@@ -1147,6 +1217,7 @@ export default function FinanceModulePage() {
   };
 
   const handleEditExpense = (expense: Expense) => {
+    setExpenseDraftInitialValues(null);
     setEditingExpense(expense);
     setEditingMovement(null);
     setEditingPayment(null);
@@ -1212,7 +1283,18 @@ export default function FinanceModulePage() {
         cuentaOrigen: editingExpense.cuentaOrigen,
         status: editingExpense.status,
         requiereDevolucion: editingExpense.requiereDevolucion,
-        devolucionMonto: editingExpense.devolucionMonto ?? 0,
+        devolucionMonto:
+          (editingExpense.devolucionMonto ?? 0) > 0
+            ? editingExpense.devolucionMonto ?? 0
+            : editingExpense.monto,
+        clienteReembolso: editingExpense.clienteReembolso ?? "",
+        estadoReembolso: editingExpense.estadoReembolso ?? "pending",
+        fechaEsperadaReembolso:
+          formatDateOnly(editingExpense.fechaEsperadaReembolso ?? "") ?? editingExpense.fechaEsperadaReembolso ?? "",
+        fechaReembolsoRecibido:
+          formatDateOnly(editingExpense.fechaReembolsoRecibido ?? "") ??
+          editingExpense.fechaReembolsoRecibido ??
+          "",
         referencia: editingExpense.referencia ?? "",
         notas: editingExpense.notas ?? "",
       }
@@ -1271,7 +1353,7 @@ export default function FinanceModulePage() {
       case "collaborator":
         return collaboratorInitialValues;
       case "expense":
-        return expenseInitialValues;
+        return editingExpense ? expenseInitialValues : expenseDraftInitialValues;
       case "collaborator_payment":
         return paymentInitialValues;
       case "transfer":
@@ -1282,6 +1364,8 @@ export default function FinanceModulePage() {
     }
   }, [
     collaboratorInitialValues,
+    editingExpense,
+    expenseDraftInitialValues,
     expenseInitialValues,
     incomeInitialValues,
     modalType,
@@ -1297,6 +1381,32 @@ export default function FinanceModulePage() {
   const handleExpenseStatusChange = async (id: string, status: FinanceStatus) => {
     await updateExpenseStatus(id, status);
     setToast({ message: "Estado actualizado", tone: "success" });
+  };
+
+  const handleExpenseReimbursementStatusChange = async (
+    expense: Expense,
+    status: "pending" | "reimbursed",
+  ) => {
+    const today = new Date();
+    const fallbackReceiptDate =
+      buildDateForMonth(filters.monthKey, today.getDate()) ?? formatDateOnly(today) ?? "";
+    const nextReceiptDate =
+      status === "reimbursed"
+        ? expense.estadoReembolso === "reimbursed" && expense.fechaReembolsoRecibido
+          ? expense.fechaReembolsoRecibido
+          : fallbackReceiptDate
+        : null;
+    const reimbursementAmount =
+      (expense.devolucionMonto ?? 0) > 0 ? expense.devolucionMonto : expense.monto;
+    await updateExpense(expense.id, {
+      estadoReembolso: status,
+      devolucionMonto: reimbursementAmount,
+      fechaReembolsoRecibido: nextReceiptDate,
+    });
+    setToast({
+      message: status === "reimbursed" ? "Reembolso marcado como recibido" : "Reembolso marcado como pendiente",
+      tone: "success",
+    });
   };
 
   const handleTransferStatusChange = async (id: string, status: FinanceStatus) => {
@@ -1449,20 +1559,24 @@ export default function FinanceModulePage() {
               <button
                 type="button"
                 onClick={() =>
-                  openModal(
-                    activeTab === "gastos"
-                      ? "expense"
-                      : activeTab === "cuentas"
-                        ? "transfer"
-                        : activeTab === "pagos"
-                          ? "collaborator_payment"
-                          : "income",
-                  )
+                  activeTab === "prestamos"
+                    ? openReimbursementModal()
+                    : openModal(
+                        activeTab === "gastos"
+                          ? "expense"
+                          : activeTab === "cuentas"
+                            ? "transfer"
+                            : activeTab === "pagos"
+                              ? "collaborator_payment"
+                              : "income",
+                      )
                 }
                 className="rounded-xl bg-[#4f56d3] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(79,70,229,0.3)]"
               >
                 {activeTab === "gastos"
                   ? "Nuevo gasto"
+                  : activeTab === "prestamos"
+                    ? "Nuevo reembolso"
                   : activeTab === "cuentas"
                     ? "Transferencia / Movimiento"
                     : activeTab === "pagos"
@@ -1557,61 +1671,86 @@ export default function FinanceModulePage() {
                   />
                   {isAnnualView ? (
                     <>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                        <FinanceKpiCard
-                          title="Ingresos acumulados"
-                          value={annualStats.totalIncome}
-                          tone="blue"
-                        />
-                        <FinanceKpiCard
-                          title="Egresos acumulados"
-                          value={annualStats.totalExpenses}
-                          tone="rose"
-                        />
-                        <FinanceKpiCard title="Flujo de caja anual" value={annualCashFlow.net} tone="slate" />
-                        <FinanceKpiCard title="Utilidad acumulada" value={annualStats.net} tone="green" />
-                        <Card className="border border-transparent bg-gradient-to-br from-[#fff7ed] via-[#ffedd5] to-white">
-                          <div className="space-y-2 p-4">
-                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                              Margen acumulado
-                            </p>
-                            <p className="text-2xl font-semibold text-slate-900">
-                              {annualStats.margin.toFixed(1)}%
-                            </p>
-                          </div>
-                        </Card>
-                      </div>
                       <div className="grid gap-4 lg:grid-cols-2">
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
-                          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                            Vista anual
-                          </p>
-                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                            <FinanceKpiCard title="Total anual" value={annualStats.net} tone="green" />
-                            <FinanceKpiCard title="Promedio mensual" value={annualStats.avgNet} tone="blue" />
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                              Proyección / acumulado
+                            </p>
+                            <span className="rounded-full bg-indigo-100 px-2 py-1 text-[10px] font-semibold text-indigo-700">
+                              Periodo
+                            </span>
+                          </div>
+                          <div className="mt-4 grid gap-4 sm:grid-cols-3">
                             <FinanceKpiCard
-                              title="Mejor mes"
-                              value={annualStats.bestMonth ? annualStats.bestMonth.net : 0}
-                              tone="green"
+                              title="Ingresos acumulados"
+                              value={annualStats.totalIncome}
+                              tone="blue"
                             />
                             <FinanceKpiCard
-                              title="Peor mes"
-                              value={annualStats.worstMonth ? annualStats.worstMonth.net : 0}
+                              title="Egresos acumulados"
+                              value={annualStats.totalExpenses}
                               tone="rose"
+                            />
+                            <FinanceKpiCard
+                              title="Utilidad acumulada"
+                              value={annualStats.net}
+                              tone="green"
                             />
                           </div>
                         </div>
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                              Caja real
+                            </p>
+                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                              Cobrado / desembolsado
+                            </span>
+                          </div>
+                          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                            <FinanceKpiCard title="Ingresos cobrados" value={annualCashFlow.incomePaid} tone="blue" />
+                            <FinanceKpiCard title="Egresos desembolsados" value={annualPaidExpenses} tone="amber" />
+                            <FinanceKpiCard title="Flujo de caja anual" value={annualCashFlow.net} tone="slate" />
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                              Lectura ejecutiva
+                            </p>
+                            <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+                              Resumen
+                            </span>
+                          </div>
+                          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                            <FinanceKpiCard title="Total anual" value={annualStats.net} tone="green" />
+                            <FinanceKpiCard title="Promedio mensual" value={annualStats.avgNet} tone="blue" />
+                            <div className="rounded-2xl border border-transparent bg-gradient-to-br from-[#fff7ed] via-[#ffedd5] to-white p-4">
+                              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                                Margen acumulado
+                              </p>
+                              <p className="mt-2 text-2xl font-semibold text-slate-900">
+                                {annualStats.margin.toFixed(1)}%
+                              </p>
+                            </div>
+                            <FinanceKpiCard title="Mejor mes" value={annualStats.bestMonth ? annualStats.bestMonth.net : 0} tone="green" />
+                            <FinanceKpiCard title="Peor mes" value={annualStats.worstMonth ? annualStats.worstMonth.net : 0} tone="rose" />
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
                           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                            Gráfico mensual del año
+                            Cobrado vs pagado por mes
                           </p>
                           <div className="mt-4">
-                            {annualChartData.length === 0 ? (
+                            {annualCashChartData.length === 0 ? (
                               <div className="rounded-xl bg-slate-50 px-3 py-6 text-center text-xs text-slate-400">
                                 Sin datos para el año seleccionado.
                               </div>
                             ) : (
-                              <FinanceMonthlyChart data={annualChartData} />
+                              <FinanceMonthlyChart data={annualCashChartData} />
                             )}
                           </div>
                         </div>
@@ -1619,12 +1758,41 @@ export default function FinanceModulePage() {
                     </>
                   ) : (
                     <>
-                      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-                        <FinanceKpiCard title="Ingresos cobrados" value={monthlyStatusMetrics.incomePaid} tone="blue" />
-                        <FinanceKpiCard title="Pendiente por cobrar" value={kpis.incomePending} tone="amber" />
-                        <FinanceKpiCard title="Gastos pagados" value={monthlyStatusMetrics.expensesPaid} tone="rose" />
-                        <FinanceKpiCard title="Flujo de caja" value={monthlyStatusMetrics.cashFlow} tone="slate" />
-                        <FinanceKpiCard title="Utilidad neta" value={monthlyStatusMetrics.netIncome} tone="green" />
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                              Proyección del periodo
+                            </p>
+                            <span className="rounded-full bg-indigo-100 px-2 py-1 text-[10px] font-semibold text-indigo-700">
+                              Esperado
+                            </span>
+                          </div>
+                          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                            <FinanceKpiCard title="Ingresos del periodo" value={projection.incomeProjected} tone="blue" />
+                            <FinanceKpiCard title="Egresos del periodo" value={projection.expensesProjected} tone="rose" />
+                            <FinanceKpiCard title="Utilidad del periodo" value={projection.projectedNet} tone="green" />
+                          </div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
+                              Caja real actual
+                            </p>
+                            <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                              Cobrado / desembolsado
+                            </span>
+                          </div>
+                          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                            <FinanceKpiCard title="Ingresos cobrados" value={monthlyStatusMetrics.incomePaid} tone="blue" />
+                            <FinanceKpiCard
+                              title="Egresos desembolsados"
+                              value={monthlyStatusMetrics.expensesPaid}
+                              tone="amber"
+                            />
+                            <FinanceKpiCard title="Flujo de caja" value={monthlyStatusMetrics.cashFlow} tone="slate" />
+                          </div>
+                        </div>
                       </div>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-[0_8px_24px_rgba(17,24,39,0.06)]">
@@ -1862,6 +2030,17 @@ export default function FinanceModulePage() {
                   onEdit={handleEditExpense}
                   onDelete={handleDeleteExpense}
                 />
+              ) : null}
+
+              {activeTab === "prestamos" ? (
+                      <ReimbursementsTab
+                        expenses={filteredReimbursements}
+                        isSubmitting={isSubmitting}
+                        onStatusChange={handleExpenseStatusChange}
+                        onReimbursementStatusChange={handleExpenseReimbursementStatusChange}
+                        onEdit={handleEditExpense}
+                        onDelete={handleDeleteExpense}
+                      />
               ) : null}
 
               {activeTab === "pagos" ? (
@@ -2338,6 +2517,7 @@ export default function FinanceModulePage() {
       <FinanceModal
         isOpen={isModalOpen}
         modalType={modalType}
+        expenseMode={activeTab === "prestamos" || Boolean(modalInitialValues && "requiereDevolucion" in modalInitialValues && modalInitialValues.requiereDevolucion) ? "reimbursement" : "expense"}
         onClose={() => {
           setIsModalOpen(false);
           setEditingMovement(null);

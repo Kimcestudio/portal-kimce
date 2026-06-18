@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estrategia Digital 2026 — Mujeres Sin Límites</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0F1B2D;--purple:#4A3AFF;--purple-soft:#6B5FFF;--purple-pale:#EEF0FF;
+  --teal:#0ABFAD;--teal-pale:#E6FAF8;--amber:#F59E0B;--amber-pale:#FEF3C7;
+  --red:#EF4444;--red-pale:#FEE2E2;--green:#10B981;--green-pale:#D1FAE5;
+  --gray-100:#F8F9FA;--gray-300:#E2E5EA;--gray-500:#8892A4;--gray-700:#4A5568;
+  --white:#FFFFFF;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{font-family:'DM Sans',sans-serif;background:var(--gray-100);color:var(--navy);overflow-x:hidden}
+
+nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(255,255,255,.93);backdrop-filter:blur(20px);border-bottom:1px solid var(--gray-300);height:52px;display:flex;align-items:center;padding:0 32px;justify-content:space-between}
+.nav-brand{font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--purple)}
+.nav-links{display:flex;gap:2px}
+.nav-link{font-size:11px;font-weight:500;color:var(--gray-500);text-decoration:none;padding:4px 10px;border-radius:6px;transition:all .15s}
+.nav-link:hover,.nav-link.active{color:var(--purple);background:var(--purple-pale)}
+.prog{position:fixed;top:52px;left:0;height:2px;background:var(--purple);z-index:100;transition:width .1s linear}
+
+section{min-height:100vh;padding:80px 0 60px;display:flex;align-items:center;justify-content:center}
+.container{width:100%;max-width:1120px;padding:0 40px;margin:0 auto}
+
+/* HERO */
+#hero{background:var(--navy);color:#fff;position:relative;overflow:hidden}
+.hero-deco{position:absolute;bottom:-80px;right:-80px;width:500px;height:500px;border-radius:50%;background:radial-gradient(circle,rgba(74,58,255,.13) 0%,transparent 70%);pointer-events:none}
+.hero-grid{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center}
+.hero-label{font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--teal);margin-bottom:20px;display:flex;align-items:center;gap:8px}
+.hero-label::before{content:'';width:24px;height:1px;background:var(--teal)}
+.hero-title{font-family:'DM Serif Display',serif;font-size:clamp(34px,5vw,54px);line-height:1.08;color:#fff;margin-bottom:20px}
+.hero-title em{color:var(--teal);font-style:italic}
+.hero-sub{font-size:15px;color:rgba(255,255,255,.5);line-height:1.75;margin-bottom:36px;font-weight:300}
+.hero-meta{display:flex;gap:20px}
+.hero-mi{font-size:10px;color:rgba(255,255,255,.3);letter-spacing:.08em;text-transform:uppercase}
+.hero-stats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:rgba(255,255,255,.06);border-radius:16px;overflow:hidden}
+.stat-card{background:rgba(255,255,255,.04);padding:26px 22px;transition:background .2s}
+.stat-card:hover{background:rgba(255,255,255,.07)}
+.stat-num{font-family:'DM Serif Display',serif;font-size:32px;color:#fff;line-height:1;margin-bottom:5px}
+.stat-num span{color:var(--teal)}
+.stat-label{font-size:11px;color:rgba(255,255,255,.37);line-height:1.4}
+.scroll-hint{position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;color:rgba(255,255,255,.22);font-size:10px;letter-spacing:.1em;text-transform:uppercase;animation:bob 2s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(6px)}}
+.scroll-arr{width:16px;height:16px;border-right:1.5px solid rgba(255,255,255,.22);border-bottom:1.5px solid rgba(255,255,255,.22);transform:rotate(45deg)}
+
+/* HEADERS */
+.sec-hd{margin-bottom:44px}
+.sec-tag{display:inline-flex;align-items:center;gap:8px;font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:var(--purple);margin-bottom:14px}
+.sec-tag .n{width:20px;height:20px;background:var(--purple);color:#fff;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:9px}
+.sec-title{font-family:'DM Serif Display',serif;font-size:clamp(26px,3.5vw,40px);line-height:1.1;color:var(--navy);margin-bottom:14px}
+.sec-title em{color:var(--purple);font-style:italic}
+.sec-lead{font-size:15px;color:var(--gray-500);line-height:1.7;max-width:580px;font-weight:300}
+
+/* PROBLEMA */
+#problema{background:#fff}
+.prob-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:36px}
+.prob-card{border-radius:16px;padding:28px;border:1px solid var(--gray-300);transition:transform .2s,box-shadow .2s}
+.prob-card:hover{transform:translateY(-3px);box-shadow:0 12px 40px rgba(0,0,0,.07)}
+.prob-card.before{background:var(--gray-100)}
+.prob-card.after{background:var(--navy)}
+.card-tag{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;margin-bottom:14px;display:inline-flex;padding:3px 10px;border-radius:100px}
+.prob-card.before .card-tag{background:var(--gray-300);color:var(--gray-700)}
+.prob-card.after .card-tag{background:rgba(10,191,173,.15);color:var(--teal)}
+.prob-card ul{list-style:none}
+.prob-card ul li{font-size:13.5px;line-height:1.6;padding:8px 0;border-bottom:1px solid rgba(0,0,0,.05);display:flex;gap:10px;align-items:flex-start}
+.prob-card.after ul li{border-color:rgba(255,255,255,.07);color:rgba(255,255,255,.7)}
+.prob-card.before ul li{color:var(--gray-700)}
+.prob-card ul li:last-child{border-bottom:none}
+.li-ic{width:15px;height:15px;border-radius:50%;flex-shrink:0;margin-top:3px;display:flex;align-items:center;justify-content:center;font-size:8px}
+.ic-b{background:var(--gray-300);color:var(--gray-700)}
+.ic-a{background:var(--teal);color:var(--navy)}
+
+/* CANALES */
+#canales{background:var(--gray-100)}
+.ch-tabs{display:flex;gap:6px;margin-bottom:0;flex-wrap:wrap}
+.ch-tab{padding:8px 18px;border-radius:100px;font-size:12px;font-weight:500;cursor:pointer;border:1.5px solid var(--gray-300);background:#fff;color:var(--gray-500);transition:all .2s}
+.ch-tab.active{border-color:var(--purple);background:var(--purple);color:#fff}
+.ch-tab:hover:not(.active){border-color:var(--purple);color:var(--purple)}
+.ch-panels{margin-top:16px}
+.ch-panel{display:none;animation:fi .3s ease}
+.ch-panel.active{display:block}
+@keyframes fi{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* Channel layout */
+.ch-top{background:#fff;border:1px solid var(--gray-300);border-radius:16px 16px 0 0;border-bottom:none;padding:24px 28px;display:flex;gap:32px;justify-content:space-between;align-items:flex-start}
+.ch-badge{display:inline-flex;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;padding:3px 10px;border-radius:100px;margin-bottom:8px}
+.ch-name{font-family:'DM Serif Display',serif;font-size:26px;color:var(--navy);margin-bottom:5px}
+.ch-role{font-size:13px;color:var(--gray-500);line-height:1.55;max-width:480px}
+.ch-freqs{display:flex;flex-direction:column;gap:5px;min-width:220px;flex-shrink:0}
+.ch-freq{font-size:12px;background:var(--gray-100);padding:7px 12px;border-radius:8px;display:flex;justify-content:space-between;gap:16px}
+.ch-freq strong{color:var(--navy)}
+
+.ch-stab-bar{display:flex;background:#fff;border-left:1px solid var(--gray-300);border-right:1px solid var(--gray-300);padding:0 28px;border-bottom:1px solid var(--gray-300)}
+.ch-stab{font-size:12px;font-weight:500;padding:10px 16px;border:none;background:none;color:var(--gray-500);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s}
+.ch-stab.active{color:var(--purple);border-bottom-color:var(--purple);font-weight:600}
+.ch-stab:hover:not(.active){color:var(--navy)}
+
+.ch-body{background:#fff;border:1px solid var(--gray-300);border-radius:0 0 16px 16px;border-top:none;padding:24px 28px}
+.ch-subpanel{display:none;animation:fi .25s ease}
+.ch-subpanel.active{display:block}
+
+.pillar-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.pc{background:var(--gray-100);border-radius:10px;padding:14px 16px;border-left:3px solid var(--purple)}
+.pc.teal{border-left-color:var(--teal)}
+.pc.fb{border-left-color:#1877F2}
+.pc.li{border-left-color:#0A66C2}
+.pc-t{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:3px}
+.pc-d{font-size:12px;color:var(--gray-500);line-height:1.5}
+
+.geo-box{background:var(--purple-pale);border-radius:10px;padding:12px 16px;font-size:12px;color:var(--purple);line-height:1.6;margin-top:4px}
+.geo-box strong{display:block;font-weight:600;margin-bottom:2px}
+
+.kpi-list{display:flex;flex-direction:column;gap:8px}
+.kpi-row{background:var(--gray-100);border-radius:10px;padding:13px 18px;display:flex;justify-content:space-between;align-items:center}
+.kpi-l .kpi-name{font-size:13px;font-weight:500;color:var(--gray-700)}
+.kpi-l .kpi-base{font-size:11px;color:var(--gray-500);margin-top:1px}
+.kpi-r{display:flex;align-items:center;gap:10px}
+.kpi-val{font-family:'DM Serif Display',serif;font-size:22px;color:var(--navy)}
+.kpi-d{font-size:10px;font-weight:600;padding:2px 8px;border-radius:100px}
+.d-up{background:var(--green-pale);color:var(--green)}
+.d-new{background:var(--purple-pale);color:var(--purple)}
+.d-eval{background:var(--amber-pale);color:#92400E}
+
+/* COMUNIDAD */
+#comunidad{background:#fff}
+.com-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:36px}
+.com-card{border-radius:16px;border:1px solid var(--gray-300);overflow:hidden}
+.com-accent{height:3px}
+.com-head{padding:20px 22px;border-bottom:1px solid var(--gray-300)}
+.com-icon{font-size:22px;margin-bottom:8px}
+.com-name{font-size:17px;font-weight:600;color:var(--navy);margin-bottom:3px}
+.com-sub{font-size:11px;color:var(--gray-500)}
+.com-body{padding:18px 22px}
+.com-stabs{display:flex;gap:4px;margin-bottom:14px}
+.com-stab{padding:5px 12px;border-radius:100px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--gray-300);background:transparent;color:var(--gray-500);transition:all .15s}
+.com-stab.aw{border-color:var(--teal);background:var(--teal);color:#fff}
+.com-stab.af{border-color:var(--purple);background:var(--purple);color:#fff}
+.com-stab:hover:not(.aw):not(.af){border-color:var(--navy);color:var(--navy)}
+.com-sp{display:none;animation:fi .25s ease}
+.com-sp.active{display:block}
+.com-plist{display:flex;flex-direction:column;gap:7px}
+.cpi{padding:10px 13px;background:var(--gray-100);border-radius:8px}
+.cpi-t{font-size:12px;font-weight:600;color:var(--navy);margin-bottom:2px}
+.cpi-d{font-size:11px;color:var(--gray-500);line-height:1.45}
+.com-klist{display:flex;flex-direction:column;gap:6px}
+.ckr{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--gray-100);border-radius:8px}
+.ck-label{font-size:12px;color:var(--gray-700)}
+.ck-right{display:flex;align-items:center;gap:7px}
+.ck-base{font-size:11px;color:var(--gray-500)}
+.ck-target{font-size:13px;font-weight:700;color:var(--navy)}
+.ck-d{font-size:10px;font-weight:600;padding:2px 7px;border-radius:100px}
+
+/* Pillars */
+.pillars-sec{margin-top:32px}
+.pillars-lbl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--gray-500);margin-bottom:10px}
+.pil-acc{border:1px solid var(--gray-300);border-radius:12px;overflow:hidden;margin-bottom:8px;background:#fff}
+.pil-hd{padding:15px 20px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;transition:background .15s;user-select:none}
+.pil-hd:hover{background:var(--gray-100)}
+.pil-hd-l{display:flex;align-items:center;gap:12px}
+.pil-n{width:26px;height:26px;border-radius:7px;background:var(--purple-pale);color:var(--purple);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.pil-title{font-size:13px;font-weight:600;color:var(--navy)}
+.pil-chev{font-size:12px;color:var(--gray-500);transition:transform .25s}
+.pil-hd.open .pil-chev{transform:rotate(180deg)}
+.pil-body{max-height:0;overflow:hidden;transition:max-height .35s ease}
+.pil-inner{padding:0 20px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pim{background:var(--gray-100);border-radius:9px;padding:12px 14px}
+.pim-t{font-size:12px;font-weight:600;color:var(--navy);margin-bottom:3px}
+.pim-d{font-size:11px;color:var(--purple)}
+
+/* FUNNEL */
+#captacion{background:var(--gray-100)}
+.funnel{display:flex;flex-direction:column;gap:0;position:relative;padding-left:40px;margin-top:36px}
+.funnel::before{content:'';position:absolute;left:12px;top:18px;bottom:18px;width:2px;background:linear-gradient(180deg,var(--purple) 0%,var(--teal) 50%,var(--green) 100%)}
+.fstep{position:relative;margin-bottom:8px}
+.fstep::before{content:'';position:absolute;left:-34px;top:18px;width:10px;height:10px;border-radius:50%;border:2px solid #fff;background:var(--purple);box-shadow:0 0 0 3px var(--purple-pale);z-index:1}
+.fstep.t::before{background:var(--teal);box-shadow:0 0 0 3px var(--teal-pale)}
+.fstep.a::before{background:var(--amber);box-shadow:0 0 0 3px var(--amber-pale)}
+.fstep.g::before{background:var(--green);box-shadow:0 0 0 3px var(--green-pale)}
+.fcard{background:#fff;border:1px solid var(--gray-300);border-radius:12px;padding:15px 20px;cursor:pointer;transition:all .2s;display:flex;justify-content:space-between;align-items:center;gap:16px}
+.fcard:hover{border-color:var(--purple);box-shadow:0 4px 20px rgba(74,58,255,.07)}
+.fcard-l{display:flex;align-items:center;gap:14px}
+.fsn{font-size:10px;font-weight:700;color:var(--gray-500);min-width:16px}
+.fst{font-size:13.5px;font-weight:600;color:var(--navy)}
+.fss{font-size:11px;color:var(--gray-500);margin-top:1px}
+.fkpi{font-size:11px;color:var(--purple);background:var(--purple-pale);padding:4px 10px;border-radius:100px;white-space:nowrap;flex-shrink:0}
+.fdetail{max-height:0;overflow:hidden;transition:max-height .3s ease}
+.fdetail-inner{padding:12px 20px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fd{background:var(--gray-100);border-radius:8px;padding:12px 14px}
+.fd-l{font-size:10px;font-weight:600;color:var(--gray-500);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px}
+.fd-v{font-size:12px;color:var(--navy);line-height:1.55}
+
+/* SCORECARD */
+#scorecard{background:#fff}
+.sc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:36px}
+.sc-card{background:var(--gray-100);border-radius:14px;padding:20px;border:1px solid var(--gray-300);transition:transform .2s}
+.sc-card:hover{transform:translateY(-2px)}
+.sc-ch{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--gray-300)}
+.sc-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:12px}
+.sc-ind{color:var(--gray-700)}
+.sc-vals{display:flex;gap:6px;align-items:center}
+.sc-b{color:var(--gray-500)}
+.sc-arr{color:var(--gray-300);font-size:10px}
+.sc-t{font-weight:600;color:var(--navy)}
+.sc-d{font-size:10px;font-weight:600;padding:1px 6px;border-radius:100px}
+.sc-ig .sc-ch{color:#C13584}
+.sc-tk .sc-ch{color:#161823}
+.sc-fb .sc-ch{color:#1877F2}
+.sc-li .sc-ch{color:#0A66C2}
+.sc-wa .sc-ch{color:var(--teal)}
+.sc-fbp .sc-ch{color:var(--purple)}
+
+/* EVALUACION */
+#evaluacion{background:var(--gray-100)}
+.eval-badge{display:inline-flex;align-items:center;gap:8px;background:var(--amber-pale);border:1px solid rgba(245,158,11,.3);color:#92400E;font-size:11px;font-weight:600;padding:6px 14px;border-radius:100px;margin-bottom:20px}
+.eval-grid{display:grid;grid-template-columns:1fr 1.1fr;gap:32px;align-items:start;margin-top:32px}
+.eval-what{background:#fff;border-radius:16px;padding:28px;border:1px solid var(--gray-300)}
+.eval-what h3{font-family:'DM Serif Display',serif;font-size:22px;color:var(--navy);margin-bottom:12px}
+.eval-what p{font-size:13px;color:var(--gray-700);line-height:1.7;margin-bottom:20px}
+.eval-two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.eval-col h4{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.eval-col h4.yes{color:var(--teal)}
+.eval-col h4.no{color:var(--red)}
+.eval-col ul{list-style:none;display:flex;flex-direction:column;gap:5px}
+.eval-col ul li{font-size:12px;color:var(--gray-700);padding:8px 12px;background:var(--gray-100);border-radius:8px;line-height:1.45}
+.eval-phases{display:flex;flex-direction:column;gap:7px}
+.ep-lbl{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--gray-500);margin-bottom:10px}
+.eval-phase{background:#fff;border:1px solid var(--gray-300);border-radius:12px;padding:15px 18px;cursor:pointer;transition:all .2s;display:flex;gap:14px;align-items:flex-start}
+.eval-phase:hover,.eval-phase.active{border-color:var(--amber);background:var(--amber-pale)}
+.ep-n{width:28px;height:28px;border-radius:8px;background:var(--gray-200);color:var(--gray-500);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s}
+.eval-phase.active .ep-n{background:var(--amber);color:#fff}
+.ep-ti{font-size:13px;font-weight:600;color:var(--navy);margin-bottom:2px}
+.ep-su{font-size:11px;color:var(--gray-500)}
+.ep-bd{max-height:0;overflow:hidden;transition:max-height .3s ease}
+.ep-bd-i{padding-top:10px;font-size:12px;color:var(--gray-700);line-height:1.65}
+
+/* CIERRE */
+#cierre{background:var(--navy);color:#fff;min-height:60vh}
+.cl-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:80px;align-items:center}
+.cl-title{font-family:'DM Serif Display',serif;font-size:clamp(30px,4vw,46px);line-height:1.1;margin-bottom:16px}
+.cl-title em{color:var(--teal);font-style:italic}
+.cl-sub{font-size:14px;color:rgba(255,255,255,.43);line-height:1.75;margin-bottom:28px;font-weight:300}
+.cl-meta{display:flex;flex-direction:column;gap:10px}
+.cm-item{display:flex;gap:12px;align-items:center;font-size:12px;color:rgba(255,255,255,.45)}
+.cm-dot{width:5px;height:5px;border-radius:50%;background:var(--teal);flex-shrink:0}
+/* REVEAL */
+.rv{opacity:0;transform:translateY(22px);transition:opacity .6s ease,transform .6s ease}
+.rv.vis{opacity:1;transform:translateY(0)}
+.d1{transition-delay:.1s}.d2{transition-delay:.2s}
+
+@media(max-width:860px){
+  .hero-grid,.prob-grid,.com-grid,.eval-grid,.cl-grid,.sc-grid{grid-template-columns:1fr}
+  .nav-links{display:none}
+  .sc-grid{grid-template-columns:1fr 1fr}
+  .pil-inner,.pillar-grid,.fdetail-inner,.eval-two{grid-template-columns:1fr}
+  .ch-top{flex-direction:column;gap:16px}
+}
+</style>
+</head>
+<body>
+<div class="prog" id="prog"></div>
+<nav>
+  <div class="nav-brand">MSL · Estrategia Digital 2026</div>
+  <div class="nav-links">
+    <a href="#problema" class="nav-link">Problema</a>
+    <a href="#canales" class="nav-link">Canales</a>
+    <a href="#comunidad" class="nav-link">Comunidad</a>
+    <a href="#captacion" class="nav-link">Captación</a>
+    <a href="#scorecard" class="nav-link">Scorecard</a>
+    <a href="#evaluacion" class="nav-link">En Evaluación</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-deco"></div>
+  <div class="container">
+    <div class="hero-grid">
+      <div>
+        <div class="hero-label">Fundación Belcorp</div>
+        <h1 class="hero-title">Estrategia<br><em>Digital 2026</em></h1>
+        <p class="hero-sub">De contenido de campaña a ecosistema de valor continuo. Cuatro canales. Una comunidad. Un propósito: llevar más mujeres al programa MSL.</p>
+        <div class="hero-meta">
+          <span class="hero-mi">Mayo 2026</span><span class="hero-mi">·</span>
+          <span class="hero-mi">Versión de trabajo</span><span class="hero-mi">·</span>
+          <span class="hero-mi">Confidencial</span>
+        </div>
+      </div>
+      <div class="hero-stats">
+        <div class="stat-card"><div class="stat-num">21<span>,900+</span></div><div class="stat-label">Seguidores totales<br>Base mayo 2026</div></div>
+        <div class="stat-card"><div class="stat-num">1<span>.4M</span></div><div class="stat-label">Impresiones 2025<br>5× vs. 2024</div></div>
+        <div class="stat-card"><div class="stat-num">5<span>,900+</span></div><div class="stat-label">Mujeres en<br>comunidad Facebook</div></div>
+        <div class="stat-card"><div class="stat-num">79</div><div class="stat-label">NPS de la<br>comunidad</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-hint"><div class="scroll-arr"></div>Explorar</div>
+</section>
+
+<!-- PROBLEMA -->
+<section id="problema">
+  <div class="container">
+    <div class="sec-hd rv">
+      <div class="sec-tag"><span class="n">1</span>El punto de partida</div>
+      <h2 class="sec-title">El engagement <em>colapsa</em><br>cuando termina la campaña</h2>
+      <p class="sec-lead">El crecimiento de 2025 fue real. El problema también: sin retención, los nuevos seguidores desaparecen cuando termina la campaña MSL.</p>
+    </div>
+    <div class="prob-grid">
+      <div class="prob-card before rv d1">
+        <div class="card-tag">Modelo 2025 — a superar</div>
+        <ul>
+          <li><span class="li-ic ic-b">✕</span>Contenido motivacional genérico sin valor continuo</li>
+          <li><span class="li-ic ic-b">✕</span>4 canales con el mismo peso, sin jerarquía de inversión</li>
+          <li><span class="li-ic ic-b">✕</span>85% de la comunidad (5,900 mujeres) está inactiva</li>
+          <li><span class="li-ic ic-b">✕</span>Sin seguimiento post-programa: graduadas desaparecen</li>
+          <li><span class="li-ic ic-b">✕</span>Sin KPI que conecte RRSS con inscripciones al programa</li>
+        </ul>
+      </div>
+      <div class="prob-card after rv d2">
+        <div class="card-tag">Modelo 2026 — a construir</div>
+        <ul>
+          <li><span class="li-ic ic-a">✓</span>Contenido educativo e institucional de valor permanente</li>
+          <li><span class="li-ic ic-a">✓</span>Jerarquía: IG + TK prioritarios, FB y LI de apoyo</li>
+          <li><span class="li-ic ic-a">✓</span>Comunidad activa: de 15% → 30% de participación mensual</li>
+          <li><span class="li-ic ic-a">✓</span>Ciclo post-programa: graduadas → comunidad MSL exclusiva</li>
+          <li><span class="li-ic ic-a">✓</span>Embudo medible: seguidoras → inscritas al programa</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CANALES -->
+<section id="canales">
+  <div class="container">
+    <div class="sec-hd rv">
+      <div class="sec-tag"><span class="n">2</span>Redes sociales</div>
+      <h2 class="sec-title">Jerarquía de <em>canales 2026</em></h2>
+      <p class="sec-lead">Cada canal tiene un rol diferente, un enfoque de contenido propio y métricas específicas. Selecciona el canal para explorar su estrategia.</p>
+    </div>
+    <div class="ch-tabs">
+      <button class="ch-tab active" onclick="showCh('ig',this)">Instagram #1</button>
+      <button class="ch-tab" onclick="showCh('tk',this)">TikTok #2</button>
+      <button class="ch-tab" onclick="showCh('fb',this)">Facebook #3</button>
+      <button class="ch-tab" onclick="showCh('li',this)">LinkedIn #4</button>
+    </div>
+    <div class="ch-panels" id="ch-container"></div>
+  </div>
+</section>
+
+<!-- COMUNIDAD -->
+<section id="comunidad">
+  <div class="container">
+    <div class="sec-hd rv">
+      <div class="sec-tag"><span class="n">3</span>Comunidad</div>
+      <h2 class="sec-title">De 85% inactiva a<br><em>30% participación activa</em></h2>
+      <p class="sec-lead">Dos canales diferenciados, un ecosistema. WhatsApp activa y deriva. El Grupo Privado conecta, retiene y reconoce. Cada uno con estrategia y métricas propias.</p>
+    </div>
+
+    <div class="com-grid rv d1">
+      <!-- WHATSAPP -->
+      <div class="com-card">
+        <div class="com-accent" style="background:var(--teal)"></div>
+        <div class="com-head">
+          <div class="com-icon">💬</div>
+          <div class="com-name">WhatsApp</div>
+          <div class="com-sub">Canal de activación · 7 países · subgrupos por país</div>
+        </div>
+        <div class="com-body">
+          <div class="com-stabs">
+            <button class="com-stab aw" onclick="comTab('wa','c',this)">Contenido</button>
+            <button class="com-stab" onclick="comTab('wa','k',this)">KPIs</button>
+          </div>
+          <div id="wa-c" class="com-sp active">
+            <div class="com-plist">
+              <div class="cpi"><div class="cpi-t">Calendario mensual de actividades</div><div class="cpi-d">Publicado el 1° de cada mes · las mujeres saben qué esperar y cuándo</div></div>
+              <div class="cpi"><div class="cpi-t">Recordatorios de charlas</div><div class="cpi-d">14 días · 3 días · 1 día antes · con CTA a asistir en vivo</div></div>
+              <div class="cpi"><div class="cpi-t">Clip post-charla (&lt;4 horas)</div><div class="cpi-d">Resumen 2 min · con CTA a comentar en el Grupo Privado de Facebook</div></div>
+              <div class="cpi"><div class="cpi-t">Recursos descargables</div><div class="cpi-d">Guías y plantillas post-charla · fijados también en el Grupo Privado FB</div></div>
+              <div class="cpi"><div class="cpi-t">Ciclo post-charla (3 días)</div><div class="cpi-d">Día 1: resumen · Día 2: pregunta práctica · Día 3: reto entre pares</div></div>
+            </div>
+          </div>
+          <div id="wa-k" class="com-sp">
+            <div class="com-klist">
+              <div class="ckr"><span class="ck-label">Retención en grupos WA</span><div class="ck-right"><span class="ck-base">96.2%</span><span class="ck-target">≥95%</span><span class="ck-d d-eval">sostener</span></div></div>
+              <div class="ckr"><span class="ck-label">Países con grupo activo</span><div class="ck-right"><span class="ck-base">4/7</span><span class="ck-target">7/7</span><span class="ck-d d-up">urgente</span></div></div>
+              <div class="ckr"><span class="ck-label">Asistentes en vivo / charla</span><div class="ck-right"><span class="ck-base">~90</span><span class="ck-target">200</span><span class="ck-d d-up">+122%</span></div></div>
+              <div class="ckr"><span class="ck-label">Recursos descargados / charla</span><div class="ck-right"><span class="ck-base">~15</span><span class="ck-target">120</span><span class="ck-d d-up">+700%</span></div></div>
+              <div class="ckr"><span class="ck-label">% graduadas que ingresan a WA</span><div class="ck-right"><span class="ck-base">—</span><span class="ck-target">≥70%</span><span class="ck-d d-new">nuevo</span></div></div>
+              <div class="ckr"><span class="ck-label">NPS comunidad</span><div class="ck-right"><span class="ck-base">79</span><span class="ck-target">≥80</span><span class="ck-d d-eval">sostener</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FB GRUPO PRIVADO -->
+      <div class="com-card">
+        <div class="com-accent" style="background:var(--purple)"></div>
+        <div class="com-head">
+          <div class="com-icon">🔒</div>
+          <div class="com-name">Grupo Privado Facebook MSL</div>
+          <div class="com-sub">Hub exclusivo · solo graduadas certificadas · acceso por invitación</div>
+        </div>
+        <div class="com-body">
+          <div class="com-stabs">
+            <button class="com-stab af" onclick="comTab('fb','c',this)">Contenido</button>
+            <button class="com-stab" onclick="comTab('fb','k',this)">KPIs</button>
+          </div>
+          <div id="fb-c" class="com-sp active">
+            <div class="com-plist">
+              <div class="cpi"><div class="cpi-t">Marketplace de emprendedoras</div><div class="cpi-d">Directorio por categorías · Belleza · Alimentos · Servicios · Moda · exclusivo para graduadas</div></div>
+              <div class="cpi"><div class="cpi-t">Dinámicas semanales de interacción</div><div class="cpi-d">Temáticas por semana · generan hábito de participación predecible</div></div>
+              <div class="cpi"><div class="cpi-t">Pregunta mensual de diagnóstico</div><div class="cpi-d">Define el tema de la próxima charla · cierra el ciclo participación → impacto</div></div>
+              <div class="cpi"><div class="cpi-t">Charlas con aliadas (exclusivo MSL)</div><div class="cpi-d">Con organizaciones aliadas · beneficio diferencial que incentiva completar el programa</div></div>
+              <div class="cpi"><div class="cpi-t">Emprendedora del Mes</div><div class="cpi-d">1 historia / mes · rotación por país · 12 al año · reconocimiento entre pares</div></div>
+            </div>
+          </div>
+          <div id="fb-k" class="com-sp">
+            <div class="com-klist">
+              <div class="ckr"><span class="ck-label">Mujeres activas / mes</span><div class="ck-right"><span class="ck-base">~15%</span><span class="ck-target">30%</span><span class="ck-d d-up">x2</span></div></div>
+              <div class="ckr"><span class="ck-label">Tasa de participación</span><div class="ck-right"><span class="ck-base">6.2%</span><span class="ck-target">20%</span><span class="ck-d d-up">+222%</span></div></div>
+              <div class="ckr"><span class="ck-label">Respuestas diagnóstico / mes</span><div class="ck-right"><span class="ck-base">—</span><span class="ck-target">60</span><span class="ck-d d-new">nuevo</span></div></div>
+              <div class="ckr"><span class="ck-label">% graduadas en Marketplace</span><div class="ck-right"><span class="ck-base">0%</span><span class="ck-target">≥40%</span><span class="ck-d d-new">nuevo</span></div></div>
+              <div class="ckr"><span class="ck-label">% graduadas que ingresan al grupo</span><div class="ck-right"><span class="ck-base">—</span><span class="ck-target">≥50%</span><span class="ck-d d-new">nuevo</span></div></div>
+              <div class="ckr"><span class="ck-label">Respuestas / dinámica semanal</span><div class="ck-right"><span class="ck-base">~5–8</span><span class="ck-target">50</span><span class="ck-d d-up">+525%</span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PILARES -->
+    <div class="pillars-sec rv d2">
+      <div class="pillars-lbl">Los 3 pilares que sostienen ambos canales</div>
+      <div class="pil-acc">
+        <div class="pil-hd" onclick="togglePil(this)">
+          <div class="pil-hd-l"><div class="pil-n">1</div><div class="pil-title">Charlas con Expertos — ciclo completo antes, durante y después</div></div>
+          <div class="pil-chev">▾</div>
+        </div>
+        <div class="pil-body"><div class="pil-inner">
+          <div class="pim"><div class="pim-t">Pre-charla (14 días antes)</div><div class="pim-d">Teaser + recordatorios WA → meta: 200 asistentes en vivo</div></div>
+          <div class="pim"><div class="pim-t">Gamificación durante</div><div class="pim-d">Quiz 10 preguntas → meta: 60–80% de completación</div></div>
+          <div class="pim"><div class="pim-t">Clip post-charla (&lt;4h)</div><div class="pim-d">Resumen 2 min → FB + WA + IG Stories · meta: 500 vistas</div></div>
+          <div class="pim"><div class="pim-t">Ciclo post-charla (3 días)</div><div class="pim-d">Resumen · pregunta práctica · reto entre pares → 70 participantes</div></div>
+        </div></div>
+      </div>
+      <div class="pil-acc">
+        <div class="pil-hd" onclick="togglePil(this)">
+          <div class="pil-hd-l"><div class="pil-n">2</div><div class="pil-title">Interacción Activa — hábito de participación con estructura predecible</div></div>
+          <div class="pil-chev">▾</div>
+        </div>
+        <div class="pil-body"><div class="pil-inner">
+          <div class="pim"><div class="pim-t">Calendario mensual (día 1)</div><div class="pim-d">WA + FB · mujeres saben qué esperar todo el mes</div></div>
+          <div class="pim"><div class="pim-t">Dinámicas temáticas semanales</div><div class="pim-d">FB Grupo Privado · meta: 50 respuestas / semana</div></div>
+          <div class="pim"><div class="pim-t">Pregunta mensual de diagnóstico</div><div class="pim-d">Define el tema de la próxima charla → cierra el ciclo</div></div>
+          <div class="pim"><div class="pim-t">Foro de preguntas entre pares</div><div class="pim-d">FB Grupo Privado · peer learning orgánico · a demanda</div></div>
+        </div></div>
+      </div>
+      <div class="pil-acc">
+        <div class="pil-hd" onclick="togglePil(this)">
+          <div class="pil-hd-l"><div class="pil-n">3</div><div class="pil-title">Marketplace y Reconocimiento — beneficio exclusivo de graduadas certificadas</div></div>
+          <div class="pil-chev">▾</div>
+        </div>
+        <div class="pil-body"><div class="pil-inner">
+          <div class="pim"><div class="pim-t">Marketplace en FB Grupo Privado</div><div class="pim-d">Por categorías · ≥40% de graduadas registran su negocio</div></div>
+          <div class="pim"><div class="pim-t">Emprendedora del Mes</div><div class="pim-d">1 historia / mes · rotación por país · difundida en WA + FB privado</div></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CAPTACIÓN -->
+<section id="captacion">
+  <div class="container">
+    <div class="sec-hd rv">
+      <div class="sec-tag"><span class="n">4</span>Modelo de conversión</div>
+      <h2 class="sec-title">De seguidora<br>a <em>inscrita al programa</em></h2>
+      <p class="sec-lead">El KPI que conecta toda la estrategia digital con el objetivo real de la Fundación. Haz clic en cada etapa para ver el detalle.</p>
+    </div>
+    <div class="funnel rv d1">
+      <div class="fstep">
+        <div class="fcard" onclick="toggleF(this)">
+          <div class="fcard-l"><div class="fsn">01</div><div><div class="fst">Descubrimiento</div><div class="fss">IG · TikTok · contenido orgánico</div></div></div>
+          <div class="fkpi">Alcance + Impresiones</div>
+        </div>
+        <div class="fdetail"><div class="fdetail-inner">
+          <div class="fd"><div class="fd-l">Qué ocurre</div><div class="fd-v">Primera vez que una mujer contacta la Fundación — un Reel, un clip de charla, un dato de impacto en TikTok o Instagram.</div></div>
+          <div class="fd"><div class="fd-l">Palanca 2026</div><div class="fd-v">Contenido educativo · voces de beneficiarias · datos de impacto. Guardados y shares como señal de descubrimiento orgánico.</div></div>
+        </div></div>
+      </div>
+      <div class="fstep">
+        <div class="fcard" onclick="toggleF(this)">
+          <div class="fcard-l"><div class="fsn">02</div><div><div class="fst">Consideración — sigue la cuenta</div><div class="fss">Bio de IG · CTA en posts · stories</div></div></div>
+          <div class="fkpi">Seguidores nuevos / mes</div>
+        </div>
+        <div class="fdetail"><div class="fdetail-inner">
+          <div class="fd"><div class="fd-l">Qué ocurre</div><div class="fd-v">La mujer sigue la cuenta, visita el perfil o hace clic en el link de bio hacia la Web MSL.</div></div>
+          <div class="fd"><div class="fd-l">Palanca 2026</div><div class="fd-v">Bio de IG con CTA claro a la Web MSL · stories con link directo · contenido de atracción: testimonios y beneficios del programa.</div></div>
+        </div></div>
+      </div>
+      <div class="fstep t">
+        <div class="fcard" onclick="toggleF(this)">
+          <div class="fcard-l"><div class="fsn">03</div><div><div class="fst">Intención — llega a la Web MSL</div><div class="fss">Link bio IG · UTMs por canal · urgente</div></div></div>
+          <div class="fkpi">500 clics / mes</div>
+        </div>
+        <div class="fdetail"><div class="fdetail-inner">
+          <div class="fd"><div class="fd-l">Qué ocurre</div><div class="fd-v">Lee sobre MSL, los beneficios y los testimonios de graduadas. Sabe qué esperar antes de que haya convocatoria activa.</div></div>
+          <div class="fd"><div class="fd-l">Requiere — urgente</div><div class="fd-v">UTMs por canal activos en todos los links · acceso del equipo al Analytics de la Web MSL. Q2 ya inició.</div></div>
+        </div></div>
+      </div>
+      <div class="fstep a">
+        <div class="fcard" onclick="toggleF(this)">
+          <div class="fcard-l"><div class="fsn">04</div><div><div class="fst">Convocatoria → Postulación</div><div class="fss">IG · TK · FB · Web MSL</div></div></div>
+          <div class="fkpi">≥20% de inscritas</div>
+        </div>
+        <div class="fdetail"><div class="fdetail-inner">
+          <div class="fd"><div class="fd-l">Qué ocurre</div><div class="fd-v">Se activa la convocatoria MSL. La mujer postula con contexto completo — ya conoce el programa desde adentro.</div></div>
+          <div class="fd"><div class="fd-l">Meta 2026</div><div class="fd-v">≥20% de postulantes provenientes del canal digital. Requiere campo "¿cómo nos conociste?" en el formulario de postulación.</div></div>
+        </div></div>
+      </div>
+      <div class="fstep g">
+        <div class="fcard" onclick="toggleF(this)">
+          <div class="fcard-l"><div class="fsn">05</div><div><div class="fst">Programa MSL</div><div class="fss">Proceso interno del programa</div></div></div>
+          <div class="fkpi">Tasa de completación</div>
+        </div>
+        <div class="fdetail"><div class="fdetail-inner">
+          <div class="fd"><div class="fd-l">Qué ocurre</div><div class="fd-v">Admitida y cursando el programa MSL. Fuera del alcance directo de la estrategia digital.</div></div>
+          <div class="fd"><div class="fd-l">Hipótesis</div><div class="fd-v">Una mujer que llega informada tiene mayor probabilidad de completar el programa e incorporarse activamente a la comunidad.</div></div>
+        </div></div>
+      </div>
+      <div class="fstep g">
+        <div class="fcard" onclick="toggleF(this)">
+          <div class="fcard-l"><div class="fsn">06</div><div><div class="fst">Graduación → Comunidad MSL</div><div class="fss">WA subgrupo por país · FB Grupo Privado</div></div></div>
+          <div class="fkpi">≥70% WA · ≥50% FB</div>
+        </div>
+        <div class="fdetail"><div class="fdetail-inner">
+          <div class="fd"><div class="fd-l">Qué ocurre</div><div class="fd-v">Onboarding activo al momento de la certificación. Invitación directa al grupo WA de su país y al FB Grupo Privado MSL.</div></div>
+          <div class="fd"><div class="fd-l">Meta 2026</div><div class="fd-v">≥70% de cada cohorte ingresa a WA. ≥50% al FB Grupo Privado. Permanencia en WA a 90 días ≥85%.</div></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SCORECARD -->
+<section id="scorecard">
+  <div class="container">
+    <div class="sec-hd rv">
+      <div class="sec-tag"><span class="n">5</span>Scorecard</div>
+      <h2 class="sec-title">Metas consolidadas<br><em>fin de 2026</em></h2>
+      <p class="sec-lead">Todos los indicadores en un solo lugar, organizados por canal y eje estratégico.</p>
+    </div>
+    <div class="sc-grid rv d1">
+      <div class="sc-card sc-ig">
+        <div class="sc-ch">Instagram</div>
+        <div class="sc-row"><span class="sc-ind">Seguidores</span><span class="sc-vals"><span class="sc-b">11,400</span><span class="sc-arr">→</span><span class="sc-t">18,000</span><span class="sc-d d-up">+58%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Tasa interacción</span><span class="sc-vals"><span class="sc-b">2.4%</span><span class="sc-arr">→</span><span class="sc-t">5%</span><span class="sc-d d-up">+108%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Impresiones / mes</span><span class="sc-vals"><span class="sc-b">30K</span><span class="sc-arr">→</span><span class="sc-t">50K</span><span class="sc-d d-up">+67%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Clics link bio / mes</span><span class="sc-vals"><span class="sc-b">—</span><span class="sc-arr">→</span><span class="sc-t">500</span><span class="sc-d d-new">nuevo</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Crec. fuera PE y CO</span><span class="sc-vals"><span class="sc-b">—</span><span class="sc-arr">→</span><span class="sc-t">Prioritario</span><span class="sc-d d-new">nuevo KPI</span></span></div>
+      </div>
+      <div class="sc-card sc-tk">
+        <div class="sc-ch">TikTok</div>
+        <div class="sc-row"><span class="sc-ind">Seguidores</span><span class="sc-vals"><span class="sc-b">1,400</span><span class="sc-arr">→</span><span class="sc-t">5,000</span><span class="sc-d d-up">+257%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Videos / semana</span><span class="sc-vals"><span class="sc-b">irregular</span><span class="sc-arr">→</span><span class="sc-t">1 mínimo</span><span class="sc-d d-new">constancia</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Vistas / video</span><span class="sc-vals"><span class="sc-b">1,500</span><span class="sc-arr">→</span><span class="sc-t">3,000</span><span class="sc-d d-up">+100%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Interacciones / mes</span><span class="sc-vals"><span class="sc-b">1,780</span><span class="sc-arr">→</span><span class="sc-t">5,000</span><span class="sc-d d-up">+181%</span></span></div>
+      </div>
+      <div class="sc-card sc-fb">
+        <div class="sc-ch">Facebook — Fanpage</div>
+        <div class="sc-row"><span class="sc-ind">Seguidores</span><span class="sc-vals"><span class="sc-b">5,000</span><span class="sc-arr">→</span><span class="sc-t">7,500</span><span class="sc-d d-up">+50%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Alcance / mes</span><span class="sc-vals"><span class="sc-b">48K</span><span class="sc-arr">→</span><span class="sc-t">75K</span><span class="sc-d d-up">+56%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Interacciones / mes</span><span class="sc-vals"><span class="sc-b">8,800</span><span class="sc-arr">→</span><span class="sc-t">15,000</span><span class="sc-d d-up">+70%</span></span></div>
+      </div>
+      <div class="sc-card sc-li">
+        <div class="sc-ch">LinkedIn</div>
+        <div class="sc-row"><span class="sc-ind">Seguidores</span><span class="sc-vals"><span class="sc-b">4,100</span><span class="sc-arr">→</span><span class="sc-t">5,500</span><span class="sc-d d-up">+34%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Posts / mes</span><span class="sc-vals"><span class="sc-b">irregular</span><span class="sc-arr">→</span><span class="sc-t">3 constante</span><span class="sc-d d-new">estandarizar</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Impresiones / mes</span><span class="sc-vals"><span class="sc-b">4,400</span><span class="sc-arr">→</span><span class="sc-t">7,000</span><span class="sc-d d-up">+59%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Tasa interacción</span><span class="sc-vals"><span class="sc-b">9%</span><span class="sc-arr">→</span><span class="sc-t">12%</span><span class="sc-d d-up">+33%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Audiencia fuera PE</span><span class="sc-vals"><span class="sc-b">43%</span><span class="sc-arr">→</span><span class="sc-t">≥60%</span><span class="sc-d d-new">nuevo</span></span></div>
+      </div>
+      <div class="sc-card sc-wa">
+        <div class="sc-ch">WhatsApp — Activación</div>
+        <div class="sc-row"><span class="sc-ind">Retención grupos WA</span><span class="sc-vals"><span class="sc-b">96.2%</span><span class="sc-arr">→</span><span class="sc-t">≥95%</span><span class="sc-d d-eval">sostener</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Países activos</span><span class="sc-vals"><span class="sc-b">4/7</span><span class="sc-arr">→</span><span class="sc-t">7/7</span><span class="sc-d d-up">urgente</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Asistentes charla</span><span class="sc-vals"><span class="sc-b">~90</span><span class="sc-arr">→</span><span class="sc-t">200</span><span class="sc-d d-up">+122%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Graduadas → WA</span><span class="sc-vals"><span class="sc-b">—</span><span class="sc-arr">→</span><span class="sc-t">≥70%</span><span class="sc-d d-new">nuevo</span></span></div>
+        <div class="sc-row"><span class="sc-ind">NPS comunidad</span><span class="sc-vals"><span class="sc-b">79</span><span class="sc-arr">→</span><span class="sc-t">≥80</span><span class="sc-d d-eval">sostener</span></span></div>
+      </div>
+      <div class="sc-card sc-fbp">
+        <div class="sc-ch">FB Grupo Privado MSL</div>
+        <div class="sc-row"><span class="sc-ind">Mujeres activas / mes</span><span class="sc-vals"><span class="sc-b">15%</span><span class="sc-arr">→</span><span class="sc-t">30%</span><span class="sc-d d-up">x2</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Tasa de participación</span><span class="sc-vals"><span class="sc-b">6.2%</span><span class="sc-arr">→</span><span class="sc-t">20%</span><span class="sc-d d-up">+222%</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Graduadas → FB privado</span><span class="sc-vals"><span class="sc-b">—</span><span class="sc-arr">→</span><span class="sc-t">≥50%</span><span class="sc-d d-new">nuevo</span></span></div>
+        <div class="sc-row"><span class="sc-ind">% negocios Marketplace</span><span class="sc-vals"><span class="sc-b">0%</span><span class="sc-arr">→</span><span class="sc-t">≥40%</span><span class="sc-d d-new">nuevo</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Respuestas diagnóstico</span><span class="sc-vals"><span class="sc-b">—</span><span class="sc-arr">→</span><span class="sc-t">60/mes</span><span class="sc-d d-new">nuevo</span></span></div>
+      </div>
+    </div>
+    <div style="margin-top:14px;background:var(--gray-100);border-radius:14px;padding:18px 20px;border:1px solid var(--gray-300)">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--teal);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--gray-300)">Conversión digital → Programa MSL</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+        <div class="sc-row"><span class="sc-ind">Tráfico RRSS → Web / mes</span><span class="sc-vals"><span class="sc-b">—</span><span class="sc-arr">→</span><span class="sc-t">300</span><span class="sc-d d-new">nuevo</span></span></div>
+        <div class="sc-row"><span class="sc-ind">% inscritas de RRSS</span><span class="sc-vals"><span class="sc-b">—</span><span class="sc-arr">→</span><span class="sc-t">≥20%</span><span class="sc-d d-new">nuevo</span></span></div>
+        <div class="sc-row"><span class="sc-ind">Tráfico canal → Web MSL</span><span class="sc-vals"><span class="sc-b">—</span><span class="sc-arr">→</span><span class="sc-t">150/mes</span><span class="sc-d d-new">nuevo</span></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EN EVALUACIÓN -->
+<section id="evaluacion">
+  <div class="container">
+    <div class="sec-hd rv">
+      <div class="sec-tag"><span class="n">6</span>Iniciativa en evaluación</div>
+      <div class="eval-badge">⏸ No forma parte de la estrategia validada — en discusión</div>
+      <h2 class="sec-title">Comunidad <em>Abierta</em><br>de Emprendedoras</h2>
+      <p class="sec-lead">Una propuesta de captación para el período entre convocatorias. Aún pendiente de validación y decisión del equipo.</p>
+    </div>
+    <div class="eval-grid rv d1">
+      <div class="eval-what">
+        <h3>¿Qué problema resuelve?</h3>
+        <p>Entre convocatoria y convocatoria, no existe un mecanismo para captar y nutrir a mujeres interesadas. Llegan, ven contenido valioso y desaparecen porque no hay un destino que las retenga. La comunidad abierta sería ese espacio: captarlas, mantenerlas informadas y activarlas cuando haya convocatoria.</p>
+        <div class="eval-two">
+          <div class="eval-col">
+            <h4 class="yes">Lo que sería</h4>
+            <ul>
+              <li>Canal de difusión IG Broadcast: captación sin fricción</li>
+              <li>Charla abierta mensual: valor real antes del programa</li>
+              <li>Destino permanente entre convocatorias</li>
+              <li>Reutiliza contenido que ya se produce</li>
+            </ul>
+          </div>
+          <div class="eval-col">
+            <h4 class="no">Lo que no es</h4>
+            <ul>
+              <li>No reemplaza ni compite con el programa MSL</li>
+              <li>No ofrece los beneficios exclusivos de graduadas</li>
+              <li>No requiere moderación intensiva</li>
+              <li>No genera nuevo contenido — reutiliza activos existentes</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="ep-lbl">Hoja de ruta propuesta · haz clic para expandir</div>
+        <div class="eval-phases" id="ep-cont"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CIERRE -->
+<section id="cierre">
+  <div class="container">
+    <div class="cl-grid">
+      <div>
+        <h2 class="cl-title">El ecosistema está<br><em>listo</em> para construirse</h2>
+        <p class="cl-sub">La estrategia está definida. Las metas están acordadas. Los canales tienen roles claros, la comunidad tiene estructura propia y la iniciativa de captación tiene un camino de implementación. Lo que sigue es ejecución, medición y ajuste continuo.</p>
+        <div class="cl-meta">
+          <div class="cm-item"><div class="cm-dot"></div>Documento de trabajo · Fundación Belcorp · Mayo 2026</div>
+          <div class="cm-item"><div class="cm-dot"></div>Integra feedback de reunión de revisión con Fabiola</div>
+          <div class="cm-item"><div class="cm-dot"></div>Base para el rediseño del PPT ejecutivo · Confidencial</div>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="background:rgba(74,58,255,.12);border:1px solid rgba(74,58,255,.2);border-radius:14px;padding:22px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--purple-soft);margin-bottom:14px">Lo que define esta estrategia</div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:12px;color:rgba(255,255,255,.6);padding-left:12px;border-left:2px solid rgba(74,58,255,.4)">Instagram y TikTok como canales prioritarios · 75% del esfuerzo</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.6);padding-left:12px;border-left:2px solid rgba(74,58,255,.4)">WhatsApp activa · FB Grupo Privado retiene y conecta graduadas</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.6);padding-left:12px;border-left:2px solid rgba(74,58,255,.4)">LinkedIn con 3 posts/mes constantes basados en hitos reales</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.6);padding-left:12px;border-left:2px solid rgba(74,58,255,.4)">Un embudo medible que conecta RRSS con inscripciones al programa</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.6);padding-left:12px;border-left:2px solid rgba(74,58,255,.4)">De 15% → 30% de mujeres activas en la comunidad</div>
+          </div>
+        </div>
+        <div style="background:rgba(10,191,173,.08);border:1px solid rgba(10,191,173,.2);border-radius:14px;padding:22px">
+          <div style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--teal);margin-bottom:14px">En evaluación — no validada aún</div>
+          <div style="font-size:12px;color:rgba(255,255,255,.5);line-height:1.6">Comunidad Abierta de Emprendedoras: canal IG Broadcast + charla mensual como mecanismo de captación entre convocatorias. Requiere decisión del equipo para activar.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+/* PROGRESS */
+window.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  document.getElementById('prog').style.width=(h.scrollTop/(h.scrollHeight-h.clientHeight)*100)+'%';
+});
+
+/* NAV */
+document.querySelectorAll('section[id]').forEach(s=>{
+  new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting){document.querySelectorAll('.nav-link').forEach(l=>l.classList.remove('active'));const a=document.querySelector(`.nav-link[href="#${x.target.id}"]`);if(a)a.classList.add('active');}});},{threshold:.35}).observe(s);
+});
+
+/* REVEAL */
+document.querySelectorAll('.rv').forEach(el=>{
+  new IntersectionObserver(e=>{e.forEach(x=>{if(x.isIntersecting)x.target.classList.add('vis');});},{threshold:.1}).observe(el);
+});
+
+/* CHANNEL DATA */
+const CHS={
+  ig:{
+    badge:{bg:'#FFEEF5',color:'#C13584',text:'● Prioritario · 45% del esfuerzo'},
+    name:'Instagram',role:'Canal educativo de referencia para emprendedoras en LATAM. Crecimiento agresivo con foco en audiencias fuera de Perú y Colombia.',
+    freq:[['Frecuencia','2–3 posts / semana'],['Base actual','11,400 seguidores'],['Meta 2026','18,000 seguidores (+58%)']],
+    pillars:[
+      {t:'Perspectivas y tendencias de negocio',d:'Carrusel o Reel educativo · formato de alto guardado · la audiencia busca inspiración + información accionable sobre emprendimiento'},
+      {t:'Voz directa de beneficiarias',d:'Reel 30–60s en primera persona · sin guión institucional · las voces reales generan 25% más clics que el contenido institucional'},
+      {t:'Datos de impacto del programa',d:'4,410+ certificadas · 8 países · publicados como acción mensual de posicionamiento institucional. No son un KPI de contenido principal'},
+      {t:'Seguimiento post-programa',d:'Historias de mujeres graduadas integradas en el eje de voz de beneficiarias · no es un pilar independiente ni una meta prioritaria separada'},
+    ],
+    kpis:[
+      {l:'Seguidores',b:'11,400',v:'18,000',d:'+58%',dc:'d-up'},
+      {l:'Tasa de interacción',b:'~2.4%',v:'5%',d:'+108%',dc:'d-up'},
+      {l:'Impresiones / mes',b:'~30,000',v:'50,000',d:'+67%',dc:'d-up'},
+      {l:'Guardados / publicación',b:'~10',v:'Evaluar Q2',d:'en revisión',dc:'d-eval'},
+      {l:'Clics link bio / mes',b:'sin medir',v:'500',d:'nuevo KPI',dc:'d-new'},
+    ],
+    geoNote:'El crecimiento geográfico fuera de PE y CO es un KPI estratégico separado. Las metas por país (Chile, México, Bolivia, Ecuador y Rep. Dom.) se definen una vez que el equipo extrae la distribución de audiencia actual desde Analytics de Instagram.',
+    cls:''
+  },
+  tk:{
+    badge:{bg:'#F0FFF4',color:'#10B981',text:'● Prioritario · 30% del esfuerzo'},
+    name:'TikTok',role:'Canal de escala masiva y descubrimiento orgánico. Vehículo hacia metas 2030. El 70% del contenido reutiliza grabaciones de charlas existentes — sin producción adicional.',
+    freq:[['Frecuencia','1 video mínimo / semana'],['Base actual','1,400 seguidores'],['Meta 2026','5,000 seguidores (+257%)']],
+    pillars:[
+      {t:'Clips de charlas MSL (eje principal)',d:'60s · subtítulos obligatorios · gancho en los primeros 2 segundos · CTA al programa · representa el 70% del total de videos'},
+      {t:'Historia de emprendedora',d:'Mini-doc antes/después del programa · 1 por mes · watch time objetivo superior al 50% del video'},
+      {t:'Perspectiva de negocio',d:'Insight de una charla reformulado · menos de 60s · directo sin introducción larga · 1 por mes'},
+      {t:'¿Sabías que…? — dato sorpresa',d:'Texto animado sobre fondo simple · sin cámara · producible en 30 min · ideal para mantener la cadencia sin depender de grabaciones'},
+      {t:'Respuesta a comentario',d:'Contenido reactivo cuando surge el comentario adecuado · el algoritmo TK lo impulsa · cero producción previa'},
+    ],
+    kpis:[
+      {l:'Seguidores',b:'1,400',v:'5,000',d:'+257%',dc:'d-up'},
+      {l:'Videos / semana',b:'irregular',v:'1 mínimo',d:'constancia',dc:'d-new'},
+      {l:'Vistas promedio / video',b:'~1,500',v:'3,000',d:'+100%',dc:'d-up'},
+      {l:'Interacciones / mes',b:'~1,780',v:'5,000',d:'+181%',dc:'d-up'},
+    ],cls:'teal'
+  },
+  fb:{
+    badge:{bg:'#EFF6FF',color:'#1877F2',text:'● Mantenimiento · 15% del esfuerzo'},
+    name:'Facebook',role:'Dos espacios con funciones distintas: Fanpage pública para posicionamiento regional, y Grupo Privado exclusivo para la comunidad de graduadas MSL. El Marketplace vive en el Grupo Privado.',
+    freq:[['Fanpage','1 post / semana · contenido adaptado de IG'],['Grupo Privado MSL','Activar Q2 · exclusivo para graduadas'],['Grupo Abierto','A decidir — ver sección "En Evaluación"']],
+    pillars:[
+      {t:'Fanpage pública — posicionamiento regional',d:'Contenido adaptado de Instagram · datos de impacto · convocatorias MSL · hitos del programa · sin producción original exclusiva para Facebook'},
+      {t:'Grupo Privado MSL — comunidad activa',d:'Marketplace de emprendedoras · dinámicas semanales · pregunta de diagnóstico · charlas en vivo · Emprendedora del Mes'},
+    ],
+    kpis:[
+      {l:'Seguidores Fanpage',b:'5,000',v:'7,500',d:'+50%',dc:'d-up'},
+      {l:'Alcance orgánico / mes',b:'48,000',v:'75,000',d:'+56%',dc:'d-up'},
+      {l:'Interacciones / mes',b:'8,800',v:'15,000',d:'+70%',dc:'d-up'},
+      {l:'Grupo Privado MSL',b:'nuevo',v:'Activar Q2',d:'urgente',dc:'d-new'},
+    ],cls:'fb'
+  },
+  li:{
+    badge:{bg:'#EFF8FF',color:'#0A66C2',text:'● Orgánico · 10% del esfuerzo'},
+    name:'LinkedIn',role:'Reputación ante aliados, donantes, universidades y medios. Sin pauta. Frecuencia constante de 3 posts/mes: hitos de Fundación Belcorp por países cuando los hay, contenido de agencia los meses sin hitos relevantes.',
+    freq:[['Frecuencia','3 posts / mes · constante'],['Fuente principal','Hitos de Fundación Belcorp por países'],['Fuente complementaria','Contenido de agencia cuando no hay hitos'],['Meta geográfica','Perú ≤40% · Otros países ≥60%']],
+    pillars:[
+      {t:'Hitos de Fundación Belcorp por países',d:'Lanzamientos, alianzas, certificaciones, eventos y resultados por país · es la fuente principal de contenido · se publican en el mes que ocurren'},
+      {t:'Datos de impacto institucional',d:'4,410+ certificadas · 8 países · resultados del período · alta resonancia en audiencias de impacto social · 1 carrusel por trimestre'},
+      {t:'Contenido de agencia — meses sin hitos',d:'Los meses en que no hay hitos relevantes, la agencia genera contenido para mantener la constante de 3 posts/mes: perspectivas de emprendimiento femenino, tendencias LATAM, historias de transformación con cifras'},
+      {t:'Contenido geo-diversificado',d:'Priorizar casos, alianzas y resultados de Colombia, Chile, México y Bolivia para reducir la concentración actual del 57% en Perú · equilibrio geográfico como criterio de selección de temas'},
+    ],
+    kpis:[
+      {l:'Seguidores',b:'4,100',v:'5,500',d:'+34%',dc:'d-up'},
+      {l:'Posts / mes',b:'irregular',v:'3 constante',d:'estandarizar',dc:'d-new'},
+      {l:'Impresiones / mes',b:'~4,400',v:'7,000',d:'+59%',dc:'d-up'},
+      {l:'Tasa de interacción',b:'~9%',v:'12%',d:'+33%',dc:'d-up'},
+      {l:'% audiencia fuera de Perú',b:'~43%',v:'≥60%',d:'nuevo KPI',dc:'d-new'},
+    ],cls:'li'
+  }
+};
+
+function renderCh(k){
+  const c=CHS[k];
+  const pHtml=c.pillars.map(p=>`<div class="pc ${c.cls||''}"><div class="pc-t">${p.t}</div><div class="pc-d">${p.d}</div></div>`).join('');
+  const kHtml=c.kpis.map(x=>`<div class="kpi-row"><div class="kpi-l"><div class="kpi-name">${x.l}</div><div class="kpi-base">Base: ${x.b}</div></div><div class="kpi-r"><div class="kpi-val">${x.v}</div><div class="kpi-d ${x.dc}">${x.d}</div></div></div>`).join('');
+  const fHtml=c.freq.map(f=>`<div class="ch-freq"><span>${f[0]}</span><strong>${f[1]}</strong></div>`).join('');
+  const geoHtml=c.geoNote?`<div class="geo-box"><strong>Crecimiento geográfico — KPI separado</strong>${c.geoNote}</div>`:'';
+  return`
+    <div class="ch-top">
+      <div>
+        <div class="ch-badge" style="background:${c.badge.bg};color:${c.badge.color}">${c.badge.text}</div>
+        <div class="ch-name">${c.name}</div>
+        <div class="ch-role">${c.role}</div>
+      </div>
+      <div class="ch-freqs">${fHtml}</div>
+    </div>
+    <div class="ch-stab-bar">
+      <button class="ch-stab active" onclick="chTab('${k}','p',this)">Contenido y enfoque</button>
+      <button class="ch-stab" onclick="chTab('${k}','m',this)">Métricas y KPIs</button>
+    </div>
+    <div class="ch-body">
+      <div id="${k}-p" class="ch-subpanel active"><div class="pillar-grid">${pHtml}</div>${geoHtml}</div>
+      <div id="${k}-m" class="ch-subpanel"><div class="kpi-list">${kHtml}</div></div>
+    </div>`;
+}
+
+function showCh(k,btn){
+  document.querySelectorAll('.ch-tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('ch-container').innerHTML=renderCh(k);
+}
+document.getElementById('ch-container').innerHTML=renderCh('ig');
+
+function chTab(k,tab,btn){
+  btn.parentElement.querySelectorAll('.ch-stab').forEach(s=>s.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(`${k}-p`).classList.remove('active');
+  document.getElementById(`${k}-m`).classList.remove('active');
+  document.getElementById(`${k}-${tab}`).classList.add('active');
+}
+
+/* COM TABS */
+function comTab(ch,tab,btn){
+  btn.parentElement.querySelectorAll('.com-stab').forEach(s=>{s.className='com-stab';});
+  btn.classList.add(ch==='wa'?'aw':'af');
+  document.getElementById(`${ch}-c`).classList.remove('active');
+  document.getElementById(`${ch}-k`).classList.remove('active');
+  document.getElementById(`${ch}-${tab}`).classList.add('active');
+}
+
+/* PILLARS */
+function togglePil(hd){
+  const body=hd.nextElementSibling;
+  const open=hd.classList.contains('open');
+  document.querySelectorAll('.pil-hd').forEach(h=>{h.classList.remove('open');h.nextElementSibling.style.maxHeight='0';});
+  if(!open){hd.classList.add('open');body.style.maxHeight=body.scrollHeight+'px';}
+}
+
+/* FUNNEL */
+function toggleF(card){
+  const d=card.nextElementSibling;
+  const open=d.style.maxHeight&&d.style.maxHeight!=='0px';
+  document.querySelectorAll('.fdetail').forEach(x=>x.style.maxHeight='0');
+  if(!open)d.style.maxHeight=d.scrollHeight+'px';
+}
+
+/* EVAL PHASES */
+const EP=[
+  {t:'Activar canal IG Broadcast',s:'Semana 1–2 · Inmediato',b:'Crear el canal de difusión desde el perfil de la Fundación en Instagram. Definir nombre, mensaje de bienvenida y propuesta de valor. Añadir CTA en bio de IG y una historia fijada. Es el destino permanente entre convocatorias.'},
+  {t:'Primera charla abierta',s:'Semana 3–6 · Banco de voluntarios',b:'Definir temática con un experto del banco existente. Anunciar primero en el canal de IG. Transmitir en un espacio de Facebook. Publicar el clip en TK, IG Reels y reenviar por el canal. Una grabación genera múltiples piezas.'},
+  {t:'Cadencia mensual',s:'Q3 2026 · 1 charla + clips/mes',b:'1 charla abierta + 2–3 clips o perspectivas + 1 CTA a Web MSL por mes. Medir suscriptoras semanalmente. Evaluar al cierre de Q3 si la iniciativa genera retorno sobre el esfuerzo invertido.'},
+  {t:'Activación de convocatoria',s:'Cuando aplique · primer anuncio en canal',b:'El canal de IG anuncia la convocatoria MSL 24–48h antes que el feed público. Es el beneficio más concreto de estar suscrita. Medir cuántas postulantes mencionan el canal como fuente de descubrimiento.'},
+  {t:'Evaluación → decisión 2027',s:'Dic 2026 · ¿Profesionalizar?',b:'Revisar KPIs del año: suscriptoras, postulantes derivadas, valor real de la iniciativa vs. esfuerzo. Decidir si en 2027 se profesionaliza con landing propia, formulario de registro y segmentación por país.'},
+];
+
+document.getElementById('ep-cont').innerHTML=EP.map((p,i)=>`
+  <div class="eval-phase${i===0?' active':''}" onclick="toggleEp(this)">
+    <div class="ep-n">${i+1}</div>
+    <div style="flex:1">
+      <div class="ep-ti">${p.t}</div>
+      <div class="ep-su">${p.s}</div>
+      <div class="ep-bd"><div class="ep-bd-i">${p.b}</div></div>
+    </div>
+  </div>`).join('');
+
+setTimeout(()=>{
+  const f=document.querySelector('.eval-phase.active .ep-bd');
+  if(f)f.style.maxHeight=f.scrollHeight+'px';
+},100);
+
+function toggleEp(el){
+  const was=el.classList.contains('active');
+  document.querySelectorAll('.eval-phase').forEach(p=>{
+    p.classList.remove('active');
+    p.querySelector('.ep-bd').style.maxHeight='0';
+  });
+  if(!was){
+    el.classList.add('active');
+    const b=el.querySelector('.ep-bd');
+    b.style.maxHeight=b.scrollHeight+'px';
+  }
+}
+</script>
+</body>
+</html>

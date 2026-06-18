@@ -3,6 +3,7 @@ import { BarChart3, CalendarClock, CheckCircle2, Clock3 } from "lucide-react";
 interface WelcomeHeaderProps {
   userName: string;
   weeklyMinutes: number;
+  weeklyTargetMinutes: number;
   historicMinutes: number;
   monthlyMinutes: number;
   completedShifts: number;
@@ -12,13 +13,16 @@ interface WelcomeHeaderProps {
 export default function WelcomeHeader({
   userName,
   weeklyMinutes,
+  weeklyTargetMinutes,
   historicMinutes,
   monthlyMinutes,
   completedShifts,
   formatMinutes,
 }: WelcomeHeaderProps) {
-  const weeklyTargetMinutes = 2400;
-  const weeklyProgress = Math.min(100, Math.round((weeklyMinutes / weeklyTargetMinutes) * 100));
+  const hasWeeklyTarget = weeklyTargetMinutes > 0;
+  const weeklyProgress = hasWeeklyTarget
+    ? Math.min(100, Math.round((weeklyMinutes / weeklyTargetMinutes) * 100))
+    : 0;
 
   return (
     <div className="rounded-3xl border border-indigo-100 bg-gradient-to-r from-indigo-50 via-white to-violet-50 p-6 shadow-[0_16px_34px_rgba(79,70,229,0.14)]">
@@ -62,11 +66,20 @@ export default function WelcomeHeader({
       <div className="mt-4 rounded-xl border border-indigo-100 bg-white/80 p-3">
         <div className="flex items-center justify-between text-xs font-medium text-indigo-700">
           <span>Progreso semanal de horas</span>
-          <span>{weeklyProgress}% · Objetivo 40:00</span>
+          <span>
+            {hasWeeklyTarget
+              ? `${weeklyProgress}% · Objetivo ${formatMinutes(weeklyTargetMinutes)}`
+              : "Objetivo 00:00"}
+          </span>
         </div>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-indigo-100">
           <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" style={{ width: `${weeklyProgress}%` }} />
         </div>
+        {!hasWeeklyTarget ? (
+          <p className="mt-2 text-[11px] font-medium text-slate-500">
+            El objetivo empezará a contarse desde tu primer fichaje.
+          </p>
+        ) : null}
       </div>
     </div>
   );

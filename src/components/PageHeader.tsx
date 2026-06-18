@@ -11,6 +11,7 @@ const sectionLabels: Record<string, string> = {
   "/team": "Equipo",
   "/messages": "Mensajes",
   "/settings": "Configuración",
+  "/admin/clientes": "Clientes",
 };
 
 interface PageHeaderProps {

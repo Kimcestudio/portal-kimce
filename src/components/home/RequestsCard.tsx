@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import UserAvatar from "@/components/common/UserAvatar";
 import DashboardCard from "@/components/home/DashboardCard";
 import type { HomeRequest } from "@/lib/homeDashboardMocks";
@@ -9,8 +9,6 @@ interface RequestsCardProps {
   items: HomeRequest[];
 }
 
-const periods: HomeRequest["period"][] = ["Este mes", "2025"];
-
 const statusTone: Record<HomeRequest["status"], string> = {
   Pendiente: "bg-amber-100 text-amber-700",
   Aprobada: "bg-emerald-100 text-emerald-700",
@@ -18,8 +16,18 @@ const statusTone: Record<HomeRequest["status"], string> = {
 };
 
 export default function RequestsCard({ items }: RequestsCardProps) {
+  const periods = useMemo(() => {
+    const unique = Array.from(new Set(items.map((item) => item.period).filter(Boolean)));
+    return unique.length > 0 ? unique : ["Este mes"];
+  }, [items]);
   const [period, setPeriod] = useState<HomeRequest["period"]>("Este mes");
   const filtered = useMemo(() => items.filter((item) => item.period === period), [items, period]);
+
+  useEffect(() => {
+    if (!periods.includes(period) && periods.length > 0) {
+      setPeriod(periods[0]);
+    }
+  }, [period, periods]);
 
   return (
     <DashboardCard title={`Solicitudes (${filtered.length})`} subtitle="Solicitudes recientes y pendientes">

@@ -5,6 +5,7 @@ const tabs: Array<{ key: FinanceTabKey; label: string }> = [
   { key: "movimientos", label: "Movimientos" },
   { key: "pagos", label: "Pagos a colaboradores" },
   { key: "gastos", label: "Gastos" },
+  { key: "prestamos", label: "Reembolsos" },
   { key: "cuentas", label: "Cuentas & Caja" },
   { key: "cierre", label: "Cierre de mes" },
 ];

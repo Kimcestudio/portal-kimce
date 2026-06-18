@@ -5,23 +5,26 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:export": "next build && next export",
+    "build:export": "next build && mkdir -p out && find public -maxdepth 1 -name 'google*.html' -exec cp {} out/ \\;",
     "start": "next start",
     "lint": "next lint",
-    "export": "next export",
-    "deploy": "npm run build:export && firebase deploy --only hosting"
+    "export": "next build",
+    "deploy": "npm run build:export && firebase deploy --only hosting,functions"
   },
   "dependencies": {
     "firebase": "10.12.2",
     "lucide-react": "^0.469.0",
     "next": "14.2.5",
+    "pptxgenjs": "^4.0.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "recharts": "^2.12.7"
+    "recharts": "^2.12.7",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "25.0.9",
     "@types/react": "19.2.8",
+    "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.45",
     "tailwindcss": "^3.4.10",

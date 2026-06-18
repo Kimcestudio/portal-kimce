@@ -4,8 +4,13 @@ import "./globals.css";
 
 
 export const metadata: Metadata = {
-  title: "Dashboard | doc.track",
-  description: "Collaborator dashboard clone",
+  title: "Kimce App",
+  description: "Portal interno para colaboradores KIMCE.",
+  icons: {
+    icon: "/brand/logo-principal.png",
+    shortcut: "/brand/logo-principal.png",
+    apple: "/brand/logo-principal.png",
+  },
 };
 
 export default function RootLayout({

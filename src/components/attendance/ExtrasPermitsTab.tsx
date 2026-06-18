@@ -81,39 +81,39 @@ export default function ExtrasPermitsTab({
     <div className="space-y-4">
       <div className="grid gap-3 lg:grid-cols-2">
         <button
-          className="group flex items-center justify-between rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-left transition hover:border-primary/60 hover:bg-primary/15"
+          className="group flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left transition hover:border-indigo-300 hover:bg-indigo-100"
           onClick={onOpenExtra}
           type="button"
         >
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-white">
-              <PlusCircle size={18} />
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-white">
+              <PlusCircle size={16} />
             </span>
             <div>
-              <p className="text-sm font-semibold text-ink">Registrar actividad extra</p>
-              <p className="text-xs text-muted">Agregar horas adicionales o eventos urgentes.</p>
+              <p className="text-sm font-semibold text-slate-900">Registrar actividad extra</p>
+              <p className="text-xs text-slate-400">Agregar horas adicionales o eventos urgentes.</p>
             </div>
           </div>
-          <ChevronRight className="text-primary transition group-hover:translate-x-0.5" size={18} />
+          <ChevronRight className="text-indigo-500 transition group-hover:translate-x-0.5" size={16} />
         </button>
         <button
-          className="group flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-left transition hover:border-primary/40 hover:bg-primary/10"
+          className="group flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:bg-slate-50"
           onClick={onOpenRequest}
           type="button"
         >
           <div className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eef0ff] text-primary">
-              <CalendarPlus size={18} />
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+              <CalendarPlus size={16} />
             </span>
             <div>
-              <p className="text-sm font-semibold text-ink">Pedir libre / permiso</p>
-              <p className="text-xs text-muted">Vacaciones, permisos por horas o médico.</p>
+              <p className="text-sm font-semibold text-slate-900">Pedir libre / permiso</p>
+              <p className="text-xs text-slate-400">Vacaciones, permisos por horas o médico.</p>
             </div>
           </div>
-          <ChevronRight className="text-muted transition group-hover:translate-x-0.5" size={18} />
+          <ChevronRight className="text-slate-400 transition group-hover:translate-x-0.5" size={16} />
         </button>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white/80 px-4 py-2 text-xs text-muted shadow-soft">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">
         <span>
           {totalPendingCount > 0
             ? `Tienes ${totalPendingCount} solicitudes pendientes.`
@@ -121,7 +121,7 @@ export default function ExtrasPermitsTab({
         </span>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs font-semibold text-muted">
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
           <Filter size={14} />
           Filtrar
         </div>
@@ -129,8 +129,8 @@ export default function ExtrasPermitsTab({
           {filterOptions.map((option) => (
             <button
               key={option.value}
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                filter === option.value ? "bg-primary text-white" : "bg-white text-muted"
+              className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                filter === option.value ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
               }`}
               onClick={() => onFilterChange(option.value)}
               type="button"
@@ -140,12 +140,13 @@ export default function ExtrasPermitsTab({
           ))}
         </div>
       </div>
-      <div className="space-y-3">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="divide-y divide-slate-100">
         {filtered.slice(0, 6).map((item) => (
-          <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-white px-4 py-3 shadow-soft">
+          <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition hover:bg-slate-50">
             <div>
-              <p className="text-sm font-semibold text-ink">{item.type}</p>
-              <p className="text-xs text-muted">
+              <p className="text-sm font-semibold text-slate-900">{item.type}</p>
+              <p className="text-xs text-slate-400">
                 {item.date} · {item.detail}
               </p>
             </div>
@@ -153,7 +154,7 @@ export default function ExtrasPermitsTab({
               <span className={`rounded-full px-3 py-1 text-xs font-semibold ${mapStatus(item.status)}`}>
                 {item.status}
               </span>
-              <button className="flex items-center gap-1 text-xs font-semibold text-primary">
+              <button className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:underline">
                 {item.actionLabel}
                 <ChevronRight size={14} />
               </button>
@@ -161,10 +162,11 @@ export default function ExtrasPermitsTab({
           </div>
         ))}
         {filtered.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-line bg-white px-4 py-6 text-center text-sm text-muted">
+          <div className="px-4 py-8 text-center text-sm text-slate-400">
             Aún no tienes solicitudes. Registra una actividad extra o pide un permiso.
           </div>
         ) : null}
+        </div>
       </div>
     </div>
   );

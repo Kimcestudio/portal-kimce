@@ -11,6 +11,7 @@ import {
   Wallet,
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { readFileAsDataUrl } from "@/services/firebase/media";
@@ -100,7 +101,16 @@ export default function SidebarCategories() {
 
   return (
     <aside className="flex h-full w-64 shrink-0 flex-col rounded-[28px] border border-white/10 bg-gradient-to-b from-[#10164f] via-[#0d1445] to-[#070c32] p-5 text-white shadow-[0_16px_36px_rgba(15,23,42,0.35)]">
-      <div className="mb-8 text-lg font-semibold text-white">doc.track</div>
+      <div className="mb-8">
+        <Image
+          src="/brand/logo-horizontal-blanco.png"
+          alt="Kimce Studio"
+          width={150}
+          height={34}
+          className="h-8 w-auto object-contain"
+          priority
+        />
+      </div>
       <div className="flex flex-1 flex-col gap-6">
         <Section title="GENERAL" items={general} />
         {admin.length > 0 ? <Section title="ADMIN" items={admin} /> : null}

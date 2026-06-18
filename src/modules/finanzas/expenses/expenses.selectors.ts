@@ -1,5 +1,10 @@
 import type { Expense } from "@/lib/finance/types";
 
+const getReimbursementAmount = (expense: Expense) => {
+  const configuredAmount = expense.devolucionMonto ?? 0;
+  return configuredAmount > 0 ? configuredAmount : expense.monto;
+};
+
 export const calculateVisibleExpensesTotal = (expenses: Expense[]) =>
   expenses.reduce((sum, expense) => sum + expense.monto, 0);
 
@@ -12,5 +17,21 @@ export const calculateExpenseKpis = (expenses: Expense[]) => {
     (sum, expense) => sum + (expense.tipoGasto === "VARIABLE" ? expense.monto : 0),
     0,
   );
-  return { total, paid, pending, fixed, variable };
+  const reimbursablePending = expenses.reduce(
+    (sum, expense) =>
+      sum +
+      (expense.requiereDevolucion && expense.estadoReembolso !== "reimbursed"
+        ? getReimbursementAmount(expense)
+        : 0),
+    0,
+  );
+  const reimbursed = expenses.reduce(
+    (sum, expense) =>
+      sum +
+      (expense.requiereDevolucion && expense.estadoReembolso === "reimbursed"
+        ? getReimbursementAmount(expense)
+        : 0),
+    0,
+  );
+  return { total, paid, pending, fixed, variable, reimbursablePending, reimbursed };
 };

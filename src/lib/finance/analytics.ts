@@ -6,7 +6,7 @@ import type {
   FinanceStatus,
   TransferMovement,
 } from "@/lib/finance/types";
-import { getMonthKeyFromDate } from "@/lib/finance/utils";
+import { getMonthKey, getMonthKeyFromDate } from "@/lib/finance/utils";
 
 function toMonthKey(value: unknown): string | null {
   if (!value) return null;
@@ -17,6 +17,9 @@ function toMonthKey(value: unknown): string | null {
 
   if (typeof value === "string") {
     const raw = value.trim();
+    const fullDateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (fullDateMatch) return `${fullDateMatch[1]}-${fullDateMatch[2]}`;
+
     const keyMatch = raw.match(/^(\d{4})-(\d{2})$/);
     if (keyMatch) return `${keyMatch[1]}-${keyMatch[2]}`;
 
@@ -69,9 +72,37 @@ function paymentMatchesPeriodoOnly(payment: CollaboratorPayment, selectedMonth: 
   const selectedMonthKey = toMonthKey(selectedMonth);
   if (!selectedMonthKey) return true;
 
+  return getPaymentAccrualMonthKey(payment) === selectedMonthKey;
+}
+
+function getPaymentAccrualMonthKey(payment: CollaboratorPayment) {
   const rawPeriodo = typeof payment.periodo === "string" ? payment.periodo.trim() : "";
-  if (!rawPeriodo) return false;
-  return toMonthKey(rawPeriodo) === selectedMonthKey;
+  return toMonthKey(rawPeriodo) ?? payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
+}
+
+function getPaymentCashMonthKey(payment: CollaboratorPayment) {
+  return getPaymentAccrualMonthKey(payment);
+}
+
+function isReimbursableExpense(expense: Expense) {
+  return Boolean(expense.requiereDevolucion);
+}
+
+function getReimbursementAmount(expense: Expense) {
+  const configuredAmount = expense.devolucionMonto ?? 0;
+  return configuredAmount > 0 ? configuredAmount : expense.monto;
+}
+
+function getRecoveredReimbursementForMonth(
+  expense: Expense,
+  month: string | Date | { month: number; year: number },
+) {
+  if (!isReimbursableExpense(expense)) return 0;
+  if (expense.estadoReembolso !== "reimbursed") return 0;
+  const receivedMonthKey = toMonthKey(expense.fechaReembolsoRecibido ?? null);
+  const selectedMonthKey = toMonthKey(month);
+  if (!receivedMonthKey || !selectedMonthKey || receivedMonthKey !== selectedMonthKey) return 0;
+  return getReimbursementAmount(expense);
 }
 
 export function filterMovements(movements: FinanceMovement[], filters: FinanceFilters) {
@@ -112,7 +143,11 @@ export function calcKpis(
   const monthExpensesAll = expenses.filter((expense) => {
     const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
     const selectedMonthKey = toMonthKey(month);
-    return expenseMonthKey === selectedMonthKey && (account === "all" || expense.cuentaOrigen === account);
+    return (
+      expenseMonthKey === selectedMonthKey &&
+      !isReimbursableExpense(expense) &&
+      (account === "all" || expense.cuentaOrigen === account)
+    );
   });
   const monthExpenses = includeCancelled
     ? monthExpensesAll
@@ -150,17 +185,28 @@ export function getMonthlyProjection(
   expenses: Expense[],
   payments: CollaboratorPayment[],
   month: string | Date | { month: number; year: number },
+  account: FinanceFilters["account"] = "all",
 ) {
   const selectedMonthKey = toMonthKey(month);
   const periodKey = toPeriodo(month) ?? "--/----";
   const monthMovements = movements.filter(
-    (movement) => movement.monthKey === selectedMonthKey,
+    (movement) =>
+      movement.monthKey === selectedMonthKey &&
+      (account === "all" || movement.accountDestination === account),
   );
   const monthExpenses = expenses.filter((expense) => {
     const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
-    return expenseMonthKey === selectedMonthKey;
+    return (
+      expenseMonthKey === selectedMonthKey &&
+      !isReimbursableExpense(expense) &&
+      (account === "all" || expense.cuentaOrigen === account)
+    );
   });
-  const monthPayments = payments.filter((payment) => paymentMatchesPeriodoOnly(payment, month));
+  const monthPayments = payments.filter(
+    (payment) =>
+      paymentMatchesPeriodoOnly(payment, month) &&
+      (account === "all" || payment.cuentaOrigen === account),
+  );
   const incomePaid = sumBy(monthMovements, (item) =>
     isPaid(item.status) ? item.tax?.total ?? item.amount : 0,
   );
@@ -221,24 +267,43 @@ export function getMonthlyStatusMetrics(
   payments: CollaboratorPayment[],
   transfers: TransferMovement[],
   month: string | Date | { month: number; year: number },
+  account: FinanceFilters["account"] = "all",
 ) {
   const selectedMonthKey = toMonthKey(month);
   const monthIncomePaid = sumBy(movements, (movement) => {
     if (movement.monthKey !== selectedMonthKey) return 0;
     if (!isPaid(movement.status)) return 0;
+    if (account !== "all" && movement.accountDestination !== account) return 0;
     return movement.tax?.total ?? movement.amount;
   });
 
   const monthExpensesPaid = sumBy(expenses, (expense) => {
     const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
     if (expenseMonthKey !== selectedMonthKey) return 0;
+    if (isReimbursableExpense(expense)) return 0;
     if (!isPaid(expense.status)) return 0;
+    if (account !== "all" && expense.cuentaOrigen !== account) return 0;
     return expense.monto;
   });
 
+  const reimbursementCashOut = sumBy(expenses, (expense) => {
+    const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
+    if (expenseMonthKey !== selectedMonthKey) return 0;
+    if (!isReimbursableExpense(expense)) return 0;
+    if (!isPaid(expense.status)) return 0;
+    if (account !== "all" && expense.cuentaOrigen !== account) return 0;
+    return expense.monto;
+  });
+
+  const reimbursementCashIn = sumBy(expenses, (expense) => {
+    if (account !== "all" && expense.cuentaOrigen !== account) return 0;
+    return getRecoveredReimbursementForMonth(expense, month);
+  });
+
   const collaboratorPaymentsPaid = sumBy(payments, (payment) => {
-    if (!paymentMatchesPeriodoOnly(payment, month)) return 0;
+    if (getPaymentCashMonthKey(payment) !== selectedMonthKey) return 0;
     if (!isPaid(payment.status)) return 0;
+    if (account !== "all" && payment.cuentaOrigen !== account) return 0;
     return payment.montoFinal;
   });
 
@@ -247,10 +312,23 @@ export function getMonthlyStatusMetrics(
       const transferMonthKey = getMonthKeyFromDate(transfer.fecha);
       if (transferMonthKey !== selectedMonthKey) return totals;
       if (!isPaid(transfer.status)) return totals;
-      if (transfer.tipoMovimiento === "INGRESO_CAJA") {
+      if (account === "all") {
+        if (transfer.tipoMovimiento === "INGRESO_CAJA") {
+          totals.in += transfer.monto;
+        }
+        if (transfer.tipoMovimiento === "SALIDA_CAJA") {
+          totals.out += transfer.monto;
+        }
+        return totals;
+      }
+      if (transfer.tipoMovimiento === "TRANSFERENCIA") {
+        if (transfer.cuentaOrigen === account) totals.out += transfer.monto;
+        if (transfer.cuentaDestino === account) totals.in += transfer.monto;
+      }
+      if (transfer.tipoMovimiento === "INGRESO_CAJA" && transfer.cuentaDestino === account) {
         totals.in += transfer.monto;
       }
-      if (transfer.tipoMovimiento === "SALIDA_CAJA") {
+      if (transfer.tipoMovimiento === "SALIDA_CAJA" && transfer.cuentaOrigen === account) {
         totals.out += transfer.monto;
       }
       return totals;
@@ -261,14 +339,16 @@ export function getMonthlyStatusMetrics(
   const expensesPaid = monthExpensesPaid + collaboratorPaymentsPaid;
   const netIncome = monthIncomePaid - expensesPaid;
   const margin = monthIncomePaid > 0 ? (netIncome / monthIncomePaid) * 100 : 0;
-  const cashIn = monthIncomePaid + transferTotals.in;
-  const cashOut = expensesPaid + transferTotals.out;
+  const cashIn = monthIncomePaid + reimbursementCashIn + transferTotals.in;
+  const cashOut = expensesPaid + reimbursementCashOut + transferTotals.out;
 
   return {
     incomePaid: monthIncomePaid,
     expensesPaid,
     collaboratorPaymentsPaid,
     baseExpensesPaid: monthExpensesPaid,
+    reimbursementCashOut,
+    reimbursementCashIn,
     transferIn: transferTotals.in,
     transferOut: transferTotals.out,
     netIncome,
@@ -284,6 +364,7 @@ export function computeCashFlow({
   transfers,
   monthKey,
   year,
+  endMonth,
   account = "all",
 }: {
   movements: FinanceMovement[];
@@ -292,12 +373,20 @@ export function computeCashFlow({
   transfers: TransferMovement[];
   monthKey?: string;
   year?: number;
+  endMonth?: number;
   account?: FinanceFilters["account"];
 }) {
   const matchesPeriod = (value: string | null | undefined) => {
     if (!value) return false;
     if (monthKey) return value === monthKey;
-    if (year) return value.startsWith(`${year}-`);
+    if (year) {
+      if (!value.startsWith(`${year}-`)) return false;
+      if (endMonth) {
+        const lastMonthKey = `${year}-${String(endMonth).padStart(2, "0")}`;
+        return value <= lastMonthKey;
+      }
+      return true;
+    }
     return true;
   };
 
@@ -311,13 +400,32 @@ export function computeCashFlow({
   const expensesPaid = sumBy(expenses, (expense) => {
     const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
     if (!matchesPeriod(expenseMonthKey)) return 0;
+    if (isReimbursableExpense(expense)) return 0;
     if (!isPaid(expense.status)) return 0;
     if (account !== "all" && expense.cuentaOrigen !== account) return 0;
     return expense.monto;
   });
 
+  const reimbursementCashOut = sumBy(expenses, (expense) => {
+    const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
+    if (!matchesPeriod(expenseMonthKey)) return 0;
+    if (!isReimbursableExpense(expense)) return 0;
+    if (!isPaid(expense.status)) return 0;
+    if (account !== "all" && expense.cuentaOrigen !== account) return 0;
+    return expense.monto;
+  });
+
+  const reimbursementCashIn = sumBy(expenses, (expense) => {
+    if (account !== "all" && expense.cuentaOrigen !== account) return 0;
+    const receivedMonthKey = toMonthKey(expense.fechaReembolsoRecibido ?? null);
+    if (!receivedMonthKey || !matchesPeriod(receivedMonthKey)) return 0;
+    if (!isReimbursableExpense(expense)) return 0;
+    if (expense.estadoReembolso !== "reimbursed") return 0;
+    return getReimbursementAmount(expense);
+  });
+
   const paymentsPaid = sumBy(payments, (payment) => {
-    const paymentMonthKey = payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
+    const paymentMonthKey = getPaymentCashMonthKey(payment);
     if (!matchesPeriod(paymentMonthKey)) return 0;
     if (!isPaid(payment.status)) return 0;
     if (account !== "all" && payment.cuentaOrigen !== account) return 0;
@@ -353,12 +461,14 @@ export function computeCashFlow({
     { in: 0, out: 0 },
   );
 
-  const cashIn = incomePaid + transferTotals.in;
-  const cashOut = expensesPaid + paymentsPaid + transferTotals.out;
+  const cashIn = incomePaid + reimbursementCashIn + transferTotals.in;
+  const cashOut = expensesPaid + paymentsPaid + reimbursementCashOut + transferTotals.out;
   return {
     incomePaid,
     expensesPaid,
     paymentsPaid,
+    reimbursementCashOut,
+    reimbursementCashIn,
     transferIn: transferTotals.in,
     transferOut: transferTotals.out,
     cashIn,
@@ -382,22 +492,34 @@ export function computeYearToDateTotals(
 
   const filteredMovements = movements.filter((movement) => {
     if (!isWithinRange(movement.monthKey)) return false;
+    if (movement.status === "cancelled") return false;
     return account === "all" || movement.accountDestination === account;
   });
   const filteredExpenses = expenses.filter((expense) => {
     const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
     if (!expenseMonthKey || !isWithinRange(expenseMonthKey)) return false;
+    if (isReimbursableExpense(expense)) return false;
+    if (expense.status === "cancelled") return false;
     return account === "all" || expense.cuentaOrigen === account;
   });
   const filteredPayments = payments.filter((payment) => {
-    const paymentMonthKey = payment.monthKey ?? getMonthKeyFromDate(payment.fechaPago);
+    const paymentMonthKey = getPaymentAccrualMonthKey(payment);
     if (!paymentMonthKey || !isWithinRange(paymentMonthKey)) return false;
+    if (payment.status === "cancelled") return false;
     return account === "all" || payment.cuentaOrigen === account;
   });
-  const totalIncome = sumBy(filteredMovements, (movement) => movement.tax?.total ?? movement.amount);
+  const totalIncome = sumBy(filteredMovements, (movement) =>
+    isPaid(movement.status) || movement.status === "pending"
+      ? movement.tax?.total ?? movement.amount
+      : 0,
+  );
   const totalExpenses =
-    sumBy(filteredExpenses, (expense) => expense.monto) +
-    sumBy(filteredPayments, (payment) => payment.montoFinal);
+    sumBy(filteredExpenses, (expense) =>
+      isPaid(expense.status) || expense.status === "pending" ? expense.monto : 0,
+    ) +
+    sumBy(filteredPayments, (payment) =>
+      isPaid(payment.status) || payment.status === "pending" ? payment.montoFinal : 0,
+    );
   const net = totalIncome - totalExpenses;
   const margin = totalIncome > 0 ? (net / totalIncome) * 100 : 0;
   return {
@@ -428,10 +550,14 @@ export function computeMonthlySeries(
     );
     const monthExpenses = expenses.filter((expense) => {
       const expenseMonthKey = expense.monthKey ?? getMonthKeyFromDate(expense.fechaGasto);
-      return expenseMonthKey === monthKey && (account === "all" || expense.cuentaOrigen === account);
+      return (
+        expenseMonthKey === monthKey &&
+        !isReimbursableExpense(expense) &&
+        (account === "all" || expense.cuentaOrigen === account)
+      );
     });
     const monthPayments = payments.filter((payment) => {
-      const paymentMonthKey = toMonthKey(payment.periodo);
+      const paymentMonthKey = getPaymentAccrualMonthKey(payment);
       return paymentMonthKey === monthKey && (account === "all" || payment.cuentaOrigen === account);
     });
     const incomePaid = sumBy(monthMovements, (movement) =>
@@ -523,7 +649,8 @@ export function computeAlerts(
 }
 
 function isPaid(status: FinanceStatus) {
-  return status !== "pending";
+  // Compatibilidad: algunos datos viejos guardaron "cancelled" donde en realidad querían decir "pagado".
+  return status === "paid" || status === "cancelled";
 }
 
 function buildMonthKeys(baseMonthKey: string, lastN: number) {

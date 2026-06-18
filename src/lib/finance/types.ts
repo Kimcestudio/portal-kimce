@@ -1,4 +1,4 @@
-export type FinanceStatus = "pending" | "cancelled";
+export type FinanceStatus = "pending" | "paid" | "cancelled";
 
 export type FinanceAccountName = "LUIS" | "ALONDRA" | "KIMCE";
 
@@ -111,6 +111,8 @@ export type ExpenseCategory =
   | "TRASLADO"
   | "OTROS";
 
+export type ExpenseRefundStatus = "pending" | "reimbursed";
+
 export interface Expense {
   id: string;
   tipoGasto: ExpenseType;
@@ -128,6 +130,10 @@ export interface Expense {
   status: FinanceStatus;
   requiereDevolucion: boolean;
   devolucionMonto?: number | null;
+  clienteReembolso?: string | null;
+  estadoReembolso?: ExpenseRefundStatus | null;
+  fechaEsperadaReembolso?: string | null;
+  fechaReembolsoRecibido?: string | null;
   referencia?: string | null;
   notas?: string | null;
   isRecurring?: boolean | null;
@@ -172,5 +178,6 @@ export type FinanceTabKey =
   | "movimientos"
   | "pagos"
   | "gastos"
+  | "prestamos"
   | "cuentas"
   | "cierre";

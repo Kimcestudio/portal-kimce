@@ -37,6 +37,25 @@ interface AuthContextValue {
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
+function buildDirectoryProfile(profile: Partial<UserProfile> & { uid: string; email: string }) {
+  return {
+    uid: profile.uid,
+    email: profile.email,
+    displayName: profile.displayName ?? "Usuario",
+    photoURL: profile.photoURL ?? "",
+    role: profile.role ?? "collab",
+    position: profile.position ?? "",
+    area: profile.area ?? null,
+    workScheduleId: profile.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
+    active: profile.active ?? profile.isActive ?? true,
+    approved: profile.approved ?? false,
+    isActive: profile.isActive ?? true,
+    birthDate: profile.birthDate ?? "",
+    employmentStartDate: profile.employmentStartDate ?? "",
+    updatedAt: serverTimestamp(),
+  };
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -49,6 +68,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return stored === "admin" ? "admin" : "collaborator";
   });
   const adminAllowlist = ["kimcestudio@gmail.com"]; // Actualiza esta lista para el bootstrap admin.
+
+  const updatePresence = async (uid: string, status: "online" | "offline") => {
+    try {
+      await setDoc(
+        doc(db, "userDirectory", uid),
+        {
+          onlineStatus: status,
+          lastSeenAt: new Date().toISOString(),
+          presenceUpdatedAt: serverTimestamp(),
+        },
+        { merge: true },
+      );
+    } catch (error) {
+      if (process.env.NODE_ENV !== "production") {
+        console.log("[presence] update failed", error);
+      }
+    }
+  };
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -130,6 +167,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           };
 
           upsertUser(nextProfile);
+          await setDoc(doc(db, "userDirectory", nextProfile.uid), buildDirectoryProfile(nextProfile), {
+            merge: true,
+          });
         }
       } catch (error) {
         if (process.env.NODE_ENV !== "production") {
@@ -203,6 +243,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         position: newProfile.position,
         workScheduleId: newProfile.workScheduleId,
       });
+      await setDoc(
+        doc(db, "userDirectory", newProfile.uid),
+        buildDirectoryProfile(newProfile),
+        { merge: true },
+      );
       upsertUser(newProfile);
       throw new Error("Tu acceso está pendiente de aprobación.");
     }
@@ -259,6 +304,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cci: data.cci ?? existingProfile?.cci,
     };
     upsertUser(mergedProfile);
+    await setDoc(
+      doc(db, "userDirectory", mergedProfile.uid),
+      buildDirectoryProfile(mergedProfile),
+      { merge: true },
+    );
     setStoredSession({ uid: mergedProfile.uid, email: mergedProfile.email });
     setAuthUser({ uid: mergedProfile.uid, email: mergedProfile.email });
     setProfile(mergedProfile);
@@ -266,6 +316,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOutUser = async () => {
+    if (profile?.uid) {
+      await updatePresence(profile.uid, "offline");
+    }
     signOut();
     setAuthUser(null);
     setProfile(null);
@@ -300,6 +353,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       { merge: true },
     );
+    void setDoc(
+      doc(db, "userDirectory", profile.uid),
+      buildDirectoryProfile({
+        ...nextProfile,
+        ...payload,
+        uid: profile.uid,
+        email: (payload.email as string | undefined) ?? nextProfile.email,
+      }),
+      { merge: true },
+    );
   };
 
   const value = useMemo(
@@ -328,6 +391,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       viewMode,
     });
   }, [pathname, authUser, profile, viewMode]);
+
+  useEffect(() => {
+    if (!profile?.uid || profile.isActive === false || profile.approved === false) return;
+    if (typeof window === "undefined") return;
+
+    const syncOnline = () => {
+      const status = document.visibilityState === "visible" ? "online" : "offline";
+      void updatePresence(profile.uid, status);
+    };
+    const syncOffline = () => {
+      void updatePresence(profile.uid, "offline");
+    };
+
+    syncOnline();
+    const interval = window.setInterval(syncOnline, 60_000);
+    document.addEventListener("visibilitychange", syncOnline);
+    window.addEventListener("focus", syncOnline);
+    window.addEventListener("pagehide", syncOffline);
+
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", syncOnline);
+      window.removeEventListener("focus", syncOnline);
+      window.removeEventListener("pagehide", syncOffline);
+    };
+  }, [profile?.uid, profile?.isActive, profile?.approved]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

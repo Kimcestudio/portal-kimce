@@ -15,8 +15,11 @@ import {
   formatISODate,
   getWeekDates,
   getWeekStartMonday,
+  getFirstRecordDateISO,
+  isDateOnOrAfterStart,
   minutesToHHMM,
   expectedMinutesForDate,
+  expectedMinutesForDatesFromStart,
 } from "@/lib/attendanceUtils";
 import { listWorkSchedules } from "@/services/firebase/db";
 import { DEFAULT_WORK_SCHEDULES } from "@/services/firebase/workSchedules";
@@ -155,13 +158,12 @@ export default function AttendancePage() {
   const breakMinutes = computeBreakMinutes(todayRecord);
   const totalMinutes = todayRecord?.totalMinutes ?? 0;
 
-  const expectedMinutesWeek = weekDates.reduce(
-    (total, date) => total + expectedMinutesForDate(date, schedule),
-    0
-  );
+  const allUserRecords = listAllRecords(userId);
+  const firstRecordDateISO = getFirstRecordDateISO(allUserRecords);
+  const expectedMinutesWeek = expectedMinutesForDatesFromStart(weekDates, schedule, firstRecordDateISO);
   const workedMinutesWeek = weekRecords.reduce((total, record) => total + record.totalMinutes, 0);
   const diffMinutes = workedMinutesWeek - expectedMinutesWeek;
-  const totalBalanceMinutes = listAllRecords(userId).reduce((sum, record) => {
+  const totalBalanceMinutes = allUserRecords.reduce((sum, record) => {
     const recordDate = new Date(`${record.date}T00:00:00`);
     return sum + (record.totalMinutes - expectedMinutesForDate(recordDate, schedule));
   }, 0);
@@ -270,7 +272,9 @@ export default function AttendancePage() {
     .map((date) => {
       const dateISO = formatISODate(date);
       const record = weekRecords.find((item) => item.date === dateISO);
-      const targetHours = expectedMinutesForDate(date, schedule) / 60;
+      const targetHours = isDateOnOrAfterStart(dateISO, firstRecordDateISO)
+        ? expectedMinutesForDate(date, schedule) / 60
+        : 0;
       return {
         label: date.toLocaleDateString("es-ES", { weekday: "short" }),
         hours: record ? Math.round((record.totalMinutes / 60) * 10) / 10 : 0,

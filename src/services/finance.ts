@@ -20,7 +20,7 @@ import type {
   TransferMovement,
 } from "@/lib/finance/types";
 import { financeRefs } from "@/lib/finance/refs";
-import { formatDateOnly, getMonthKeyFromDate, getMonthKey } from "@/lib/finance/utils";
+import { formatDateOnly, getMonthKeyFromDate, getMonthKey, parseMonthKeyLike } from "@/lib/finance/utils";
 
 type FinanceUnsubscribe = () => void;
 
@@ -320,6 +320,10 @@ function toPeriodo(monthKey: string) {
   return `${month}/${year}`;
 }
 
+function getMonthKeyFromPeriodo(periodo?: string | null) {
+  return parseMonthKeyLike(periodo);
+}
+
 export async function getPreviousMonthCopyCandidates(currentMonthKey: string) {
   const previousMonthKey = getPreviousMonthKey(currentMonthKey);
   const previousPeriodo = toPeriodo(previousMonthKey);
@@ -526,9 +530,11 @@ export async function createCollaboratorPayment(
 ) {
   const now = new Date().toISOString();
   const dateOnly = formatDateOnly(input.fechaPago) ?? formatDateOnly(new Date()) ?? "";
+  const monthKey = getMonthKeyFromPeriodo(input.periodo) ?? getMonthKeyFromDate(dateOnly) ?? getMonthKey(new Date());
   const payment: Omit<CollaboratorPayment, "id"> = {
     ...input,
     fechaPago: dateOnly,
+    monthKey,
     status: normalizeStatus(input.status),
     createdAt: now,
     updatedAt: now,
@@ -666,12 +672,31 @@ export async function deleteTransfer(id: string) {
 }
 
 function normalizeStatus(value: unknown): FinanceStatus {
-  if (value === "pending" || value === "cancelled") {
-    return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "pending" || normalized === "pendiente") return "pending";
+    if (
+      normalized === "paid" ||
+      normalized === "pagado" ||
+      normalized === "pagada" ||
+      normalized === "approved" ||
+      normalized === "aprobado" ||
+      normalized === "aprobada" ||
+      normalized === "completed" ||
+      normalized === "completado" ||
+      normalized === "completada"
+    ) {
+      return "paid";
+    }
+    if (
+      normalized === "cancelled" ||
+      normalized === "canceled" ||
+      normalized === "cancelado" ||
+      normalized === "cancelada"
+    ) {
+      return "cancelled";
+    }
   }
-  if (value === "PENDIENTE") return "pending";
-  if (value === "CANCELADO") return "cancelled";
-  if (value === "PAGADO" || value === "PAGADA") return "cancelled";
   return "pending";
 }
 
@@ -706,11 +731,14 @@ function normalizeCollaboratorPaymentUpdates(
   updates: Partial<Omit<CollaboratorPayment, "id" | "createdAt" | "updatedAt">>,
 ) {
   const fechaPago = updates.fechaPago ? formatDateOnly(updates.fechaPago) ?? updates.fechaPago : undefined;
+  const monthKey =
+    getMonthKeyFromPeriodo(updates.periodo) ??
+    (fechaPago ? getMonthKeyFromDate(fechaPago) ?? undefined : undefined);
   return {
     ...updates,
     fechaPago,
     status: updates.status ? normalizeStatus(updates.status) : undefined,
-    monthKey: fechaPago ? getMonthKeyFromDate(fechaPago) ?? undefined : undefined,
+    monthKey,
   };
 }
 
@@ -761,9 +789,15 @@ function normalizeTransfer(transfer: TransferMovement) {
 function normalizeCollaboratorPayment(payment: CollaboratorPayment & { estado?: FinanceStatus }) {
   const fechaPago = formatDateOnly(payment.fechaPago) ?? payment.fechaPago;
   const status = normalizeStatus(payment.status ?? payment.estado);
+  const monthKey =
+    getMonthKeyFromPeriodo(payment.periodo) ??
+    payment.monthKey ??
+    getMonthKeyFromDate(fechaPago) ??
+    getMonthKey(new Date());
   return {
     ...payment,
     fechaPago,
     status,
+    monthKey,
   };
 }

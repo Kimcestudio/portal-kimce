@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bell, CalendarClock, Pencil, Plus, Power, Sparkles, Trash2 } from "lucide-react";
+import { Bell, CalendarClock, Pencil, Plus, Power, RefreshCcw, Sparkles, Trash2 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/components/auth/AuthProvider";
 import type {
@@ -251,6 +251,24 @@ export default function AdminAnnouncementsPage() {
     }
   };
 
+  const handleRelaunch = async (item: Announcement) => {
+    try {
+      await updateAnnouncement(item.id, {
+        updatedBy: user?.uid ?? null,
+      });
+      setToast({ tone: "success", message: "Anuncio relanzado. Volverá a mostrarse como una nueva versión." });
+    } catch (error) {
+      const firestoreError = error as { code?: string };
+      setToast({
+        tone: "error",
+        message:
+          firestoreError.code === "permission-denied"
+            ? "No tienes permisos para relanzar anuncios."
+            : "No se pudo relanzar el anuncio.",
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader userName={user?.displayName ?? user?.email ?? undefined} />
@@ -339,27 +357,62 @@ export default function AdminAnnouncementsPage() {
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => onEdit(item)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
-                          >
-                            <Pencil className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleToggle(item)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-amber-200 hover:bg-amber-50 hover:text-amber-600"
-                          >
-                            <Power className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDelete(item)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          <div className="group relative">
+                            <button
+                              type="button"
+                              onClick={() => onEdit(item)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600"
+                              title="Editar anuncio"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </button>
+                            <span className="pointer-events-none absolute -top-9 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white shadow-lg group-hover:block">
+                              Editar anuncio
+                            </span>
+                          </div>
+                          <div className="group relative">
+                            <button
+                              type="button"
+                              onClick={() => handleToggle(item)}
+                              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border transition ${
+                                item.adminStatus === "disabled"
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                                  : "border-amber-200 bg-amber-50 text-amber-600 hover:bg-amber-100"
+                              }`}
+                              title={item.adminStatus === "disabled" ? "Activar anuncio" : "Desactivar anuncio"}
+                            >
+                              <Power className="h-4 w-4" />
+                            </button>
+                            <span className="pointer-events-none absolute -top-9 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white shadow-lg group-hover:block">
+                              {item.adminStatus === "disabled" ? "Activar anuncio" : "Desactivar anuncio"}
+                            </span>
+                          </div>
+                          <div className="group relative">
+                            <button
+                              type="button"
+                              onClick={() => handleRelaunch(item)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 text-emerald-600 transition hover:bg-emerald-50"
+                              title="Relanzar anuncio"
+                            >
+                              <RefreshCcw className="h-4 w-4" />
+                            </button>
+                            <span className="pointer-events-none absolute -top-9 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white shadow-lg group-hover:block">
+                              Relanzar anuncio
+                            </span>
+                          </div>
+                          <div className="group relative">
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(item)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                              title="Eliminar anuncio"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                            <span className="pointer-events-none absolute -top-9 left-1/2 z-10 hidden -translate-x-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white shadow-lg group-hover:block">
+                              Eliminar anuncio
+                            </span>
+                          </div>
                         </div>
                       </td>
                     </tr>

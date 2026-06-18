@@ -14,9 +14,12 @@ import {
   User,
   ClipboardList,
   Bell,
+  BriefcaseBusiness,
+  Layers,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import useRole from "@/components/auth/useRole";
 import { useOptionalAuth } from "@/components/auth/AuthProvider";
@@ -35,6 +38,7 @@ const buildCollaboratorNavItems = (base: string): NavItem[] => [
   { icon: Clock, label: "Horario", href: `${base}/hours` },
   { icon: Calendar, label: "Calendario", href: `${base}/calendar` },
   { icon: FileText, label: "Documentos", href: `${base}/documents` },
+  { icon: Layers, label: "Contenidos", href: `${base}/contenidos` },
   { icon: Users, label: "Equipo", href: `${base}/team` },
   { icon: Mail, label: "Mensajes", href: `${base}/messages` },
   { icon: ClipboardList, label: "Historial", href: `${base}/history` },
@@ -46,12 +50,14 @@ const buildAdminNavItems = (base: string): NavItem[] => [
   { icon: Mail, label: "Solicitudes", href: `${base}/requests` },
   { icon: Users, label: "Usuarios y Roles", href: `${base}/users` },
   { icon: Wallet, label: "Finanzas", href: `${base}/finanzas` },
+  { icon: BriefcaseBusiness, label: "Clientes", href: `${base}/clientes` },
   { icon: Bell, label: "Anuncios", href: `${base}/anuncios` },
   { icon: BarChart3, label: "Reportes", href: `${base}/reports` },
   { icon: Clock, label: "Horarios", href: `${base}/hours` },
   { icon: Calendar, label: "Calendario", href: `${base}/calendar` },
   { icon: FileText, label: "Documentos", href: `${base}/documents` },
   { icon: ClipboardList, label: "Gestión", href: `${base}/manage` },
+  { icon: Layers, label: "Contenidos", href: `${base}/contenidos` },
   { icon: Shield, label: "Configuración", href: `${base}/settings` },
 ];
 
@@ -177,10 +183,32 @@ export default function SidebarNav() {
       onMouseEnter={() => setIsExpanded(true)}
       onMouseLeave={() => setIsExpanded(false)}
     >
-      <header className="flex h-24 w-full flex-col justify-between pb-4 pt-6">
-        <span className="whitespace-nowrap transition-all duration-300 group-hover/sidebar:translate-x-1">
-          doc.track
-        </span>
+      <header className="flex h-32 w-full flex-col justify-between pb-4 pt-7">
+        <div
+          className={`flex h-12 items-center transition-all duration-300 ${
+            isExpanded ? "justify-start px-3" : "justify-center"
+          }`}
+        >
+          {isExpanded ? (
+            <Image
+              src="/brand/logo-horizontal-blanco.png"
+              alt="Kimce Studio"
+              width={118}
+              height={28}
+              className="h-6 w-auto object-contain"
+              priority
+            />
+          ) : (
+            <Image
+              src="/brand/logo-principal.png"
+              alt="Kimce Studio"
+              width={66}
+              height={66}
+              className="h-16 w-16 rounded-xl object-contain"
+              priority
+            />
+          )}
+        </div>
         {role === "ADMIN" ? (
           <div className="h-10">
             {isExpanded ? (

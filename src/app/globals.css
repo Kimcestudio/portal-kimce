@@ -24,3 +24,158 @@ body {
 * {
   @apply box-border;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   HUB DARK THEME — SMMA Bento style
+   Paleta:
+     bg principal  : #09090b  (negro puro)
+     card surface  : #18181b  (zinc-900, elevación clara)
+     sub-surface   : #111113  (muy sutil)
+     border main   : rgba(255,255,255,0.10)
+     border sub    : rgba(255,255,255,0.06)
+     text primario : #f8fafc  (casi blanco)
+     text secondary: #94a3b8  (slate-400)
+     text muted    : #6b7280  (gray-500)
+     accent bg     : rgba(99,102,241,0.15)
+     accent text   : #a5b4fc  (indigo-300)
+
+   IMPORTANTE: en selectores CSS, el # dentro de nombres de clase
+   debe escaparse como \# (ej: .bg-\[\#f8fafc\])
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+[data-hub-theme="dark"] ::-webkit-scrollbar       { width: 4px; height: 4px; }
+[data-hub-theme="dark"] ::-webkit-scrollbar-track { background: transparent; }
+[data-hub-theme="dark"] ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+[data-hub-theme="dark"] ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.28); }
+
+/* ── Fondos ─────────────────────────────────────────────────────────────── */
+/* Card surface: zinc-900 — claramente elevado sobre el bg negro             */
+[data-hub-theme="dark"] .bg-white           { background-color: #18181b !important; }
+/* Page bg                                                                   */
+[data-hub-theme="dark"] .bg-\[\#f8fafc\]    { background-color: #09090b !important; }
+[data-hub-theme="dark"] .bg-\[\#f1f3f6\]    { background-color: #09090b !important; }
+/* Sub-surface (table stripe, nested panels)                                 */
+[data-hub-theme="dark"] .bg-\[\#f9fafb\]    { background-color: #111113 !important; }
+/* Chip / badge bg                                                           */
+[data-hub-theme="dark"] .bg-\[\#f3f4f6\]    { background-color: rgba(255,255,255,0.10) !important; }
+/* Hover row                                                                 */
+[data-hub-theme="dark"] .bg-\[\#fafafa\]    { background-color: rgba(255,255,255,0.04) !important; }
+/* Neutral chip (e5e7eb)                                                     */
+[data-hub-theme="dark"] .bg-\[\#e5e7eb\]    { background-color: rgba(255,255,255,0.10) !important; }
+/* "Dark" active button (casi negro en light → selected glass en dark)       */
+[data-hub-theme="dark"] .bg-\[\#111827\]    { background-color: rgba(255,255,255,0.15) !important; }
+
+/* ── Bordes ─────────────────────────────────────────────────────────────── */
+[data-hub-theme="dark"] .border-\[\#e5e7eb\]         { border-color: rgba(255,255,255,0.10) !important; }
+[data-hub-theme="dark"] .border-\[\#f3f4f6\]         { border-color: rgba(255,255,255,0.06) !important; }
+[data-hub-theme="dark"] .border-\[\#d1d5db\]         { border-color: rgba(255,255,255,0.15) !important; }
+[data-hub-theme="dark"] .border-\[\#f5f5f5\]         { border-color: rgba(255,255,255,0.06) !important; }
+[data-hub-theme="dark"] .border-\[\#f9fafb\]         { border-color: rgba(255,255,255,0.05) !important; }
+[data-hub-theme="dark"] .divide-\[\#f3f4f6\] > * + * { border-color: rgba(255,255,255,0.06) !important; }
+[data-hub-theme="dark"] table                         { border-color: rgba(255,255,255,0.08) !important; }
+
+/* ── Texto ───────────────────────────────────────────────────────────────── */
+/* Primario: casi blanco                                                     */
+[data-hub-theme="dark"] .text-\[\#111827\]  { color: #f8fafc !important; }
+[data-hub-theme="dark"] .text-\[\#1f2245\]  { color: #f8fafc !important; }
+/* Secundario: gris claro legible                                            */
+[data-hub-theme="dark"] .text-\[\#374151\]  { color: #e2e8f0 !important; }
+[data-hub-theme="dark"] .text-\[\#4b5563\]  { color: #cbd5e1 !important; }
+/* Muted: slate-400 — visible sobre dark                                    */
+[data-hub-theme="dark"] .text-\[\#6b7280\]  { color: #94a3b8 !important; }
+[data-hub-theme="dark"] .text-\[\#9ca3af\]  { color: #6b7280 !important; }
+/* Separadores / hints                                                       */
+[data-hub-theme="dark"] .text-\[\#d1d5db\]  { color: rgba(255,255,255,0.25) !important; }
+/* Labels de campos                                                          */
+[data-hub-theme="dark"] .text-\[\#b0b7c3\]  { color: #64748b !important; }
+[data-hub-theme="dark"] .text-\[\#c8cdd6\]  { color: #64748b !important; }
+/* Mono (fechas, ids)                                                        */
+[data-hub-theme="dark"] .font-mono          { color: #94a3b8 !important; }
+
+/* ── Acento: purple → indigo vibrante (estilo Bento) ───────────────────── */
+[data-hub-theme="dark"] .bg-\[\#f5f3ff\]    { background-color: rgba(99,102,241,0.15) !important; }
+[data-hub-theme="dark"] .border-\[\#c4b5fd\]{ border-color: rgba(99,102,241,0.35) !important; }
+[data-hub-theme="dark"] .border-\[\#ede9fe\]{ border-color: rgba(99,102,241,0.25) !important; }
+[data-hub-theme="dark"] .text-\[\#6d28d9\]  { color: #a5b4fc !important; }
+[data-hub-theme="dark"] .text-\[\#5b21b6\]  { color: #818cf8 !important; }
+[data-hub-theme="dark"] .text-\[\#7c3aed\]  { color: #a5b4fc !important; }
+
+/* ── Hover ───────────────────────────────────────────────────────────────── */
+[data-hub-theme="dark"] .hover\:bg-\[\#fafafa\]:hover     { background-color: rgba(255,255,255,0.05) !important; }
+[data-hub-theme="dark"] .hover\:bg-\[\#f9fafb\]:hover     { background-color: rgba(255,255,255,0.05) !important; }
+[data-hub-theme="dark"] .hover\:bg-\[\#f3f4f6\]:hover     { background-color: rgba(255,255,255,0.08) !important; }
+[data-hub-theme="dark"] .hover\:border-\[\#c4b5fd\]:hover { border-color: rgba(99,102,241,0.45) !important; }
+[data-hub-theme="dark"] .hover\:border-\[\#e5e7eb\]:hover { border-color: rgba(255,255,255,0.15) !important; }
+[data-hub-theme="dark"] .hover\:border-\[\#d1d5db\]:hover { border-color: rgba(255,255,255,0.20) !important; }
+[data-hub-theme="dark"] .hover\:text-\[\#111827\]:hover   { color: #ffffff !important; }
+[data-hub-theme="dark"] .hover\:bg-white:hover            { background-color: rgba(255,255,255,0.06) !important; }
+[data-hub-theme="dark"] .hover\:shadow-sm:hover           { box-shadow: 0 1px 6px rgba(0,0,0,0.6) !important; }
+[data-hub-theme="dark"] .hover\:shadow-md:hover           { box-shadow: 0 3px 12px rgba(0,0,0,0.7) !important; }
+/* Filas de tabla                                                            */
+[data-hub-theme="dark"] tr:hover { background-color: rgba(255,255,255,0.04) !important; }
+
+/* ── Tablas ──────────────────────────────────────────────────────────────── */
+[data-hub-theme="dark"] thead tr       { background-color: rgba(255,255,255,0.03) !important; }
+[data-hub-theme="dark"] tbody tr       { background-color: transparent !important; }
+[data-hub-theme="dark"] tbody tr:hover { background-color: rgba(255,255,255,0.04) !important; }
+
+/* ── Estados de alerta (fondos) ────────────────────────────────────────── */
+[data-hub-theme="dark"] .bg-\[\#fff7ed\]   { background-color: rgba(251,146,60,0.12)  !important; }
+[data-hub-theme="dark"] .bg-\[\#fef2f2\]   { background-color: rgba(239,68,68,0.12)   !important; }
+[data-hub-theme="dark"] .bg-\[\#dcfce7\]   { background-color: rgba(34,197,94,0.12)   !important; }
+[data-hub-theme="dark"] .bg-\[\#ede9fe\]   { background-color: rgba(99,102,241,0.12)  !important; }
+[data-hub-theme="dark"] .bg-\[\#fef3c7\]   { background-color: rgba(245,158,11,0.12)  !important; }
+[data-hub-theme="dark"] .bg-\[\#fef9c3\]   { background-color: rgba(234,179,8,0.12)   !important; }
+[data-hub-theme="dark"] .bg-\[\#dbeafe\]   { background-color: rgba(59,130,246,0.12)  !important; }
+[data-hub-theme="dark"] .bg-\[\#fee2e2\]   { background-color: rgba(239,68,68,0.12)   !important; }
+[data-hub-theme="dark"] .bg-\[\#d1fae5\]   { background-color: rgba(16,185,129,0.12)  !important; }
+[data-hub-theme="dark"] .bg-\[\#f0fdf4\]   { background-color: rgba(34,197,94,0.08)   !important; }
+
+/* ── Estados de alerta (bordes) ─────────────────────────────────────────── */
+[data-hub-theme="dark"] .border-\[\#fed7aa\] { border-color: rgba(251,146,60,0.30)  !important; }
+[data-hub-theme="dark"] .border-\[\#fecaca\] { border-color: rgba(239,68,68,0.30)   !important; }
+[data-hub-theme="dark"] .border-\[\#86efac\] { border-color: rgba(34,197,94,0.30)   !important; }
+[data-hub-theme="dark"] .border-\[\#fde68a\] { border-color: rgba(245,158,11,0.30)  !important; }
+
+/* ── Texto de alertas ───────────────────────────────────────────────────── */
+[data-hub-theme="dark"] .text-\[\#92400e\]  { color: #fbbf24 !important; }
+[data-hub-theme="dark"] .text-\[\#7f1d1d\]  { color: #fca5a5 !important; }
+[data-hub-theme="dark"] .text-\[\#065f46\]  { color: #6ee7b7 !important; }
+[data-hub-theme="dark"] .text-\[\#14532d\]  { color: #86efac !important; }
+[data-hub-theme="dark"] .text-\[\#16a34a\]  { color: #4ade80 !important; }
+[data-hub-theme="dark"] .text-\[\#166534\]  { color: #4ade80 !important; }
+[data-hub-theme="dark"] .text-\[\#1e40af\]  { color: #93c5fd !important; }
+[data-hub-theme="dark"] .text-\[\#dc2626\]  { color: #f87171 !important; }
+[data-hub-theme="dark"] .text-\[\#d97706\]  { color: #fbbf24 !important; }
+[data-hub-theme="dark"] .text-\[\#c2410c\]  { color: #fb923c !important; }
+
+/* ── Inputs, selects, textareas ─────────────────────────────────────────── */
+[data-hub-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+[data-hub-theme="dark"] textarea,
+[data-hub-theme="dark"] select {
+  background-color: rgba(255,255,255,0.06) !important;
+  border-color: rgba(255,255,255,0.12) !important;
+  color: #f8fafc !important;
+  color-scheme: dark;
+}
+[data-hub-theme="dark"] input::placeholder,
+[data-hub-theme="dark"] textarea::placeholder { color: #4b5563 !important; }
+[data-hub-theme="dark"] select option         { background-color: #18181b; color: #f8fafc; }
+
+/* ── Modales ─────────────────────────────────────────────────────────────── */
+[data-hub-theme="dark"] .backdrop-blur-sm { backdrop-filter: blur(8px) brightness(0.35) !important; }
+
+/* ── Sombras ─────────────────────────────────────────────────────────────── */
+[data-hub-theme="dark"] .shadow-sm   { box-shadow: 0 1px 6px rgba(0,0,0,0.5)   !important; }
+[data-hub-theme="dark"] .shadow-lg   { box-shadow: 0 6px 24px rgba(0,0,0,0.7)  !important; }
+[data-hub-theme="dark"] .shadow-xl   { box-shadow: 0 10px 36px rgba(0,0,0,0.8) !important; }
+[data-hub-theme="dark"] .shadow-2xl  { box-shadow: 0 20px 56px rgba(0,0,0,0.9) !important; }
+[data-hub-theme="dark"] .shadow-card { box-shadow: none !important; }
+
+/* ── Transición suave al cambiar tema ───────────────────────────────────── */
+[data-hub-theme] * {
+  transition-property: background-color, border-color, color;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}

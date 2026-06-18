@@ -33,10 +33,10 @@ const statusLabels = {
 } as const;
 
 const cardStyles = {
-  OFF: "bg-white",
-  IN_SHIFT: "bg-gradient-to-br from-[#4F56D3] to-[#3F46C6] text-white",
-  ON_BREAK: "bg-gradient-to-br from-amber-400/90 to-orange-400/90 text-white",
-  CLOSED: "bg-[#eef0ff] text-ink",
+  OFF: "border-slate-200 bg-white",
+  IN_SHIFT: "border-transparent bg-gradient-to-br from-[#4F56D3] to-[#3F46C6] text-white",
+  ON_BREAK: "border-transparent bg-gradient-to-br from-amber-400/90 to-orange-400/90 text-white",
+  CLOSED: "border-indigo-100 bg-indigo-50 text-slate-900",
 } as const;
 
 const badgeStyles = {
@@ -70,13 +70,13 @@ export default function TodayAttendanceCard({
   const StatusIcon = statusIcons[status];
 
   const isColored = status === "IN_SHIFT" || status === "ON_BREAK";
-  const headingText = isColored ? "text-white/90" : "text-ink";
-  const mutedText = isColored ? "text-white/70" : "text-muted";
-  const secondaryButton = isColored ? "bg-white/15 text-white hover:bg-white/20" : "bg-white text-ink";
-  const primaryButton = isColored ? "bg-white text-[#3F46C6]" : "bg-primary text-white";
+  const headingText = isColored ? "text-white/90" : "text-slate-900";
+  const mutedText = isColored ? "text-white/70" : "text-slate-400";
+  const secondaryButton = isColored ? "bg-white/15 text-white hover:bg-white/20" : "border border-slate-200 bg-white text-slate-600 hover:bg-slate-50";
+  const primaryButton = isColored ? "bg-white text-[#3F46C6]" : "bg-indigo-600 text-white hover:bg-indigo-700";
 
   return (
-    <div className={`rounded-3xl border border-transparent p-6 shadow-soft ${cardStyles[status]}`}>
+    <div className={`rounded-xl border p-5 ${cardStyles[status]}`}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className={`text-lg font-semibold ${headingText}`}>Hoy</h2>
@@ -102,32 +102,32 @@ export default function TodayAttendanceCard({
       <div className="grid gap-4 md:grid-cols-4">
         <div>
           <p className={`text-xs ${mutedText}`}>Entrada</p>
-          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-ink"}`}>
+          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-slate-900"}`}>
             {formatTime(record?.checkInAt ?? null)}
           </p>
         </div>
         <div>
           <p className={`text-xs ${mutedText}`}>Descanso acumulado</p>
-          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-ink"}`}>
+          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-slate-900"}`}>
             {minutesToHHMM(breakMinutes)}
           </p>
         </div>
         <div>
           <p className={`text-xs ${mutedText}`}>Salida</p>
-          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-ink"}`}>
+          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-slate-900"}`}>
             {formatTime(record?.checkOutAt ?? null)}
           </p>
         </div>
         <div>
           <p className={`text-xs ${mutedText}`}>Total hoy</p>
-          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-ink"}`}>
+          <p className={`text-sm font-semibold ${isColored ? "text-white" : "text-slate-900"}`}>
             {minutesToHHMM(totalMinutes)}
           </p>
         </div>
       </div>
       <div className="mt-6 grid gap-3 md:grid-cols-4">
         <button
-          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
             status === "OFF" ? primaryButton : secondaryButton
           }`}
           onClick={onCheckIn}
@@ -138,7 +138,7 @@ export default function TodayAttendanceCard({
           Marcar entrada
         </button>
         <button
-          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
             status === "IN_SHIFT" ? primaryButton : secondaryButton
           }`}
           onClick={onStartBreak}
@@ -149,7 +149,7 @@ export default function TodayAttendanceCard({
           Iniciar descanso
         </button>
         <button
-          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
             status === "ON_BREAK" ? "bg-white text-[#9a3412]" : secondaryButton
           }`}
           onClick={onEndBreak}
@@ -160,7 +160,7 @@ export default function TodayAttendanceCard({
           Finalizar descanso
         </button>
         <button
-          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card disabled:cursor-not-allowed disabled:bg-line disabled:text-muted ${
+          className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
             status === "IN_SHIFT" ? primaryButton : secondaryButton
           }`}
           onClick={onCheckOut}
@@ -176,7 +176,7 @@ export default function TodayAttendanceCard({
           <label className={`text-xs font-semibold ${mutedText}`}>Nota del día</label>
           <textarea
             className={`mt-2 w-full rounded-xl border px-3 py-2 text-sm ${
-              isColored ? "border-white/30 bg-white/90 text-ink" : "border-line text-ink"
+              isColored ? "border-white/30 bg-white/90 text-slate-800" : "border-slate-200 text-slate-900"
             }`}
             maxLength={120}
             rows={2}
@@ -185,8 +185,8 @@ export default function TodayAttendanceCard({
           />
         </div>
         <button
-          className={`flex h-fit items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-soft transition hover:shadow-card ${
-            isColored ? "bg-white/90 text-ink" : "bg-white text-ink"
+          className={`flex h-fit items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+            isColored ? "bg-white/90 text-slate-800" : "border border-slate-200 bg-white text-slate-700"
           }`}
           onClick={onSaveNote}
           type="button"
