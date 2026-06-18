@@ -220,6 +220,28 @@ export interface HubActividad {
   createdAt?: unknown
 }
 
+export type NotificationType =
+  | 'content_new_production'
+  | 'content_changes_requested'
+  | 'content_in_review'
+  | 'content_ready_to_publish'
+  | 'activity_new'
+
+export interface AppNotification {
+  id: string
+  userId: string
+  type: NotificationType
+  category: string
+  title: string
+  message: string
+  link?: string | null
+  contentId?: string | null
+  brandId?: string | null
+  actividadId?: string | null
+  read: boolean
+  createdAt: unknown
+}
+
 export interface MensajeSala {
   id: string
   autor: string

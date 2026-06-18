@@ -14,6 +14,7 @@ import { useHub } from '@/cmhub/context'
 import { useHubTheme, useHubMeta } from '@/cmhub/theme'
 import { useOptionalAuth } from '@/components/auth/AuthProvider'
 import { getActividadAssignees, actividadHasAssignee } from '@/cmhub/activities'
+import { getContentRelevantDate } from '@/cmhub/contentDates'
 import type { TeamCategory, TeamMember, Content, ContentStatus, HubActividad } from '@/cmhub/types'
 import ContentModal from '@/components/cmhub/ContentModal'
 import ActividadModal from '@/components/cmhub/ActividadModal'
@@ -472,9 +473,11 @@ function PanelView({
   const isCreativo = category === 'Diseño' || category === 'Audiovisual'
 
   // Alertas: vencidos + cambios (content) + vencidos (actividades)
+  // Diseño/Audiovisual miran su fecha de entrega; Estrategia mira la fecha de publicación.
   const alertasItems: WeekItem[] = [
     ...areaContents.filter(c => {
-      const overdue = c.dueDate && c.dueDate < today && wf.active.includes(c.status)
+      const relevant = getContentRelevantDate(c, isCreativo)
+      const overdue = relevant && relevant < today && wf.active.includes(c.status)
       const cambios = c.status === 'cambios' && !isCreativo
       return overdue || cambios
     }).map(c => ({ kind: 'content' as const, data: c })),
@@ -483,24 +486,25 @@ function PanelView({
     ).map(a => ({ kind: 'actividad' as const, data: a })),
   ]
 
-  // Agenda de hoy: content + actividades con dueDate === today
+  // Agenda de hoy: content + actividades con fecha relevante === today
   const agendaItems: WeekItem[] = [
     ...areaContents
-      .filter(c => c.dueDate === today && wf.active.includes(c.status))
+      .filter(c => getContentRelevantDate(c, isCreativo) === today && wf.active.includes(c.status))
       .map(c => ({ kind: 'content' as const, data: c })),
     ...areaActividades
       .filter(a => a.dueDate === today && a.status !== 'completado')
       .map(a => ({ kind: 'actividad' as const, data: a })),
   ]
 
-  // Próximas: content próximos 7 días + actividades no completadas (futuras o sin fecha)
+  // Próximas: content próximos 14 días + actividades no completadas (futuras o sin fecha)
   const proximasItems: WeekItem[] = [
     ...areaContents.filter(c => {
-      if (!c.dueDate || c.dueDate <= today) return false
+      const relevant = getContentRelevantDate(c, isCreativo)
+      if (!relevant || relevant <= today) return false
       if (!wf.active.includes(c.status)) return false
-      const diff = Math.ceil((new Date(c.dueDate).getTime() - Date.now()) / 86_400_000)
+      const diff = Math.ceil((new Date(relevant).getTime() - Date.now()) / 86_400_000)
       return diff >= 1 && diff <= 14
-    }).sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
+    }).sort((a, b) => (getContentRelevantDate(a, isCreativo) ?? '').localeCompare(getContentRelevantDate(b, isCreativo) ?? ''))
       .map(c => ({ kind: 'content' as const, data: c })),
     ...areaActividades.filter(a => {
       if (a.status === 'completado') return false
@@ -540,7 +544,7 @@ function PanelView({
   ]
 
   function renderRow(item: WeekItem) {
-    const diff = item.kind === 'content' ? dueDiff(item.data.dueDate) : dueDiff(item.data.dueDate ?? null)
+    const diff = item.kind === 'content' ? dueDiff(getContentRelevantDate(item.data, isCreativo)) : dueDiff(item.data.dueDate ?? null)
     const diffBadge = diff === null
       ? <span className="w-[72px] shrink-0" />
       : diff === 0
@@ -846,15 +850,17 @@ type TipoFilter = 'Todo' | 'Video' | 'RRSS' | 'Contenido' | 'Actividades'
 const TIPOS: TipoFilter[] = ['Todo', 'Video', 'RRSS', 'Contenido', 'Actividades']
 
 function SemanaView({
-  members, contents, T, initialItem, defaultResponsable,
+  members, contents, T, category, initialItem, defaultResponsable,
 }: {
   members: TeamMember[]
   contents: Content[]
   T: ReturnType<typeof useTokens>
+  category: TeamCategory
   initialItem?: WeekItem | null
   defaultResponsable?: string | null
 }) {
   const { updateContent, brands, actividades } = useHub()
+  const isCreativo = category === 'Diseño' || category === 'Audiovisual'
   const [weekOffset,       setWeekOffset]       = useState(0)
   const [tipoFilter,       setTipoFilter]       = useState<TipoFilter>('Todo')
   const [responsableFilter, setResponsableFilter] = useState<string | null>(defaultResponsable ?? null)
@@ -869,7 +875,8 @@ function SemanaView({
 
     const contentItems: WeekItem[] = contents
       .filter(c => {
-        if (!c.dueDate || c.dueDate !== iso) return false
+        const relevant = getContentRelevantDate(c, isCreativo)
+        if (!relevant || relevant !== iso) return false
         if (!filterNames.some(n => memberAssigned(c, n))) return false
         if (tipoFilter === 'Actividades') return false
         if (tipoFilter !== 'Todo' && (FORMAT_TIPO[c.format] ?? 'Contenido') !== tipoFilter) return false
@@ -1169,7 +1176,10 @@ function PipelineView({
   )
 
   const week = weekRange(0)
-  const thisWeekCount = areaContents.filter(c => c.dueDate && c.dueDate >= week.start && c.dueDate <= week.end).length
+  const thisWeekCount = areaContents.filter(c => {
+    const relevant = getContentRelevantDate(c, isCreativo)
+    return relevant && relevant >= week.start && relevant <= week.end
+  }).length
   const activeBrands  = new Set(areaContents.map(c => c.brandId)).size
 
   const cols = pipelineCols.map(col => ({
@@ -1235,7 +1245,7 @@ function PipelineView({
                     c.responsables?.some(r => sameName(r, m.name)) ||
                     sameName(c.dueAssignee, m.name)
                   )
-                  const diff = dueDiff(c.dueDate)
+                  const diff = dueDiff(getContentRelevantDate(c, isCreativo))
                   const urgente = diff !== null && diff <= 2 && diff >= 0
                   const vencido = diff !== null && diff < 0
 
@@ -1438,6 +1448,7 @@ export default function EquipoCategoryPage({ category }: { category: TeamCategor
               members={members}
               contents={contents}
               T={T}
+              category={category}
               initialItem={pendingItem}
               defaultResponsable={myMember?.name ?? null}
             />

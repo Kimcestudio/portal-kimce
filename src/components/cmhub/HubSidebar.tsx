@@ -17,6 +17,7 @@ import { useHubTheme } from '@/cmhub/theme'
 import BrandModal from '@/components/cmhub/BrandModal'
 import NotionMigrateModal from '@/components/cmhub/NotionMigrateModal'
 import AiQuickAddModal from '@/components/cmhub/AiQuickAddModal'
+import NotificationBell from '@/components/cmhub/NotificationBell'
 
 // ─── Estructura de navegación ────────────────────────────────────────────────
 // 5 grupos semánticos para flujo de agencia SMMA:
@@ -204,6 +205,8 @@ export default function HubSidebar() {
             </div>
             {/* Acciones */}
             <div className="flex items-center gap-0.5">
+              {/* Notificaciones */}
+              {authUser?.uid && <NotificationBell uid={authUser.uid} isDark={isDark} />}
               {/* Toggle tema */}
               <button
                 onClick={toggleTheme}

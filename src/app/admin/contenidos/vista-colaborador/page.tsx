@@ -9,6 +9,7 @@ import { useHub } from '@/cmhub/context'
 import { useHubBase } from '@/cmhub/useHubBase'
 import NetworkIcon from '@/components/cmhub/NetworkIcon'
 import { STATUS_META } from '@/cmhub/data'
+import { getContentRelevantDate } from '@/cmhub/contentDates'
 import type { TeamMember, TeamCategory } from '@/cmhub/types'
 
 // ── Workflow por área ──────────────────────────────────────────────────────
@@ -154,23 +155,25 @@ function CollaboratorDashboard({ member, onBack }: { member: TeamMember; onBack:
   const myListos     = myContents.filter(c => wf.listos.includes(c.status))
 
   const myAgendaHoy = myContents
-    .filter(c => c.dueDate === today && wf.active.includes(c.status))
-    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
+    .filter(c => getContentRelevantDate(c, wf.isCreativo) === today && wf.active.includes(c.status))
+    .sort((a, b) => (getContentRelevantDate(a, wf.isCreativo) ?? '').localeCompare(getContentRelevantDate(b, wf.isCreativo) ?? ''))
 
   const myAlertas = myContents.filter(c => {
-    const overdue = c.dueDate && c.dueDate < today && wf.active.includes(c.status)
+    const relevant = getContentRelevantDate(c, wf.isCreativo)
+    const overdue = relevant && relevant < today && wf.active.includes(c.status)
     const cambios = c.status === 'cambios' && !wf.isCreativo
     return overdue || cambios
   }).slice(0, 5)
 
   const myProximas = myContents
     .filter(c => {
-      if (!c.dueDate || c.dueDate <= today) return false
+      const relevant = getContentRelevantDate(c, wf.isCreativo)
+      if (!relevant || relevant <= today) return false
       if (!wf.active.includes(c.status)) return false
-      const diff = Math.ceil((new Date(c.dueDate).getTime() - Date.now()) / 86_400_000)
+      const diff = Math.ceil((new Date(relevant).getTime() - Date.now()) / 86_400_000)
       return diff >= 1 && diff <= 7
     })
-    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
+    .sort((a, b) => (getContentRelevantDate(a, wf.isCreativo) ?? '').localeCompare(getContentRelevantDate(b, wf.isCreativo) ?? ''))
     .slice(0, 5)
 
   const memberEntry = activeToday[member.id]
@@ -266,7 +269,8 @@ function CollaboratorDashboard({ member, onBack }: { member: TeamMember; onBack:
                 <div className="divide-y divide-[#f3f4f6]">
                   {myAlertas.map(c => {
                     const brand = brands.find(b => b.id === c.brandId)
-                    const isOverdue = c.dueDate && c.dueDate < today
+                    const relevant = getContentRelevantDate(c, wf.isCreativo)
+                    const isOverdue = relevant && relevant < today
                     return (
                       <div key={c.id} className="flex items-start gap-3 px-5 py-3">
                         <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${isOverdue ? 'bg-red-400' : 'bg-amber-400'}`} />
@@ -274,7 +278,7 @@ function CollaboratorDashboard({ member, onBack }: { member: TeamMember; onBack:
                           <p className="text-[12px] font-semibold text-[#111827] truncate">{c.title}</p>
                           <p className="text-[10px] text-[#9ca3af]">
                             {brand?.name}
-                            {isOverdue && c.dueDate ? ` · venció ${fmtDate(c.dueDate)}` : ''}
+                            {isOverdue && relevant ? ` · venció ${fmtDate(relevant)}` : ''}
                           </p>
                         </div>
                         <StatusBadge status={c.status} />
@@ -370,12 +374,13 @@ function CollaboratorDashboard({ member, onBack }: { member: TeamMember; onBack:
                 <div className="divide-y divide-[#f3f4f6]">
                   {myProximas.map(c => {
                     const brand = brands.find(b => b.id === c.brandId)
-                    const diff = Math.ceil((new Date(c.dueDate!).getTime() - Date.now()) / 86_400_000)
+                    const relevant = getContentRelevantDate(c, wf.isCreativo)!
+                    const diff = Math.ceil((new Date(relevant).getTime() - Date.now()) / 86_400_000)
                     return (
                       <div key={c.id} className="flex items-center gap-3 px-5 py-2.5">
                         <div className="flex-1 min-w-0">
                           <p className="text-[12px] font-semibold text-[#111827] truncate">{c.title}</p>
-                          <p className="text-[10px] text-[#9ca3af]">{brand?.name} · {fmtDate(c.dueDate!)}</p>
+                          <p className="text-[10px] text-[#9ca3af]">{brand?.name} · {fmtDate(relevant)}</p>
                         </div>
                         <span className="text-[10px] font-bold text-[#f59e0b] bg-[#fef3c7] px-2 py-0.5 rounded-full shrink-0">
                           {diff === 1 ? 'mañana' : `${diff}d`}

@@ -155,5 +155,11 @@ service cloud.firestore {
     match /hubActividades/{docId} {
       allow read, list, write: if isSignedIn();
     }
+
+    // Notificaciones por usuario — solo las propias; las crea la Cloud Function (Admin SDK).
+    match /notifications/{docId} {
+      allow read, list, update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if false;
+    }
   }
 }

@@ -8,6 +8,7 @@ import { useHub } from '@/cmhub/context'
 import { useHubBase } from '@/cmhub/useHubBase'
 import { NETWORK_META, STATUS_META } from '@/cmhub/data'
 import { actividadHasAssignee } from '@/cmhub/activities'
+import { getContentRelevantDate } from '@/cmhub/contentDates'
 import NetworkIcon from '@/components/cmhub/NetworkIcon'
 import ContentModal from '@/components/cmhub/ContentModal'
 import { useOptionalAuth } from '@/components/auth/AuthProvider'
@@ -128,27 +129,29 @@ export default function Dashboard() {
   const myEnRevision = myContents.filter(c => wf.enRevision.includes(c.status))
   const myListos     = myContents.filter(c => wf.listos.includes(c.status))
 
-  // Agenda de hoy: mis entregas activas con dueDate hoy
+  // Agenda de hoy: mis entregas/publicaciones activas con fecha relevante hoy
   const myAgendaHoy = myContents
-    .filter(c => c.dueDate === today && wf.active.includes(c.status))
-    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
+    .filter(c => getContentRelevantDate(c, wf.isCreativo) === today && wf.active.includes(c.status))
+    .sort((a, b) => (getContentRelevantDate(a, wf.isCreativo) ?? '').localeCompare(getContentRelevantDate(b, wf.isCreativo) ?? ''))
 
   // Mis alertas: vencidos dentro de mi workflow + cambios (solo CM)
   const myAlertas = myContents.filter(c => {
-    const overdue = c.dueDate && c.dueDate < today && wf.active.includes(c.status)
+    const relevant = getContentRelevantDate(c, wf.isCreativo)
+    const overdue = relevant && relevant < today && wf.active.includes(c.status)
     const cambios = c.status === 'cambios' && !wf.isCreativo
     return overdue || cambios
   }).slice(0, 5)
 
-  // Mis próximas entregas (1–7 días) dentro de mi workflow activo
+  // Mis próximas entregas/publicaciones (1–7 días) dentro de mi workflow activo
   const myProximas = myContents
     .filter(c => {
-      if (!c.dueDate || c.dueDate <= today) return false
+      const relevant = getContentRelevantDate(c, wf.isCreativo)
+      if (!relevant || relevant <= today) return false
       if (!wf.active.includes(c.status)) return false
-      const diff = Math.ceil((new Date(c.dueDate).getTime() - Date.now()) / 86_400_000)
+      const diff = Math.ceil((new Date(relevant).getTime() - Date.now()) / 86_400_000)
       return diff >= 1 && diff <= 7
     })
-    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
+    .sort((a, b) => (getContentRelevantDate(a, wf.isCreativo) ?? '').localeCompare(getContentRelevantDate(b, wf.isCreativo) ?? ''))
     .slice(0, 5)
 
   // Mis actividades activas (pendiente / en_curso)
@@ -306,7 +309,8 @@ export default function Dashboard() {
                   <div className="divide-y divide-[#f9fafb]">
                     {[...myPendientes, ...myEnRevision].slice(0, 8).map(c => {
                       const brand   = brands.find(b => b.id === c.brandId)
-                      const diff    = c.dueDate ? Math.ceil((new Date(c.dueDate).getTime() - Date.now()) / 86_400_000) : null
+                      const relevant = getContentRelevantDate(c, wf.isCreativo)
+                      const diff    = relevant ? Math.ceil((new Date(relevant).getTime() - Date.now()) / 86_400_000) : null
                       const overdue = diff !== null && diff < 0
                       return (
                         <div key={c.id} className="flex items-center gap-3 px-5 py-3 hover:bg-[#fafafa] transition-colors cursor-pointer"
@@ -351,7 +355,7 @@ export default function Dashboard() {
                   {myProximas.length === 0 ? (
                     <div className="px-5 py-5 text-center text-[13px] text-[#9ca3af]">Sin publicaciones próximas asignadas</div>
                   ) : myProximas.map(c => {
-                    const diff  = Math.ceil((new Date(c.dueDate!).getTime() - Date.now()) / 86_400_000)
+                    const diff  = Math.ceil((new Date(getContentRelevantDate(c, wf.isCreativo)!).getTime() - Date.now()) / 86_400_000)
                     const brand = brands.find(b => b.id === c.brandId)
                     const net   = NETWORK_META[c.channel]
                     return (
@@ -395,7 +399,8 @@ export default function Dashboard() {
                   </div>
                 ) : myAlertas.map(c => {
                   const esCambios = c.status === 'cambios'
-                  const diff = c.dueDate ? Math.ceil((Date.now() - new Date(c.dueDate).getTime()) / 86_400_000) : null
+                  const relevant = getContentRelevantDate(c, wf.isCreativo)
+                  const diff = relevant ? Math.ceil((Date.now() - new Date(relevant).getTime()) / 86_400_000) : null
                   const brand = brands.find(b => b.id === c.brandId)
                   return (
                     <div key={c.id} className="flex items-start gap-3 px-4 py-3 border-b border-[#f9fafb] last:border-0 hover:bg-[#fafafa] transition-colors cursor-pointer"

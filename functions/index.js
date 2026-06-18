@@ -365,3 +365,7 @@ Object.assign(exports, notionApi)
 // IA (Claude) handlers
 const aiApi = require('./aiApi')
 Object.assign(exports, aiApi)
+
+// Notificaciones por usuario (CM Hub)
+const notifications = require('./notifications')
+Object.assign(exports, notifications)

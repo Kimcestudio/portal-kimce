@@ -9,6 +9,7 @@ import { useHubTheme } from '@/cmhub/theme'
 import { useHubBase } from '@/cmhub/useHubBase'
 import { useOptionalAuth } from '@/components/auth/AuthProvider'
 import { actividadHasAssignee } from '@/cmhub/activities'
+import { getContentRelevantDate } from '@/cmhub/contentDates'
 import type { TeamMember, Content, HubActividad } from '@/cmhub/types'
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
@@ -161,10 +162,14 @@ function VistaGeneral({
   const week  = weekBounds()
 
   const rows = useMemo(() => members.map(m => {
+    const isCreativo = m.category === 'Diseño' || m.category === 'Audiovisual'
     const mine       = contents.filter(c => memberAssigned(c, m.name))
     const activas    = mine.filter(c => ACTIVE_STATUSES.includes(c.status))
-    const vencidas   = activas.filter(c => c.dueDate && c.dueDate < today)
-    const hoy        = activas.filter(c => c.dueDate === today)
+    const vencidas   = activas.filter(c => {
+      const relevant = getContentRelevantDate(c, isCreativo)
+      return relevant && relevant < today
+    })
+    const hoy        = activas.filter(c => getContentRelevantDate(c, isCreativo) === today)
     const urgentes   = activas.filter(c => c.priority === 'urgente' || c.priority === 'alta')
     const completadas = mine.filter(c =>
       DONE_STATUSES.includes(c.status) && c.updatedAt >= week.start
