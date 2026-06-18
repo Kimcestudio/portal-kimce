@@ -6,10 +6,10 @@ import {
   Columns3, Calendar, CalendarDays, BarChart2,
   CheckSquare, Clock, FolderKanban,
   MessageSquare, Dice5, Shuffle, ShoppingBag,
-  ChevronLeft, Plus, Building2, Sun, Moon,
+  ChevronLeft, ChevronDown, Plus, Building2, Sun, Moon,
   Palette, Video, Target, UserCheck, Eye, X, Check, ShieldCheck, Download, Sparkles,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useOptionalAuth } from '@/components/auth/AuthProvider'
 import { useHub } from '@/cmhub/context'
 import { useHubBase } from '@/cmhub/useHubBase'
@@ -21,9 +21,9 @@ import AiQuickAddModal from '@/components/cmhub/AiQuickAddModal'
 // ─── Estructura de navegación ────────────────────────────────────────────────
 // 5 grupos semánticos para flujo de agencia SMMA:
 //   GESTIÓN     → visión global + clientes
-//   CONTENIDO   → pipeline editorial (crear → publicar → medir)
-//   PRODUCCIÓN  → operaciones diarias del equipo
 //   EQUIPO      → comunicación interna
+//   RRSS        → pipeline editorial (crear → publicar → medir)
+//   PRODUCCIÓN  → operaciones diarias del equipo
 //   🎲 SALA     → gamificación y recompensas del equipo
 // ─────────────────────────────────────────────────────────────────────────────
 export default function HubSidebar() {
@@ -61,11 +61,21 @@ export default function HubSidebar() {
       ],
     },
     {
-      label: 'CONTENIDO',
+      label: 'EQUIPO',
       items: [
-        { href: `${BASE}/kanban`,         label: 'Kanban',         Icon: Columns3     },
+        { href: `${BASE}/supervision`,        label: 'Supervisión',  Icon: ShieldCheck   },
+        { href: `${BASE}/sala`,               label: 'La Sala',      Icon: MessageSquare },
+        { href: `${BASE}/equipo/diseno`,      label: 'Diseño',       Icon: Palette       },
+        { href: `${BASE}/equipo/audiovisual`, label: 'Audiovisual',  Icon: Video         },
+        { href: `${BASE}/equipo/estrategia`,  label: 'Estrategia',   Icon: Target        },
+      ],
+    },
+    {
+      label: 'RRSS',
+      items: [
         { href: `${BASE}/calendario`,     label: 'Calendario',     Icon: Calendar     },
         { href: `${BASE}/semana`,         label: 'Semana',         Icon: CalendarDays },
+        { href: `${BASE}/kanban`,         label: 'Kanban',         Icon: Columns3     },
         { href: `${BASE}/metricas`,       label: 'Analytics',      Icon: BarChart2    },
       ],
     },
@@ -75,16 +85,6 @@ export default function HubSidebar() {
         { href: `${BASE}/tareas-diarias`, label: 'Tareas diarias', Icon: CheckSquare  },
         { href: `${BASE}/actividades`,    label: 'Actividades',    Icon: Clock        },
         { href: `${BASE}/proyectos`,      label: 'Proyectos',      Icon: FolderKanban },
-      ],
-    },
-    {
-      label: 'EQUIPO',
-      items: [
-        { href: `${BASE}/supervision`,        label: 'Supervisión',  Icon: ShieldCheck   },
-        { href: `${BASE}/sala`,               label: 'La Sala',      Icon: MessageSquare },
-        { href: `${BASE}/equipo/diseno`,      label: 'Diseño',       Icon: Palette       },
-        { href: `${BASE}/equipo/audiovisual`, label: 'Audiovisual',  Icon: Video         },
-        { href: `${BASE}/equipo/estrategia`,  label: 'Estrategia',   Icon: Target        },
       ],
     },
     {
@@ -102,6 +102,26 @@ export default function HubSidebar() {
   const [showAiQuickAdd, setShowAiQuickAdd] = useState(false)
   const [renameResult, setRenameResult]           = useState<{ updated: number } | null>(null)
   const [showViewAs, setShowViewAs]               = useState(false)
+
+  const SIDEBAR_COLLAPSE_KEY = 'hub-sidebar-collapsed'
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({})
+  const [collapseLoaded, setCollapseLoaded]   = useState(false)
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(SIDEBAR_COLLAPSE_KEY)
+      if (saved) setCollapsedGroups(JSON.parse(saved))
+    } catch {}
+    setCollapseLoaded(true)
+  }, [])
+
+  function toggleGroupCollapsed(label: string) {
+    setCollapsedGroups(prev => {
+      const next = { ...prev, [label]: !prev[label] }
+      try { window.localStorage.setItem(SIDEBAR_COLLAPSE_KEY, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }
 
   async function handleFixAnghelaMendoza() {
     const result = await renameTeamMember('Anghela Mendoza', 'Anghela Mendoza Villalobos')
@@ -243,13 +263,32 @@ export default function HubSidebar() {
           style={{ maxHeight: 'calc(100% - 240px)' }}>
           {NAV_GROUPS.map(({ label, items, ...rest }) => {
             const gam = (rest as { gam?: boolean }).gam
+            const collapsible = label !== 'GESTIÓN'
+            const isCollapsed = collapsible && collapseLoaded && collapsedGroups[label]
             return (
             <div key={label} className="mb-1">
-              <p className="px-3 pt-2 pb-1 text-[9px] font-bold tracking-[0.1em] uppercase flex items-center gap-1"
-                style={{ color: gam ? T.gamLabel : T.groupLabel }}>
-                {gam && <Dice5 size={8} />}{label}
-              </p>
-              {items.map(({ href, label: itemLabel, Icon }) => {
+              <button
+                type="button"
+                onClick={() => collapsible && toggleGroupCollapsed(label)}
+                disabled={!collapsible}
+                className="w-full px-3 pt-2 pb-1 flex items-center justify-between gap-1 transition-colors"
+                style={{ cursor: collapsible ? 'pointer' : 'default' }}
+              >
+                <span className="text-[9px] font-bold tracking-[0.1em] uppercase flex items-center gap-1"
+                  style={{ color: gam ? T.gamLabel : T.groupLabel }}>
+                  {gam && <Dice5 size={8} />}{label}
+                </span>
+                {collapsible && (
+                  <ChevronDown size={11}
+                    style={{
+                      color: T.groupLabel,
+                      transform: isCollapsed ? 'rotate(-90deg)' : 'none',
+                      transition: 'transform 0.15s ease',
+                    }}
+                  />
+                )}
+              </button>
+              {!isCollapsed && items.map(({ href, label: itemLabel, Icon }) => {
                 const active = isActive(href)
                 return (
                   <Link key={href} href={href}

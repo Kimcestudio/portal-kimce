@@ -13,6 +13,7 @@ import { db } from '@/services/firebase/client'
 import { useHub } from '@/cmhub/context'
 import { useHubTheme } from '@/cmhub/theme'
 import { useOptionalAuth } from '@/components/auth/AuthProvider'
+import { getActividadAssignees, actividadHasAssignee } from '@/cmhub/activities'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────
 type ActivityStatus = 'pendiente' | 'en_curso' | 'completado'
@@ -31,6 +32,7 @@ interface Activity {
   dueDate?: string
   status: ActivityStatus
   assignee?: string
+  assignees?: string[]
   category?: string
   proyectoId?: string | null
   linkEntrega?: string
@@ -107,51 +109,67 @@ function InlineSelect<T extends string>({ value, options, onChange, renderTrigge
   )
 }
 
-// ── PersonPicker ───────────────────────────────────────────────────────────
-function PersonPicker({ value, team, onChange, tk }: {
-  value?: string
+// ── PersonMultiPicker ──────────────────────────────────────────────────────
+function PersonMultiPicker({ value, team, onChange, tk }: {
+  value: string[]
   team: { id: string; name: string; initials: string; color: string }[]
-  onChange: (v: string) => void
+  onChange: (v: string[]) => void
   tk: Record<string, string>
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
-  const member = team.find(m => m.name === value)
+  const members = value
+    .map(name => team.find(m => m.name.trim().toLowerCase() === name.trim().toLowerCase()))
+    .filter(Boolean) as typeof team
   useEffect(() => {
     if (!open) return
     const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
     document.addEventListener('mousedown', h)
     return () => document.removeEventListener('mousedown', h)
   }, [open])
+  function toggle(name: string) {
+    onChange(value.some(v => v.trim().toLowerCase() === name.trim().toLowerCase())
+      ? value.filter(v => v.trim().toLowerCase() !== name.trim().toLowerCase())
+      : [...value, name])
+  }
   return (
     <div ref={ref} className="relative">
       <button onClick={e => { e.stopPropagation(); setOpen(o => !o) }}
         className="flex items-center gap-1.5 cursor-pointer hover:opacity-75 transition-opacity">
-        {member
-          ? <><div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
-              style={{ background: member.color }}>{member.initials}</div>
-            <span className="text-[11px] truncate" style={{ color: tk.text, maxWidth: 90 }}>{member.name}</span></>
-          : <span className="text-[11px] italic" style={{ color: tk.muted }}>Sin asignar</span>}
+        {members.length > 0 ? (
+          <>
+            <div className="flex -space-x-1.5 shrink-0">
+              {members.slice(0, 3).map(m => (
+                <div key={m.id} className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white ring-1 shrink-0"
+                  style={{ background: m.color, borderColor: tk.card }}>{m.initials}</div>
+              ))}
+            </div>
+            {members.length === 1
+              ? <span className="text-[11px] truncate" style={{ color: tk.text, maxWidth: 90 }}>{members[0].name}</span>
+              : <span className="text-[11px]" style={{ color: tk.text }}>{members.length} personas</span>}
+          </>
+        ) : (
+          <span className="text-[11px] italic" style={{ color: tk.muted }}>Sin asignar</span>
+        )}
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 rounded-xl border shadow-xl overflow-hidden w-48"
+        <div className="absolute top-full left-0 mt-1 z-50 rounded-xl border shadow-xl overflow-hidden w-48 max-h-56 overflow-y-auto"
           style={{ background: tk.card, borderColor: tk.border }}>
-          <button onClick={e => { e.stopPropagation(); onChange(''); setOpen(false) }}
-            className="w-full text-left px-3 py-2 text-[11px] italic transition-colors"
-            style={{ color: tk.muted }}
-            onMouseEnter={e => (e.currentTarget.style.background = tk.page)}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>Sin asignar</button>
-          {team.map(m => (
-            <button key={m.id} onClick={e => { e.stopPropagation(); onChange(m.name); setOpen(false) }}
-              className="w-full text-left px-3 py-2 flex items-center gap-2 transition-colors"
-              style={{ background: m.name === value ? tk.page : 'transparent' }}
-              onMouseEnter={e => (e.currentTarget.style.background = tk.page)}
-              onMouseLeave={e => (e.currentTarget.style.background = m.name === value ? tk.page : 'transparent')}>
-              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
-                style={{ background: m.color }}>{m.initials}</div>
-              <span className="text-[12px]" style={{ color: tk.text }}>{m.name}</span>
-            </button>
-          ))}
+          {team.map(m => {
+            const active = value.some(v => v.trim().toLowerCase() === m.name.trim().toLowerCase())
+            return (
+              <button key={m.id} onClick={e => { e.stopPropagation(); toggle(m.name) }}
+                className="w-full text-left px-3 py-2 flex items-center gap-2 transition-colors"
+                style={{ background: active ? tk.page : 'transparent' }}
+                onMouseEnter={e => (e.currentTarget.style.background = tk.page)}
+                onMouseLeave={e => (e.currentTarget.style.background = active ? tk.page : 'transparent')}>
+                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white shrink-0"
+                  style={{ background: m.color }}>{m.initials}</div>
+                <span className="text-[12px] flex-1 truncate" style={{ color: tk.text }}>{m.name}</span>
+                {active && <Check size={11} className="shrink-0" style={{ color: '#7c3aed' }} />}
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
@@ -191,7 +209,6 @@ function ActivityModal({ a, team, proyectos, isDark, tk, myName, onClose, onUpda
 }) {
   const s = STATUS_CFG[a.status]
   const proyecto = proyectos.find(p => p.id === a.proyectoId)
-  const member   = team.find(m => m.name === a.assignee)
   const today    = new Date().toISOString().slice(0, 10)
   const isOverdue = !!(a.dueDate && a.dueDate < today && a.status !== 'completado')
 
@@ -275,10 +292,10 @@ function ActivityModal({ a, team, proyectos, isDark, tk, myName, onClose, onUpda
           <div className="grid grid-cols-3 gap-px" style={{ background: tk.border }}>
             {[
               {
-                Icon: User, label: 'Responsable',
+                Icon: User, label: 'Responsables',
                 content: (
-                  <PersonPicker value={a.assignee} team={team}
-                    onChange={v => onUpdate({ assignee: v || undefined })} tk={tk} />
+                  <PersonMultiPicker value={getActividadAssignees(a)} team={team}
+                    onChange={v => onUpdate({ assignees: v, assignee: v[0] ?? undefined })} tk={tk} />
                 ),
               },
               {
@@ -508,9 +525,9 @@ function ActivityRow({ a, tk, isDark, team, onToggle, onDelete, onUpdate, onOpen
           renderOption={v => <span className="text-[11px]" style={{ color: v ? tk.text : tk.muted }}>{v || 'Sin categoría'}</span>} />
       </div>
 
-      {/* RESPONSABLE */}
-      <PersonPicker value={a.assignee} team={team}
-        onChange={v => onUpdate({ assignee: v || undefined })} tk={tk} />
+      {/* RESPONSABLES */}
+      <PersonMultiPicker value={getActividadAssignees(a)} team={team}
+        onChange={v => onUpdate({ assignees: v, assignee: v[0] ?? undefined })} tk={tk} />
 
       {/* FECHA */}
       <DateCell value={a.dueDate} isOverdue={isOverdue} tk={tk}
@@ -564,7 +581,7 @@ export default function ActividadesPage() {
   const [fDesc, setFDesc]         = useState('')
   const [fDate, setFDate]         = useState('')
   const [fStatus, setFStatus]     = useState<ActivityStatus>('pendiente')
-  const [fAssignee, setFAssignee] = useState('')
+  const [fAssignees, setFAssignees] = useState<string[]>([])
   const [fCategory, setFCategory] = useState('')
   const [fLinked, setFLinked]     = useState(false)
   const [fProyecto, setFProyecto] = useState('')
@@ -592,7 +609,7 @@ export default function ActividadesPage() {
 
   function openNew() {
     setEditingId(null); setFTitle(''); setFDesc(''); setFDate('')
-    setFStatus('pendiente'); setFAssignee(myName); setFCategory('')
+    setFStatus('pendiente'); setFAssignees(myName ? [myName] : []); setFCategory('')
     setFLinked(false); setFProyecto(''); setShowForm(true)
   }
 
@@ -605,16 +622,17 @@ export default function ActividadesPage() {
     if (editingId) {
       await updateDoc(doc(db, COL, editingId), {
         ...base,
-        description: fDesc.trim() ? fDesc.trim() : deleteField(),
-        dueDate:     fDate        ? fDate         : deleteField(),
-        assignee:    fAssignee    ? fAssignee      : deleteField(),
-        category:    fCategory    ? fCategory      : deleteField(),
+        description: fDesc.trim()     ? fDesc.trim()     : deleteField(),
+        dueDate:     fDate            ? fDate            : deleteField(),
+        assignee:    fAssignees[0]    ? fAssignees[0]     : deleteField(),
+        assignees:   fAssignees.length ? fAssignees       : deleteField(),
+        category:    fCategory        ? fCategory         : deleteField(),
       })
     } else {
-      if (fDesc.trim()) base.description = fDesc.trim()
-      if (fDate)        base.dueDate     = fDate
-      if (fAssignee)    base.assignee    = fAssignee
-      if (fCategory)    base.category    = fCategory
+      if (fDesc.trim())      base.description = fDesc.trim()
+      if (fDate)             base.dueDate     = fDate
+      if (fAssignees.length) { base.assignee = fAssignees[0]; base.assignees = fAssignees }
+      if (fCategory)         base.category    = fCategory
       await addDoc(collection(db, COL), { ...base, createdAt: serverTimestamp() })
     }
     setShowForm(false); setEditingId(null)
@@ -627,7 +645,7 @@ export default function ActividadesPage() {
 
   const filtered = activities.filter(a => {
     if (filterStatus !== 'all' && a.status !== filterStatus) return false
-    if (filterAssignee !== 'all' && a.assignee !== filterAssignee) return false
+    if (filterAssignee !== 'all' && !actividadHasAssignee(a, filterAssignee)) return false
     if (filterProject === 'none' && a.proyectoId) return false
     if (filterProject !== 'all' && filterProject !== 'none' && a.proyectoId !== filterProject) return false
     return true
@@ -854,12 +872,27 @@ export default function ActividadesPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-[10px] font-bold mb-1 block" style={{ color: T.sub }}>RESPONSABLE</label>
-                  <select value={fAssignee} onChange={e => setFAssignee(e.target.value)}
-                    className={inputCls} style={{ background: T.input, color: T.text, borderColor: T.inputBorder }}>
-                    <option value="">Sin asignar</option>
-                    {team.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                  </select>
+                  <label className="text-[10px] font-bold mb-1.5 block" style={{ color: T.sub }}>RESPONSABLES</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {team.map(m => {
+                      const active = fAssignees.includes(m.name)
+                      return (
+                        <button key={m.id} type="button"
+                          onClick={() => setFAssignees(prev => active ? prev.filter(n => n !== m.name) : [...prev, m.name])}
+                          className="flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-xl border transition-colors"
+                          style={{
+                            background: active ? `${m.color}22` : T.input,
+                            color: active ? m.color : T.sub,
+                            borderColor: active ? m.color : T.inputBorder,
+                          }}>
+                          {m.name}
+                        </button>
+                      )
+                    })}
+                    {team.length === 0 && (
+                      <span className="text-[11px]" style={{ color: T.muted }}>Sin colaboradores</span>
+                    )}
+                  </div>
                 </div>
                 <div>
                   <label className="text-[10px] font-bold mb-1 block" style={{ color: T.sub }}>CATEGORÍA</label>

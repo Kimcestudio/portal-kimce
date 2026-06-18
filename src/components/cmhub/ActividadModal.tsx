@@ -4,6 +4,7 @@ import { X, Check, ExternalLink, ChevronDown, Trash2, Calendar } from 'lucide-re
 import { doc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { db } from '@/services/firebase/client'
 import { useHub } from '@/cmhub/context'
+import { getActividadAssignees } from '@/cmhub/activities'
 import type { HubActividad } from '@/cmhub/types'
 
 interface Props {
@@ -51,7 +52,7 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
 
   const [title, setTitle]           = useState(initial.title)
   const [status, setStatus]         = useState(initial.status)
-  const [assignee, setAssignee]     = useState(initial.assignee ?? '')
+  const [assignees, setAssignees]   = useState<string[]>(getActividadAssignees(initial))
   const [category, setCategory]     = useState(initial.category ?? '')
   const [dueDate, setDueDate]       = useState(initial.dueDate ?? '')
   const [description, setDescription] = useState(initial.description ?? '')
@@ -64,7 +65,15 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
   const categoryDd = useDropdown()
 
   const sm = STATUS_META[status]
-  const assigneeMember = activeTeam.find(m => m.name.trim().toLowerCase() === assignee.trim().toLowerCase())
+
+  function addAssignee(name: string) {
+    if (!assignees.some(a => a.trim().toLowerCase() === name.trim().toLowerCase())) {
+      setAssignees(prev => [...prev, name])
+    }
+  }
+  function removeAssignee(name: string) {
+    setAssignees(prev => prev.filter(a => a.trim().toLowerCase() !== name.trim().toLowerCase()))
+  }
 
   async function handleSave() {
     if (!title.trim()) return
@@ -73,7 +82,8 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
       await updateDoc(doc(db, 'hubActividades', initial.id), {
         title:       title.trim(),
         status,
-        assignee:    assignee || null,
+        assignee:    assignees[0] || null,
+        assignees,
         category:    category || null,
         dueDate:     dueDate || null,
         description: description || null,
@@ -154,43 +164,49 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
       {/* Body */}
       <div className="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-0 divide-y divide-[#f3f4f6]">
 
-        {/* Responsable */}
+        {/* Responsables */}
         <div className="py-3 flex items-center gap-4">
-          <span className="text-[10px] font-bold text-[#b0b7c3] uppercase tracking-widest w-28 shrink-0">Responsable</span>
-          <div ref={assigneeDd.ref} className="relative flex-1">
-            <button onClick={() => assigneeDd.setOpen(o => !o)}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl border border-[#e5e7eb] bg-[#f9fafb] hover:border-[#7c3aed] transition-colors w-full cursor-pointer">
-              {assigneeMember ? (
-                <>
-                  <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0"
-                    style={{ background: assigneeMember.color ?? '#6366f1' }}>
-                    {assigneeMember.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
-                  </div>
-                  <span className="flex-1 text-left text-[12px] font-semibold text-[#111827] truncate">{assigneeMember.name}</span>
-                </>
-              ) : (
-                <span className="flex-1 text-left text-[12px] text-[#9ca3af]">Sin asignar…</span>
-              )}
-              <ChevronDown size={13} className="text-[#9ca3af] shrink-0" />
-            </button>
-            {assigneeDd.open && (
-              <div className="absolute top-full left-0 mt-1 bg-white border border-[#e5e7eb] rounded-xl shadow-lg z-50 py-1 min-w-full max-h-52 overflow-y-auto">
-                <button onClick={() => { setAssignee(''); assigneeDd.setOpen(false) }}
-                  className="w-full flex items-center px-3 py-2 hover:bg-[#f9fafb] text-[12px] text-[#9ca3af] cursor-pointer transition-colors">
-                  Sin asignar
+          <span className="text-[10px] font-bold text-[#b0b7c3] uppercase tracking-widest w-28 shrink-0">Responsables</span>
+          <div className="flex-1 flex items-center gap-1.5 flex-wrap">
+            {assignees.map(name => {
+              const member = activeTeam.find(m => m.name.trim().toLowerCase() === name.trim().toLowerCase())
+              return (
+                <button key={name} type="button" onClick={() => removeAssignee(name)}
+                  title={`${name} — clic para quitar`}
+                  className="group relative w-7 h-7 rounded-full flex items-center justify-center text-[9px] font-bold text-white transition-opacity hover:opacity-80 cursor-pointer"
+                  style={{ background: member?.color ?? '#6366f1' }}>
+                  {member ? member.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() : name.slice(0, 2).toUpperCase()}
+                  <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[8px] hidden group-hover:flex items-center justify-center">×</span>
                 </button>
-                {activeTeam.map(m => (
-                  <button key={m.id} onClick={() => { setAssignee(m.name); assigneeDd.setOpen(false) }}
-                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-[#f9fafb] cursor-pointer transition-colors">
-                    <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0"
-                      style={{ background: m.color ?? '#6366f1' }}>
-                      {m.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
-                    </div>
-                    <span className="text-[12px] text-[#111827] truncate">{m.name}</span>
-                    {m.name === assignee && <Check size={11} className="ml-auto text-[#7c3aed] shrink-0" />}
-                  </button>
-                ))}
-              </div>
+              )
+            })}
+
+            <div ref={assigneeDd.ref} className="relative">
+              <button onClick={() => assigneeDd.setOpen(o => !o)}
+                className="w-7 h-7 rounded-full border border-dashed border-[#d1d5db] flex items-center justify-center text-[14px] text-[#9ca3af] hover:border-[#7c3aed] hover:text-[#7c3aed] transition-colors cursor-pointer leading-none">
+                +
+              </button>
+              {assigneeDd.open && (
+                <div className="absolute top-full left-0 mt-1 bg-white border border-[#e5e7eb] rounded-xl shadow-lg z-50 py-1 min-w-[180px] max-h-52 overflow-y-auto">
+                  {activeTeam.filter(m => !assignees.some(a => a.trim().toLowerCase() === m.name.trim().toLowerCase())).map(m => (
+                    <button key={m.id} onClick={() => { addAssignee(m.name); assigneeDd.setOpen(false) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 hover:bg-[#f9fafb] cursor-pointer transition-colors">
+                      <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                        style={{ background: m.color ?? '#6366f1' }}>
+                        {m.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                      </div>
+                      <span className="text-[12px] text-[#111827] truncate">{m.name}</span>
+                    </button>
+                  ))}
+                  {activeTeam.filter(m => !assignees.some(a => a.trim().toLowerCase() === m.name.trim().toLowerCase())).length === 0 && (
+                    <p className="px-3 py-2 text-[11px] text-[#9ca3af]">Todos ya están asignados</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {assignees.length === 0 && (
+              <span className="text-[12px] text-[#9ca3af]">Sin asignar…</span>
             )}
           </div>
         </div>

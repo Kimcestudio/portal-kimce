@@ -13,6 +13,7 @@ import { db } from '@/services/firebase/client'
 import { useHub } from '@/cmhub/context'
 import { useHubTheme, useHubMeta } from '@/cmhub/theme'
 import { useOptionalAuth } from '@/components/auth/AuthProvider'
+import { getActividadAssignees, actividadHasAssignee } from '@/cmhub/activities'
 import type { TeamCategory, TeamMember, Content, ContentStatus, HubActividad } from '@/cmhub/types'
 import ContentModal from '@/components/cmhub/ContentModal'
 import ActividadModal from '@/components/cmhub/ActividadModal'
@@ -353,29 +354,39 @@ function ActividadStatusSelect({ value, onChange }: { value: HubActividad['statu
 }
 
 // ── Dropdown asignado de actividad ────────────────────────────────────────────
-function AssigneeSelect({ value, members, onChange }: { value?: string; members: TeamMember[]; onChange: (name: string) => void }) {
+function AssigneeSelect({ value, members, onChange }: { value: string[]; members: TeamMember[]; onChange: (names: string[]) => void }) {
   const { open, setOpen, pos, btnRef, toggle } = usePortalDropdown()
-  const current = members.find(m => sameName(value, m.name))
+  const current = value
+    .map(name => members.find(m => sameName(name, m.name)))
+    .filter(Boolean) as TeamMember[]
+
+  function toggleMember(name: string) {
+    onChange(value.some(v => sameName(v, name)) ? value.filter(v => !sameName(v, name)) : [...value, name])
+  }
 
   return (
     <div data-dropdown-root className="shrink-0">
       <button ref={btnRef} onClick={toggle} className="flex items-center gap-1 cursor-pointer">
-        {current
-          ? <MemberAvatar member={current} size="xs" />
-          : <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center">
-              <Users2 size={9} className="opacity-50" />
-            </div>}
+        {current.length > 0 ? (
+          <div className="flex -space-x-1.5">
+            {current.slice(0, 3).map(m => <MemberAvatar key={m.id} member={m} size="xs" />)}
+          </div>
+        ) : (
+          <div className="w-5 h-5 rounded-full bg-white/10 flex items-center justify-center">
+            <Users2 size={9} className="opacity-50" />
+          </div>
+        )}
         <ChevronDown size={9} className="opacity-40" />
       </button>
       {open && createPortal(
         <div style={{ position: 'fixed', top: pos.top, right: pos.right, zIndex: 9999 }}
-          className="bg-[#1e2028] border border-white/10 rounded-xl shadow-xl py-1 min-w-[160px]">
+          className="bg-[#1e2028] border border-white/10 rounded-xl shadow-xl py-1 min-w-[160px] max-h-56 overflow-y-auto">
           {members.map(m => (
-            <button key={m.id} onClick={e => { e.stopPropagation(); onChange(m.name); setOpen(false) }}
+            <button key={m.id} onClick={e => { e.stopPropagation(); toggleMember(m.name) }}
               className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-white/5 transition-colors cursor-pointer">
               <MemberAvatar member={m} size="xs" />
               <span className="text-[11px] text-white/80">{m.name}</span>
-              {sameName(value, m.name) && <Check size={10} className="ml-auto shrink-0 text-indigo-400" />}
+              {value.some(v => sameName(v, m.name)) && <Check size={10} className="ml-auto shrink-0 text-indigo-400" />}
             </button>
           ))}
         </div>,
@@ -451,7 +462,7 @@ function PanelView({
   const [proximasOpen, setProximasOpen] = useState(true)
 
   const areaContents = contents.filter(c => names.some(n => memberAssigned(c, n)))
-  const areaActividades = actividades.filter(a => names.some(n => sameName(a.assignee, n)))
+  const areaActividades = actividades.filter(a => names.some(n => actividadHasAssignee(a, n)))
   const actividadesActivas = areaActividades.filter(a => a.status !== 'completado')
 
   const pendientes = areaContents.filter(c => wf.pendientes.includes(c.status))
@@ -604,8 +615,8 @@ function PanelView({
           <span className="w-[110px] shrink-0 text-[11px] truncate" style={{ color: T.muted }}>{a.category ?? '—'}</span>
           {/* Responsable */}
           <div className="w-7 shrink-0 flex justify-center" onClick={e => e.stopPropagation()}>
-            <AssigneeSelect value={a.assignee} members={members}
-              onChange={n => updateDoc(fsDoc(db, 'hubActividades', a.id), { assignee: n }).catch(console.error)} />
+            <AssigneeSelect value={getActividadAssignees(a)} members={members}
+              onChange={names => updateDoc(fsDoc(db, 'hubActividades', a.id), { assignees: names, assignee: names[0] ?? null }).catch(console.error)} />
           </div>
           {/* Estado */}
           <div className="w-[110px] shrink-0 flex justify-start" onClick={e => e.stopPropagation()}>
@@ -770,7 +781,7 @@ function PanelView({
                 memberAssigned(c, m.name) && ['idea','produccion','revision','cambios'].includes(c.status)
               ).length
               const activeActs = areaActividades.filter(a =>
-                sameName(a.assignee, m.name) && a.status !== 'completado'
+                actividadHasAssignee(a, m.name) && a.status !== 'completado'
               ).length
               return (
                 <div key={m.id} className="rounded-2xl p-3 border transition-opacity"
@@ -869,7 +880,7 @@ function SemanaView({
     const actItems: WeekItem[] = actividades
       .filter(a => {
         if (!a.dueDate || a.dueDate !== iso) return false
-        if (!filterNames.some(n => sameName(a.assignee, n))) return false
+        if (!filterNames.some(n => actividadHasAssignee(a, n))) return false
         if (tipoFilter !== 'Todo' && tipoFilter !== 'Actividades') return false
         return true
       })
@@ -1011,7 +1022,10 @@ function SemanaView({
 
                         if (item.kind === 'actividad') {
                           const a = item.data
-                          const assignee = members.find(m => sameName(a.assignee, m.name))
+                          const assigneeNames = getActividadAssignees(a)
+                          const assignees = assigneeNames
+                            .map(n => members.find(m => sameName(n, m.name)))
+                            .filter(Boolean) as TeamMember[]
                           return (
                             <tr key={`a-${a.id}`} style={{ borderTop: sep }}
                               className="hover:opacity-80 transition-opacity cursor-pointer"
@@ -1020,12 +1034,18 @@ function SemanaView({
                               <td className="px-4 py-3 font-semibold truncate overflow-hidden" style={{ color: T.text, maxWidth: 0 }}>{a.title}</td>
                               <td className="px-4 py-3"><span style={{ color: T.muted }}>—</span></td>
                               <td className="px-4 py-3">
-                                {assignee ? (
+                                {assignees.length > 0 ? (
                                   <div className="flex items-center gap-1.5">
-                                    <MemberAvatar member={assignee} size="xs" />
-                                    <span className="font-semibold truncate max-w-[90px]" style={{ color: T.sub }}>{assignee.name}</span>
+                                    <div className="flex -space-x-1.5">
+                                      {assignees.slice(0, 3).map(m => <MemberAvatar key={m.id} member={m} size="xs" />)}
+                                    </div>
+                                    {assignees.length === 1 ? (
+                                      <span className="font-semibold truncate max-w-[90px]" style={{ color: T.sub }}>{assignees[0].name}</span>
+                                    ) : (
+                                      <span className="font-semibold" style={{ color: T.sub }}>{assignees.length} personas</span>
+                                    )}
                                   </div>
-                                ) : <span style={{ color: T.muted }}>{a.assignee ?? '—'}</span>}
+                                ) : <span style={{ color: T.muted }}>—</span>}
                               </td>
                               <td className="px-4 py-3"><ActStatusBadge status={a.status} /></td>
                               <td className="px-4 py-3 font-mono text-[10px]" style={{ color: T.muted }}>—</td>

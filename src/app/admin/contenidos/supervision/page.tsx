@@ -8,6 +8,7 @@ import { useHub } from '@/cmhub/context'
 import { useHubTheme } from '@/cmhub/theme'
 import { useHubBase } from '@/cmhub/useHubBase'
 import { useOptionalAuth } from '@/components/auth/AuthProvider'
+import { actividadHasAssignee } from '@/cmhub/activities'
 import type { TeamMember, Content, HubActividad } from '@/cmhub/types'
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
@@ -168,7 +169,7 @@ function VistaGeneral({
     const completadas = mine.filter(c =>
       DONE_STATUSES.includes(c.status) && c.updatedAt >= week.start
     )
-    const misActivs  = actividades.filter(a => sameName(a.assignee, m.name))
+    const misActivs  = actividades.filter(a => actividadHasAssignee(a, m.name))
     const actsActivas = misActivs.filter(a => a.status !== 'completado')
     const level      = workloadLevel(activas.length, vencidas.length)
     const entry      = activeToday[m.id]

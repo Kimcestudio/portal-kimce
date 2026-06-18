@@ -5,6 +5,7 @@ import ContentViewSwitcher from '@/components/cmhub/ContentViewSwitcher'
 import { useHub } from '@/cmhub/context'
 import { useHubMeta } from '@/cmhub/theme'
 import { ALL_STATUSES, ALL_NETWORKS } from '@/cmhub/data'
+import { getActividadAssignees } from '@/cmhub/activities'
 import ContentModal from '@/components/cmhub/ContentModal'
 import NetworkIcon from '@/components/cmhub/NetworkIcon'
 import type { Content, ContentStatus, Network, HubActividad } from '@/cmhub/types'
@@ -753,44 +754,50 @@ export default function SemanaPage() {
                 </div>
 
                 {/* Copy snippet */}
-                {c.copy && (
-                  <div className="bg-[#f9fafb] rounded-xl p-3">
-                    <p className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide mb-1.5">Copy</p>
-                    <p className="text-[12px] text-[#374151] leading-relaxed line-clamp-4">{c.copy}</p>
-                  </div>
-                )}
+                <div className="bg-[#f9fafb] rounded-xl p-3">
+                  <p className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide mb-1.5">Copy</p>
+                  <p className={`text-[12px] leading-relaxed line-clamp-4 ${c.copy ? 'text-[#374151]' : 'text-[#9ca3af] italic'}`}>
+                    {c.copy || 'Sin copy redactado.'}
+                  </p>
+                </div>
 
                 {/* Drive link + preview */}
-                {c.driveUrl && (
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center gap-2">
-                      <p className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wide flex-1">Drive</p>
-                      <a href={c.driveUrl} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-1 text-[11px] font-semibold text-[#7c3aed] hover:underline">
-                        Abrir <ExternalLink size={10} />
-                      </a>
+                <div className="flex flex-col gap-2">
+                  <p className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wide">Drive</p>
+                  {c.driveUrl ? (
+                    <>
+                      <div className="flex items-center justify-end">
+                        <a href={c.driveUrl} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-[11px] font-semibold text-[#7c3aed] hover:underline">
+                          Abrir <ExternalLink size={10} />
+                        </a>
+                      </div>
+                      {drivePreview ? (
+                        <iframe
+                          src={drivePreview}
+                          className="w-full rounded-xl border border-[#e5e7eb]"
+                          style={{ height: '200px' }}
+                          allow="autoplay"
+                          title="Drive preview"
+                        />
+                      ) : (
+                        <a href={c.driveUrl} target="_blank" rel="noopener noreferrer"
+                          className="flex items-center gap-2 bg-[#f9fafb] rounded-xl p-3 hover:bg-[#f3f4f6] transition-colors group">
+                          <div className="w-8 h-8 rounded-lg bg-[#4285f4]/10 flex items-center justify-center shrink-0">
+                            <ExternalLink size={14} className="text-[#4285f4]" />
+                          </div>
+                          <span className="text-[11px] font-medium text-[#374151] truncate group-hover:text-[#7c3aed]">
+                            {c.driveUrl}
+                          </span>
+                        </a>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-[#9ca3af] border border-dashed border-[#e5e7eb] rounded-xl p-3">
+                      Sin diseño cargado
                     </div>
-                    {drivePreview ? (
-                      <iframe
-                        src={drivePreview}
-                        className="w-full rounded-xl border border-[#e5e7eb]"
-                        style={{ height: '200px' }}
-                        allow="autoplay"
-                        title="Drive preview"
-                      />
-                    ) : (
-                      <a href={c.driveUrl} target="_blank" rel="noopener noreferrer"
-                        className="flex items-center gap-2 bg-[#f9fafb] rounded-xl p-3 hover:bg-[#f3f4f6] transition-colors group">
-                        <div className="w-8 h-8 rounded-lg bg-[#4285f4]/10 flex items-center justify-center shrink-0">
-                          <ExternalLink size={14} className="text-[#4285f4]" />
-                        </div>
-                        <span className="text-[11px] font-medium text-[#374151] truncate group-hover:text-[#7c3aed]">
-                          {c.driveUrl}
-                        </span>
-                      </a>
-                    )}
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
             </div>
           )
@@ -847,12 +854,16 @@ export default function SemanaPage() {
                     <span className="font-semibold text-[#d97706]">{a.dueDate}</span>
                   </div>
                 )}
-                {a.assignee && (
-                  <div className="flex items-center justify-between text-[12px]">
-                    <span className="text-[#9ca3af]">Asignado a</span>
-                    <span className="font-semibold text-[#374151] truncate max-w-[120px]">{a.assignee}</span>
-                  </div>
-                )}
+                {(() => {
+                  const names = getActividadAssignees(a)
+                  if (names.length === 0) return null
+                  return (
+                    <div className="flex items-start justify-between text-[12px] gap-2">
+                      <span className="text-[#9ca3af] shrink-0">{names.length > 1 ? 'Asignados a' : 'Asignado a'}</span>
+                      <span className="font-semibold text-[#374151] text-right">{names.join(', ')}</span>
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* Description */}

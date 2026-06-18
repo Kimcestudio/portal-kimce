@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useHub } from '@/cmhub/context'
 import { useHubTheme } from '@/cmhub/theme'
+import { getActividadAssignees } from '@/cmhub/activities'
 import type { Proyecto, ProyectoObjetivo } from '@/cmhub/types'
 
 type EstadoP = 'activo' | 'pausado' | 'completado'
@@ -311,11 +312,16 @@ function ProyectoModal({
                       <span className="flex-1 text-[13px] min-w-0 truncate" style={{ color: T.text }}>{a.title}</span>
                       <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
                         style={{ color: cfg.color, background: cfg.bg }}>{cfg.label}</span>
-                      {a.assignee && (
-                        <span className="text-[11px] shrink-0" style={{ color: T.muted }}>
-                          {a.assignee.split(' ')[0]}
-                        </span>
-                      )}
+                      {(() => {
+                        const names = getActividadAssignees(a)
+                        if (names.length === 0) return null
+                        const label = names.length === 1 ? names[0].split(' ')[0] : `${names.length} personas`
+                        return (
+                          <span className="text-[11px] shrink-0" style={{ color: T.muted }}>
+                            {label}
+                          </span>
+                        )
+                      })()}
                       {a.dueDate && (
                         <span className="text-[10px] shrink-0" style={{ color: T.muted }}>{fmt(a.dueDate)}</span>
                       )}

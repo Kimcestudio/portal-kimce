@@ -212,6 +212,7 @@ export interface HubActividad {
   status: 'pendiente' | 'en_curso' | 'completado'
   proyectoId?: string | null
   assignee?: string
+  assignees?: string[]
   category?: string
   dueDate?: string
   description?: string

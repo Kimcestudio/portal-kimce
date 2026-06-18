@@ -7,6 +7,7 @@ import { db } from '@/services/firebase/client'
 import { useHub } from '@/cmhub/context'
 import { useHubBase } from '@/cmhub/useHubBase'
 import { NETWORK_META, STATUS_META } from '@/cmhub/data'
+import { actividadHasAssignee } from '@/cmhub/activities'
 import NetworkIcon from '@/components/cmhub/NetworkIcon'
 import ContentModal from '@/components/cmhub/ContentModal'
 import { useOptionalAuth } from '@/components/auth/AuthProvider'
@@ -152,7 +153,7 @@ export default function Dashboard() {
 
   // Mis actividades activas (pendiente / en_curso)
   const myActiveActivities = actividades
-    .filter(a => a.assignee === myName && a.status !== 'completado')
+    .filter(a => myName && actividadHasAssignee(a, myName) && a.status !== 'completado')
     .sort((a, b) => (a.dueDate ?? '9') < (b.dueDate ?? '9') ? -1 : 1)
     .slice(0, 5)
 
