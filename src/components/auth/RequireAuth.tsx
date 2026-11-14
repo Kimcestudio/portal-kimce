@@ -6,7 +6,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 
 interface RequireAuthProps {
   children: React.ReactNode;
-  role?: "admin" | "collab";
+  role?: "admin" | "collab" | "client";
 }
 
 export default function RequireAuth({ children, role }: RequireAuthProps) {
@@ -21,7 +21,11 @@ export default function RequireAuth({ children, role }: RequireAuthProps) {
       return;
     }
     if (role && user.role !== role) {
-      router.replace(user.role === "admin" ? "/admin/dashboard" : "/app/dashboard");
+      if (user.role === "client") {
+        router.replace("/clientes/mi-marca");
+      } else {
+        router.replace(user.role === "admin" ? "/admin/dashboard" : "/app/dashboard");
+      }
     }
   }, [loading, user, role, router, pathname]);
 

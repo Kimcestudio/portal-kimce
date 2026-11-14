@@ -19,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="es" translate="no">
       <body>
         <AuthProvider>{children}</AuthProvider>
       </body>

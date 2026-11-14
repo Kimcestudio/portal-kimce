@@ -1,6 +1,6 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { Plus, ArrowUpRight, AlertTriangle, CheckCircle2, CalendarDays, Zap, ListChecks, ClipboardList } from 'lucide-react'
+import { useState, useEffect, useRef, useMemo } from 'react'
+import { Plus, ArrowUpRight, AlertTriangle, CheckCircle2, CalendarDays, Zap, ListChecks, ClipboardList, LogIn, LogOut, Coffee } from 'lucide-react'
 import Link from 'next/link'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/client'
@@ -10,38 +10,16 @@ import { NETWORK_META, STATUS_META } from '@/cmhub/data'
 import { actividadHasAssignee } from '@/cmhub/activities'
 import { getContentRelevantDate } from '@/cmhub/contentDates'
 import NetworkIcon from '@/components/cmhub/NetworkIcon'
-import ContentModal from '@/components/cmhub/ContentModal'
+import dynamic from 'next/dynamic'
+const ContentModal = dynamic(() => import('@/components/cmhub/ContentModal'), { ssr: false })
 import { useOptionalAuth } from '@/components/auth/AuthProvider'
+import { useAttendanceSession } from '@/components/attendance/useAttendanceSession'
 import type { Content, TeamMember, HubActividad } from '@/cmhub/types'
+import { getWorkflow } from '@/cmhub/workflow'
 
-// ── Workflow por área ──────────────────────────────────────────────────────
-// Diseño/Audiovisual: produccion → revision → aprobado (done)
-// Estrategia/CM:      idea → ... → publicado (done)
-function getWorkflow(area: string | null | undefined) {
-  const isCreativo = area === 'Diseño' || area === 'Audiovisual'
-  if (isCreativo) {
-    return {
-      pendientesLabel: 'En Producción',
-      revisionLabel:   'En Revisión',
-      listosLabel:     'Aprobados',
-      pendientes: ['produccion'],
-      enRevision: ['revision'],
-      listos:     ['aprobado', 'programado', 'publicado', 'finalizado'],
-      active:     ['produccion', 'revision'],
-      isCreativo: true,
-    }
-  }
-  return {
-    pendientesLabel: 'Pendientes',
-    revisionLabel:   'En Revisión',
-    listosLabel:     'Publicados',
-    pendientes: ['idea', 'produccion'],
-    enRevision: ['revision', 'cambios'],
-    listos:     ['publicado', 'finalizado'],
-    active:     ['idea', 'produccion', 'revision', 'cambios', 'aprobado', 'programado'],
-    isCreativo: false,
-  }
-}
+type DashItem =
+  | { kind: 'content'; data: Content }
+  | { kind: 'actividad'; data: HubActividad }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function todayISO() { return new Date().toISOString().split('T')[0] }
@@ -62,8 +40,12 @@ function sameName(a: string | null | undefined, b: string) {
 
 function useActiveToday(members: TeamMember[]) {
   const [active, setActive] = useState<Record<string, { checkInAt: string; checkOutAt: string | null }>>({})
+  // Usar key estable de IDs para evitar re-suscripción cuando el array cambia referencia pero no contenido
+  const memberIdsKey = members.map(m => m.id).sort().join(',')
+  const membersRef = useRef(members)
+  membersRef.current = members
   useEffect(() => {
-    if (!members.length) return
+    if (!membersRef.current.length) return
     const q = query(collection(db, 'timeEntries'), where('dayKey', '==', todayISO()))
     return onSnapshot(q, snap => {
       const byUid: Record<string, { clockIn?: string; clockOut?: string }> = {}
@@ -75,13 +57,14 @@ function useActiveToday(members: TeamMember[]) {
         if (data.type === 'clock_out') byUid[data.uid].clockOut = data.ts
       })
       const result: Record<string, { checkInAt: string; checkOutAt: string | null }> = {}
-      members.forEach(m => {
+      membersRef.current.forEach(m => {
         const e = byUid[m.id]
         if (e?.clockIn) result[m.id] = { checkInAt: e.clockIn, checkOutAt: e.clockOut ?? null }
       })
       setActive(result)
     }, () => {})
-  }, [members])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberIdsKey])
   return active
 }
 
@@ -125,44 +108,78 @@ export default function Dashboard() {
     sameName(c.dueAssignee, myName)
   )
 
+  const myActividades = actividades.filter(a => myName && actividadHasAssignee(a, myName) && a.status !== 'completado')
+
+  // Mis tareas activas: contenidos en pipeline + TODAS mis actividades activas
+  // (igual que el contenido, una actividad puede aparecer aquí Y en agenda/alertas/próximas)
   const myPendientes = myContents.filter(c => wf.pendientes.includes(c.status))
   const myEnRevision = myContents.filter(c => wf.enRevision.includes(c.status))
   const myListos     = myContents.filter(c => wf.listos.includes(c.status))
+  const myTareasActivas: DashItem[] = [
+    ...[...myPendientes, ...myEnRevision].map(c => ({ kind: 'content' as const, data: c })),
+    ...myActividades.map(a => ({ kind: 'actividad' as const, data: a })),
+  ]
 
-  // Agenda de hoy: mis entregas/publicaciones activas con fecha relevante hoy
-  const myAgendaHoy = myContents
-    .filter(c => getContentRelevantDate(c, wf.isCreativo) === today && wf.active.includes(c.status))
-    .sort((a, b) => (getContentRelevantDate(a, wf.isCreativo) ?? '').localeCompare(getContentRelevantDate(b, wf.isCreativo) ?? ''))
+  // Agenda de hoy: mis entregas/publicaciones + actividades con fecha relevante hoy
+  const myAgendaHoy: DashItem[] = [
+    ...myContents
+      .filter(c => getContentRelevantDate(c, wf.isCreativo) === today && wf.active.includes(c.status))
+      .map(c => ({ kind: 'content' as const, data: c })),
+    ...myActividades
+      .filter(a => a.dueDate === today)
+      .map(a => ({ kind: 'actividad' as const, data: a })),
+  ]
 
-  // Mis alertas: vencidos dentro de mi workflow + cambios (solo CM)
-  const myAlertas = myContents.filter(c => {
-    const relevant = getContentRelevantDate(c, wf.isCreativo)
-    const overdue = relevant && relevant < today && wf.active.includes(c.status)
-    const cambios = c.status === 'cambios' && !wf.isCreativo
-    return overdue || cambios
-  }).slice(0, 5)
-
-  // Mis próximas entregas/publicaciones (1–7 días) dentro de mi workflow activo
-  const myProximas = myContents
-    .filter(c => {
+  // Mis alertas: vencidos dentro de mi workflow + cambios (solo CM) + actividades vencidas
+  const myAlertas: DashItem[] = [
+    ...myContents.filter(c => {
       const relevant = getContentRelevantDate(c, wf.isCreativo)
-      if (!relevant || relevant <= today) return false
-      if (!wf.active.includes(c.status)) return false
-      const diff = Math.ceil((new Date(relevant).getTime() - Date.now()) / 86_400_000)
-      return diff >= 1 && diff <= 7
-    })
-    .sort((a, b) => (getContentRelevantDate(a, wf.isCreativo) ?? '').localeCompare(getContentRelevantDate(b, wf.isCreativo) ?? ''))
-    .slice(0, 5)
+      const overdue = relevant && relevant < today && wf.active.includes(c.status)
+      const cambios = c.status === 'cambios' && !wf.isCreativo
+      return overdue || cambios
+    }).map(c => ({ kind: 'content' as const, data: c })),
+    ...myActividades
+      .filter(a => a.dueDate && a.dueDate < today)
+      .map(a => ({ kind: 'actividad' as const, data: a })),
+  ].slice(0, 5)
 
-  // Mis actividades activas (pendiente / en_curso)
-  const myActiveActivities = actividades
-    .filter(a => myName && actividadHasAssignee(a, myName) && a.status !== 'completado')
-    .sort((a, b) => (a.dueDate ?? '9') < (b.dueDate ?? '9') ? -1 : 1)
-    .slice(0, 5)
+  // Mis próximas (1–7 días) + actividades futuras o sin fecha (para no perderlas de vista)
+  const myProximas: DashItem[] = [
+    ...myContents
+      .filter(c => {
+        const relevant = getContentRelevantDate(c, wf.isCreativo)
+        if (!relevant || relevant <= today) return false
+        if (!wf.active.includes(c.status)) return false
+        const diff = Math.ceil((new Date(relevant).getTime() - Date.now()) / 86_400_000)
+        return diff >= 1 && diff <= 7
+      })
+      .sort((a, b) => (getContentRelevantDate(a, wf.isCreativo) ?? '').localeCompare(getContentRelevantDate(b, wf.isCreativo) ?? ''))
+      .map(c => ({ kind: 'content' as const, data: c })),
+    ...myActividades
+      .filter(a => !a.dueDate || a.dueDate > today)
+      .sort((a, b) => (a.dueDate ?? 'zzzz').localeCompare(b.dueDate ?? 'zzzz'))
+      .map(a => ({ kind: 'actividad' as const, data: a })),
+  ].slice(0, 5)
 
-  // Mi estado de asistencia
+  // Mi estado de asistencia (lectura rápida para el equipo)
   const myEntry    = myUid ? activeToday[myUid] : undefined
   const myIsActive = !!myEntry && !myEntry.checkOutAt
+
+  // Referencias estables para evitar re-renders infinitos en useAttendanceSession
+  // { uid: myUid } crea un objeto nuevo en cada render → el useEffect que depende de [user] loopeaba
+  const attendanceUser = useMemo(
+    () => myUid ? { uid: myUid } : null,
+    [myUid]
+  )
+  const emptyActivities = useRef<{ date: string; minutes: number }[]>([]).current
+  const emptyRequests   = useRef<import('@/lib/attendanceUtils').ApprovedAttendanceRequest[]>([]).current
+
+  // Acciones de fichaje — solo para el usuario real (no viewAs)
+  const attendance = useAttendanceSession({
+    user: attendanceUser,
+    approvedExtraActivities: emptyActivities,
+    approvedHourRequests: emptyRequests,
+  })
 
   // Equipo activo (solo contexto)
   const activeTeam = team.filter(m => activeToday[m.id] && !activeToday[m.id].checkOutAt)
@@ -177,10 +194,18 @@ export default function Dashboard() {
         onSaved={() => setSelectedContent(null)}
       />
     )}
-    <div className="flex flex-col h-full overflow-hidden bg-[#f8fafc]">
+    <div className="flex flex-col h-full overflow-hidden"
+      style={{ background: 'linear-gradient(160deg, #f8fafc 0%, #f0f4ff 60%, #f5f3ff 100%)' }}>
 
       {/* Header */}
-      <div className="bg-white border-b border-[#e5e7eb] px-6 h-14 flex items-center gap-4 shrink-0">
+      <div className="px-6 h-14 flex items-center gap-4 shrink-0"
+        style={{
+          background: 'rgba(255,255,255,0.88)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderBottom: '1px solid rgba(0,0,0,0.05)',
+          boxShadow: '0 1px 0 rgba(255,255,255,1), 0 2px 12px rgba(0,0,0,0.04)',
+        }}>
         <div className="flex-1">
           <span className="text-[13px] font-semibold text-[#111827]">
             {myName ? `Hola, ${myName.split(' ')[0]}` : 'Dashboard'}
@@ -192,13 +217,23 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-2">
           <Link href={`${base}/clientes`}
-            className="flex items-center gap-1.5 border border-[#e5e7eb] bg-white text-[#374151] text-[13px] font-medium px-3.5 py-2 rounded-xl hover:bg-[#f9fafb] transition-colors">
+            className="flex items-center gap-1.5 text-[13px] font-medium px-3.5 py-2 rounded-xl transition-all"
+            style={{ background: 'rgba(0,0,0,0.04)', color: '#374151', border: '1px solid rgba(0,0,0,0.06)' }}>
             <ArrowUpRight size={14} /> Clientes
           </Link>
-          <Link href={`${base}/publicaciones`}
-            className="flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[13px] font-semibold px-4 py-2 rounded-xl transition-colors">
-            <Plus size={15} /> Nueva publicación
-          </Link>
+          {wf.isCreativo ? (
+            <Link href={`${base}/actividades`}
+              className="flex items-center gap-2 text-white text-[13px] font-semibold px-4 py-2 rounded-xl transition-all shadow-sm hover:shadow-md"
+              style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)' }}>
+              <ClipboardList size={15} /> Mis tareas
+            </Link>
+          ) : (
+            <Link href={`${base}/publicaciones`}
+              className="flex items-center gap-2 text-white text-[13px] font-semibold px-4 py-2 rounded-xl transition-all shadow-sm hover:shadow-md"
+              style={{ background: 'linear-gradient(135deg, #7c3aed, #6d28d9)' }}>
+              <Plus size={15} /> Nueva publicación
+            </Link>
+          )}
         </div>
       </div>
 
@@ -206,9 +241,16 @@ export default function Dashboard() {
         <div className="p-6 flex flex-col gap-5">
 
           {/* Mi estado hoy */}
-          <div className="bg-white rounded-2xl border border-[#e5e7eb] p-4 flex items-center gap-4">
+          <div className="rounded-2xl p-4 flex items-center gap-4"
+            style={{
+              background: 'rgba(255,255,255,0.80)',
+              backdropFilter: 'blur(12px)',
+              WebkitBackdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255,255,255,0.9)',
+              boxShadow: '0 2px 20px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,1)',
+            }}>
             {profile?.photoURL ? (
-              <img src={profile.photoURL} alt={myName}
+              <img src={profile.photoURL} alt={myName} loading="lazy"
                 className="w-12 h-12 rounded-full object-cover shrink-0 border border-[#e5e7eb]" />
             ) : (
               <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#7c3aed] to-[#4f46e5] flex items-center justify-center text-white font-bold text-[16px] shrink-0">
@@ -235,16 +277,81 @@ export default function Dashboard() {
                 <p className="text-[10px] text-[#9ca3af] mt-0.5">{wf.listosLabel}</p>
               </div>
               <div className="w-px h-8 bg-[#f3f4f6]" />
-              <span className="text-[11px] font-bold px-3 py-1.5 rounded-xl"
-                style={myIsActive
-                  ? { background: '#dcfce7', color: '#16a34a' }
-                  : { background: '#f3f4f6', color: '#9ca3af' }}>
-                {myIsActive
-                  ? `● En sesión desde ${fmtTime(myEntry!.checkInAt)}`
-                  : '○ Sin fichar hoy'}
-              </span>
+              {/* Botones de fichaje — se ocultan en modo viewAs */}
+              {!myUid ? null : !attendance.hasLoadedToday ? (
+                <span className="text-[11px] text-[#9ca3af] px-3 py-1.5">Cargando…</span>
+              ) : attendance.status === 'CLOSED' ? (
+                <span className="text-[11px] font-bold px-3 py-1.5 rounded-xl"
+                  style={{ background: '#dcfce7', color: '#16a34a' }}>
+                  Jornada completada
+                </span>
+              ) : attendance.status === 'OFF' ? (
+                <button
+                  type="button"
+                  onClick={attendance.handleCheckIn}
+                  className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-xl transition-colors hover:opacity-90"
+                  style={{ background: '#7c3aed', color: '#fff' }}>
+                  <LogIn size={12} /> Marcar entrada
+                </button>
+              ) : attendance.status === 'ON_BREAK' ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl"
+                    style={{ background: '#fef3c7', color: '#d97706' }}>
+                    ● En descanso
+                  </span>
+                  <button
+                    type="button"
+                    onClick={attendance.handleEndBreak}
+                    className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-xl border border-[#e5e7eb] bg-white text-[#374151] transition-colors hover:bg-[#f9fafb]">
+                    <Coffee size={12} /> Terminar descanso
+                  </button>
+                </div>
+              ) : (
+                // IN_SHIFT
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold px-2.5 py-1.5 rounded-xl"
+                    style={{ background: '#dcfce7', color: '#16a34a' }}>
+                    ● Desde {fmtTime(attendance.todayRecord?.checkInAt ?? '')}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={attendance.handleStartBreak}
+                    className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-xl border border-[#e5e7eb] bg-white text-[#374151] transition-colors hover:bg-[#f9fafb]">
+                    <Coffee size={12} /> Descanso
+                  </button>
+                  <button
+                    type="button"
+                    onClick={attendance.handleCheckOut}
+                    className="flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-xl transition-colors hover:opacity-90"
+                    style={{ background: '#dc2626', color: '#fff' }}>
+                    <LogOut size={12} /> Marcar salida
+                  </button>
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Confirmación de almuerzo automático */}
+          {attendance.lunchConfirmPending && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-[#fde68a] bg-[#fffbeb] text-[12px] text-[#92400e]">
+              <span className="font-semibold">Llevas más de 4 h sin pausa.</span>
+              <span>¿Contamos 1:15 h de almuerzo automático?</span>
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={attendance.confirmCheckOutAutoLunch}
+                  className="text-[11px] font-bold px-3 py-1 rounded-lg bg-[#d97706] text-white hover:opacity-90 transition-colors">
+                  Sí, continuar
+                </button>
+                <button
+                  type="button"
+                  onClick={attendance.cancelLunchConfirm}
+                  className="text-[11px] font-bold px-3 py-1 rounded-lg border border-[#e5e7eb] bg-white text-[#374151] hover:bg-[#f9fafb] transition-colors">
+                  No, cancelar
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Grid principal */}
           <div className="grid grid-cols-[1fr_296px] gap-5">
@@ -253,7 +360,7 @@ export default function Dashboard() {
             <div className="flex flex-col gap-4">
 
               {/* Agenda de hoy */}
-              <div className="bg-white rounded-2xl border border-[#e5e7eb] overflow-hidden">
+              <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.80)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.9)', boxShadow: '0 2px 20px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,1)' }}>
                 <div className="px-5 py-3.5 border-b border-[#f3f4f6] flex items-center gap-2">
                   <Zap size={15} className="text-[#d97706]" />
                   <span className="text-[14px] font-bold text-[#111827]">Agenda de hoy</span>
@@ -270,7 +377,22 @@ export default function Dashboard() {
                   </div>
                 ) : (
                   <div className="divide-y divide-[#f9fafb]">
-                    {myAgendaHoy.map(c => {
+                    {myAgendaHoy.map(item => {
+                      if (item.kind === 'actividad') {
+                        const a = item.data
+                        return (
+                          <div key={`a-${a.id}`} className="px-5 py-3.5 hover:bg-[#fafafa] transition-colors">
+                            <div className="flex items-center gap-2 mb-1.5">
+                              <span className="flex items-center gap-1 text-[9px] font-bold px-2 py-0.5 rounded-md bg-[#ede9fe] text-[#7c3aed]">
+                                <ClipboardList size={9} /> Actividad
+                              </span>
+                              {a.category && <span className="ml-auto text-[9px] text-[#9ca3af]">{a.category}</span>}
+                            </div>
+                            <p className="text-[13px] font-semibold text-[#111827]">{a.title}</p>
+                          </div>
+                        )
+                      }
+                      const c = item.data
                       const brand = brands.find(b => b.id === c.brandId)
                       return (
                         <div key={c.id} className="px-5 py-3.5 hover:bg-[#fafafa] transition-colors cursor-pointer"
@@ -293,21 +415,44 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Mis contenidos activos */}
-              <div className="bg-white rounded-2xl border border-[#e5e7eb] overflow-hidden">
+              {/* Mis tareas activas */}
+              <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.80)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.9)', boxShadow: '0 2px 20px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,1)' }}>
                 <div className="px-5 py-3.5 border-b border-[#f3f4f6] flex items-center gap-2">
                   <ListChecks size={15} className="text-[#7c3aed]" />
-                  <span className="text-[14px] font-bold text-[#111827]">Mis contenidos activos</span>
+                  <span className="text-[14px] font-bold text-[#111827]">Mis tareas activas</span>
                   <Link href={`${base}/publicaciones`}
                     className="ml-auto text-[11px] text-[#7c3aed] font-medium hover:underline">
                     Ver todos
                   </Link>
                 </div>
-                {myPendientes.length === 0 && myEnRevision.length === 0 ? (
-                  <div className="px-5 py-5 text-center text-[13px] text-[#9ca3af]">Sin contenidos activos asignados</div>
+                {myTareasActivas.length === 0 ? (
+                  <div className="px-5 py-5 text-center text-[13px] text-[#9ca3af]">Sin tareas activas asignadas</div>
                 ) : (
                   <div className="divide-y divide-[#f9fafb]">
-                    {[...myPendientes, ...myEnRevision].slice(0, 8).map(c => {
+                    {myTareasActivas.slice(0, 8).map(item => {
+                      if (item.kind === 'actividad') {
+                        const a = item.data
+                        const isOverdue = !!(a.dueDate && a.dueDate < today)
+                        const diff = a.dueDate ? Math.ceil((new Date(a.dueDate).getTime() - Date.now()) / 86_400_000) : null
+                        return (
+                          <div key={`a-${a.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-[#fafafa] transition-colors">
+                            <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-[#ede9fe] text-[#7c3aed]">
+                              <ClipboardList size={13} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[12px] font-semibold text-[#111827] truncate">{a.title}</p>
+                              <p className="text-[10px] text-[#9ca3af]">{a.category ?? 'Actividad'}</p>
+                            </div>
+                            {diff !== null && (
+                              <span className="text-[9px] font-bold shrink-0"
+                                style={{ color: isOverdue ? '#dc2626' : diff === 0 ? '#d97706' : '#9ca3af' }}>
+                                {isOverdue ? `${Math.abs(diff)}d vencido` : diff === 0 ? 'Hoy' : `${diff}d`}
+                              </span>
+                            )}
+                          </div>
+                        )
+                      }
+                      const c = item.data
                       const brand   = brands.find(b => b.id === c.brandId)
                       const relevant = getContentRelevantDate(c, wf.isCreativo)
                       const diff    = relevant ? Math.ceil((new Date(relevant).getTime() - Date.now()) / 86_400_000) : null
@@ -341,11 +486,11 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Próximos posts del área (contexto general) */}
-              <div className="bg-white rounded-2xl border border-[#e5e7eb] overflow-hidden">
+              {/* Próximas publicaciones y actividades */}
+              <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.80)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.9)', boxShadow: '0 2px 20px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,1)' }}>
                 <div className="px-5 py-3.5 border-b border-[#f3f4f6] flex items-center gap-2">
                   <CalendarDays size={15} className="text-[#3b82f6]" />
-                  <span className="text-[14px] font-bold text-[#111827]">Próximas publicaciones</span>
+                  <span className="text-[14px] font-bold text-[#111827]">Próximas</span>
                   <Link href={`${base}/calendario`}
                     className="ml-auto text-[11px] text-[#7c3aed] font-medium hover:underline">
                     Ver calendario
@@ -353,8 +498,27 @@ export default function Dashboard() {
                 </div>
                 <div className="divide-y divide-[#f9fafb]">
                   {myProximas.length === 0 ? (
-                    <div className="px-5 py-5 text-center text-[13px] text-[#9ca3af]">Sin publicaciones próximas asignadas</div>
-                  ) : myProximas.map(c => {
+                    <div className="px-5 py-5 text-center text-[13px] text-[#9ca3af]">Sin pendientes próximos asignados</div>
+                  ) : myProximas.map(item => {
+                    if (item.kind === 'actividad') {
+                      const a = item.data
+                      const diff = a.dueDate ? Math.ceil((new Date(a.dueDate).getTime() - Date.now()) / 86_400_000) : null
+                      return (
+                        <div key={`a-${a.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-[#fafafa] transition-colors">
+                          <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 bg-[#ede9fe] text-[#7c3aed]">
+                            <ClipboardList size={14} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide">{a.category ?? 'Actividad'}</p>
+                            <p className="text-[12px] text-[#374151] truncate">{a.title}</p>
+                          </div>
+                          <span className="text-[9px] font-bold shrink-0" style={{ color: diff === 1 ? '#d97706' : '#7c3aed' }}>
+                            {diff === null ? 'Sin fecha' : diff === 1 ? 'Mañana' : `En ${diff}d`}
+                          </span>
+                        </div>
+                      )
+                    }
+                    const c = item.data
                     const diff  = Math.ceil((new Date(getContentRelevantDate(c, wf.isCreativo)!).getTime() - Date.now()) / 86_400_000)
                     const brand = brands.find(b => b.id === c.brandId)
                     const net   = NETWORK_META[c.channel]
@@ -384,7 +548,7 @@ export default function Dashboard() {
             <div className="flex flex-col gap-4">
 
               {/* Mis alertas */}
-              <div className="bg-white rounded-2xl border border-[#e5e7eb] overflow-hidden">
+              <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.80)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.9)', boxShadow: '0 2px 20px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,1)' }}>
                 <div className="px-4 py-3.5 border-b border-[#f3f4f6] flex items-center justify-between">
                   <span className="text-[14px] font-bold text-[#111827]">Mis alertas</span>
                   {myAlertas.length > 0 && (
@@ -397,7 +561,23 @@ export default function Dashboard() {
                   <div className="flex items-center gap-2 px-4 py-4 text-[12px] text-[#16a34a]">
                     <CheckCircle2 size={14} /> Todo al día
                   </div>
-                ) : myAlertas.map(c => {
+                ) : myAlertas.map(item => {
+                  if (item.kind === 'actividad') {
+                    const a = item.data
+                    const diff = a.dueDate ? Math.ceil((Date.now() - new Date(a.dueDate).getTime()) / 86_400_000) : null
+                    return (
+                      <div key={`a-${a.id}`} className="flex items-start gap-3 px-4 py-3 border-b border-[#f9fafb] last:border-0 hover:bg-[#fafafa] transition-colors">
+                        <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0 mt-0.5 bg-[#fee2e2]">
+                          <AlertTriangle size={13} style={{ color: '#dc2626' }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[12px] font-semibold text-[#111827] truncate">{a.title}</p>
+                          <p className="text-[10px] text-[#9ca3af] mt-0.5">Actividad · Vencida hace {diff}d</p>
+                        </div>
+                      </div>
+                    )
+                  }
+                  const c = item.data
                   const esCambios = c.status === 'cambios'
                   const relevant = getContentRelevantDate(c, wf.isCreativo)
                   const diff = relevant ? Math.ceil((Date.now() - new Date(relevant).getTime()) / 86_400_000) : null
@@ -420,52 +600,9 @@ export default function Dashboard() {
                 })}
               </div>
 
-              {/* Mis actividades */}
-              <div className="bg-white rounded-2xl border border-[#e5e7eb] overflow-hidden">
-                <div className="px-4 py-3.5 border-b border-[#f3f4f6] flex items-center gap-2">
-                  <ClipboardList size={15} className="text-[#7c3aed]" />
-                  <span className="text-[14px] font-bold text-[#111827]">Mis actividades</span>
-                  <Link href={`${base}/actividades`}
-                    className="ml-auto text-[11px] text-[#7c3aed] font-medium hover:underline">
-                    Ver todas
-                  </Link>
-                </div>
-                {myActiveActivities.length === 0 ? (
-                  <div className="flex items-center gap-2 px-4 py-4 text-[12px] text-[#16a34a]">
-                    <CheckCircle2 size={14} /> Sin actividades pendientes
-                  </div>
-                ) : (
-                  <div className="divide-y divide-[#f9fafb]">
-                    {myActiveActivities.map(a => {
-                      const isOverdue = !!(a.dueDate && a.dueDate < today)
-                      const diff = a.dueDate
-                        ? Math.ceil((new Date(a.dueDate).getTime() - Date.now()) / 86_400_000)
-                        : null
-                      const dotColor = a.status === 'en_curso' ? '#3b82f6' : '#f59e0b'
-                      return (
-                        <div key={a.id} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[#fafafa] transition-colors">
-                          <span className="w-2 h-2 rounded-full shrink-0" style={{ background: dotColor }} />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-[12px] font-medium text-[#111827] truncate">{a.title}</p>
-                            {a.category && (
-                              <p className="text-[10px] text-[#9ca3af]">{a.category}</p>
-                            )}
-                          </div>
-                          {diff !== null && (
-                            <span className="text-[9px] font-bold shrink-0"
-                              style={{ color: isOverdue ? '#dc2626' : diff === 0 ? '#d97706' : '#9ca3af' }}>
-                              {isOverdue ? `${Math.abs(diff)}d venc.` : diff === 0 ? 'Hoy' : `${diff}d`}
-                            </span>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
 
               {/* Equipo activo hoy */}
-              <div className="bg-white rounded-2xl border border-[#e5e7eb] overflow-hidden">
+              <div className="rounded-2xl overflow-hidden" style={{ background: 'rgba(255,255,255,0.80)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.9)', boxShadow: '0 2px 20px rgba(0,0,0,0.06), inset 0 1px 0 rgba(255,255,255,1)' }}>
                 <div className="px-4 py-3.5 border-b border-[#f3f4f6] flex items-center justify-between">
                   <span className="text-[14px] font-bold text-[#111827]">Equipo activo</span>
                   <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#f0fdf4] text-[#16a34a]">

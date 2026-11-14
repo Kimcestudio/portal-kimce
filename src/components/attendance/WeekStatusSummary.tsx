@@ -1,4 +1,5 @@
 import type { AttendanceRecord } from "@/lib/storage/attendanceStorage";
+import { formatISODate } from "@/lib/attendanceUtils";
 
 interface WeekStatusSummaryProps {
   weekDates: Date[];
@@ -13,15 +14,15 @@ export default function WeekStatusSummary({ weekDates, records }: WeekStatusSumm
   return (
     <div className="flex flex-wrap gap-3">
       {days.map((date) => {
-        const dateISO = date.toISOString().slice(0, 10);
-        const record = records.find((item) => item.date === dateISO);
-        const label = dayLabels[date.getDay()];
-        const status = record?.status === "CLOSED" ? "Completo" : record ? "Incompleto" : "Sin registro";
-        const dotClass = record?.status === "CLOSED" ? "bg-emerald-500" : record ? "bg-amber-400" : "bg-slate-200";
+        const dateISO = formatISODate(date);
+        const record  = records.find((item) => item.date === dateISO);
+        const label   = dayLabels[date.getDay()];
+        const status  = record?.status === "CLOSED" ? "Completo" : record ? "Incompleto" : "Sin registro";
+        const dotClass = record?.status === "CLOSED" ? "bg-green-500" : record ? "bg-amber-400" : "bg-line";
         return (
           <div
             key={dateISO}
-            className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-500"
+            className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1 text-xs font-semibold text-muted"
             title={`${label}: ${status}`}
           >
             <span className={`h-2.5 w-2.5 rounded-full ${dotClass}`} />

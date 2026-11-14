@@ -1,6 +1,6 @@
 "use client";
 
-import { collection, onSnapshot, type DocumentData } from "firebase/firestore";
+import { collection, onSnapshot, query, where, limit, type DocumentData } from "firebase/firestore";
 import { useEffect, useMemo, useState } from "react";
 import TeamCard from "@/components/home/TeamCard";
 import EventsCard from "@/components/home/EventsCard";
@@ -36,6 +36,8 @@ import type { UserProfile } from "@/services/firebase/types";
 import type { WorkSchedule } from "@/services/firebase/types";
 import { DEFAULT_WORK_SCHEDULES, DEFAULT_WORK_SCHEDULE_ID } from "@/services/firebase/workSchedules";
 import { subscribeCalendarEvents, type CalendarEventRecord } from "@/services/calendar";
+import MonthEndChecklistCard from "@/components/home/MonthEndChecklistCard";
+import { isLastWeekOfMonth } from "@/lib/monthEnd/utils";
 
 type FirestoreTimestamp = { toDate?: () => Date };
 
@@ -204,9 +206,8 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const usersRef = collection(db, "userDirectory");
     const unsubscribe = onSnapshot(
-      usersRef,
+      query(collection(db, "userDirectory"), where("active", "!=", false)),
       (snapshot) => {
         const firestoreUsers = snapshot.docs.map((docSnap) => {
           const data = docSnap.data() as DocumentData;
@@ -268,9 +269,10 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const timeEntriesRef = collection(db, "timeEntries");
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90)
+    const cutoffISO = cutoff.toISOString().split('T')[0]
     const unsubscribe = onSnapshot(
-      timeEntriesRef,
+      query(collection(db, "timeEntries"), where("dayKey", ">=", cutoffISO)),
       (snapshot) => {
         const nextEvents = snapshot.docs
           .map((docSnap) => {
@@ -313,9 +315,8 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const extraActivitiesRef = collection(db, "extraActivities");
     const unsubscribe = onSnapshot(
-      extraActivitiesRef,
+      query(collection(db, "extraActivities"), limit(100)),
       (snapshot) => {
         const approved: { uid: string; date: string; minutes: number }[] = [];
         const requests: DashboardRequestItem[] = [];
@@ -361,9 +362,8 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    const hourRequestsRef = collection(db, "hourRequests");
     const unsubscribe = onSnapshot(
-      hourRequestsRef,
+      query(collection(db, "hourRequests"), limit(100)),
       (snapshot) => {
         const hourRequests: DashboardRequestItem[] = snapshot.docs
           .map((docSnap) => {
@@ -710,6 +710,11 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+        {user?.isAreaLead && user.area && isLastWeekOfMonth() && (
+          <div className="xl:col-span-12">
+            <MonthEndChecklistCard user={user} />
+          </div>
+        )}
       </section>
     </div>
   );

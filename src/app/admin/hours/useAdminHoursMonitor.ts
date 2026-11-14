@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   collection,
   collectionGroup,
+  doc,
   getDocs,
   onSnapshot,
   query,
+  serverTimestamp,
   where,
   writeBatch,
   type DocumentData,
@@ -153,6 +155,10 @@ export function useAdminHoursMonitor(userRole?: string) {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteMode, setDeleteMode] = useState<DeleteMode>("ALL");
   const detailSectionRef = useRef<HTMLDivElement | null>(null);
+  const [hoursVersion, setHoursVersion] = useState(0);
+  const bumpHoursVersion = useCallback(() => setHoursVersion((v) => v + 1), []);
+  // Historial completo (sin cutoff de 90 días) del colaborador seleccionado — para calcular balance total correcto
+  const [detailUserAllRecords, setDetailUserAllRecords] = useState<AdminAttendanceRecord[]>([]);
 
   const scheduleOptions = workSchedules.length > 0 ? workSchedules : DEFAULT_WORK_SCHEDULES;
   const scheduleById = useMemo(
@@ -255,8 +261,12 @@ export function useAdminHoursMonitor(userRole?: string) {
       setRecords(merged);
     };
 
+    const cutoffDate = new Date()
+    cutoffDate.setDate(cutoffDate.getDate() - 90)
+    const cutoffISO = formatISODate(cutoffDate)
+
     const unsubscribeHours = onSnapshot(
-      collectionGroup(db, "hours"),
+      query(collectionGroup(db, "hours"), where("date", ">=", cutoffISO)),
       (snapshot) => {
         persistedRecords = snapshot.docs
           .map((docSnap) => {
@@ -285,7 +295,7 @@ export function useAdminHoursMonitor(userRole?: string) {
     );
 
     const unsubscribeTimeEntries = onSnapshot(
-      collection(db, "timeEntries"),
+      query(collection(db, "timeEntries"), where("dayKey", ">=", cutoffISO)),
       (snapshot) => {
         const events: AttendanceTimeEntryEvent[] = snapshot.docs
           .map((docSnap) => {
@@ -294,7 +304,7 @@ export function useAdminHoursMonitor(userRole?: string) {
             const tsISO = normalizeTimestamp(data.ts) ?? normalizeTimestamp(data.createdAt) ?? "";
             const dayKey =
               (typeof data.dayKey === "string" ? data.dayKey : "") ||
-              (tsISO ? tsISO.slice(0, 10) : "");
+              (tsISO ? formatISODate(new Date(tsISO)) : "");
 
             if (!uid || !dayKey || !tsISO) return null;
 
@@ -319,7 +329,7 @@ export function useAdminHoursMonitor(userRole?: string) {
       unsubscribeHours();
       unsubscribeTimeEntries();
     };
-  }, [userRole]);
+  }, [userRole, hoursVersion]);
 
   useEffect(() => {
     if (userRole !== "admin") return;
@@ -334,9 +344,10 @@ export function useAdminHoursMonitor(userRole?: string) {
             if (status !== "approved") return null;
 
             const uid = (data.uid ?? data.userId) as string | undefined;
+            const createdAtISO = normalizeTimestamp(data.createdAt);
             const dateValue =
               (typeof data.date === "string" ? data.date : "") ||
-              (normalizeTimestamp(data.createdAt)?.slice(0, 10) ?? "");
+              (createdAtISO ? formatISODate(new Date(createdAtISO)) : "");
             const minutes =
               typeof data.minutes === "number"
                 ? data.minutes
@@ -403,6 +414,40 @@ export function useAdminHoursMonitor(userRole?: string) {
     return subscribeCalendarHolidays(setHolidays);
   }, [userRole]);
 
+  // Suscripción sin cutoff de 90 días para el colaborador seleccionado — necesaria para calcular balance total correcto
+  useEffect(() => {
+    if (userRole !== "admin" || !detailUserId) {
+      setDetailUserAllRecords([]);
+      return;
+    }
+    const unsubscribe = onSnapshot(
+      collection(db, "users", detailUserId, "hours"),
+      (snapshot) => {
+        const mapped = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data() as DocumentData;
+            const date = (data.date as string | undefined) ?? "";
+            if (!date) return null;
+            return {
+              id: docSnap.id,
+              userId: detailUserId,
+              date,
+              checkInAt: normalizeTimestamp(data.checkInAt) ?? (typeof data.checkInAt === "string" ? data.checkInAt : null),
+              checkOutAt: normalizeTimestamp(data.checkOutAt) ?? (typeof data.checkOutAt === "string" ? data.checkOutAt : null),
+              breaks: Array.isArray(data.breaks) ? data.breaks : [],
+              notes: typeof data.notes === "string" ? data.notes : null,
+              totalMinutes: typeof data.totalMinutes === "number" ? data.totalMinutes : 0,
+              status: (data.status as AdminAttendanceRecord["status"] | undefined) ?? "CLOSED",
+            } satisfies AdminAttendanceRecord;
+          })
+          .filter(Boolean) as AdminAttendanceRecord[];
+        setDetailUserAllRecords(mapped);
+      },
+      (error) => console.error("[admin/hours] Error cargando historial completo del colaborador", error),
+    );
+    return () => unsubscribe();
+  }, [userRole, detailUserId]);
+
   const collaboratorUsers = useMemo(
     () =>
       users.filter(
@@ -429,6 +474,27 @@ export function useAdminHoursMonitor(userRole?: string) {
   );
 
   const LIVE_STALE_THRESHOLD_MS = 20 * 60 * 60 * 1000; // 20 hours — beyond this, an OPEN record is a stuck bug
+
+  // Colaboradores hoy en turno con ≥4h y sin almuerzo registrado (< 30 min de pausa)
+  const todayNoBreak = useMemo(() => {
+    const todayISO = formatISODate(new Date());
+    const now = new Date();
+    return records
+      .filter((r) => {
+        if (r.date !== todayISO || r.status !== "OPEN" || !r.checkInAt) return false;
+        const elapsed = (now.getTime() - new Date(r.checkInAt).getTime()) / 60000;
+        if (elapsed < 240) return false;
+        const breakMins = (r.breaks ?? []).reduce((t, b) => {
+          if (!b.endAt) return t;
+          return t + Math.max(0, Math.round((new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60000));
+        }, 0);
+        return breakMins < 30;
+      })
+      .map((r) => {
+        const user = collaboratorUsers.find((u) => u.uid === r.userId);
+        return { record: r, user: user ?? null };
+      });
+  }, [records, collaboratorUsers]);
 
   const liveRecords = useMemo(() => {
     const now = new Date();
@@ -533,12 +599,19 @@ export function useAdminHoursMonitor(userRole?: string) {
     );
 
     const detailSchedule = scheduleById.get(detailUser.workScheduleId ?? "") ?? scheduleOptions[0] ?? null;
-    const detailAllRecords = liveRecords.filter((record) => record.userId === detailUser.uid);
+    // Aplicar live-minutes a los registros completos del colaborador (misma lógica que liveRecords)
+    const now = new Date();
+    const detailAllRecordsWithLive = detailUserAllRecords.map((record) => {
+      if (record.status !== "OPEN" || !record.checkInAt) return record;
+      const age = now.getTime() - new Date(record.checkInAt).getTime();
+      if (age > LIVE_STALE_THRESHOLD_MS) return record;
+      return { ...record, totalMinutes: computeLiveMinutes(record, now) };
+    });
     const detailWeekCredits = credits.filter((credit) => credit.uid === detailUser.uid && weekDateSet.has(credit.date));
     return buildAdminWeeklyAttendanceDetail({
       user: detailUser,
       records: detailRecords,
-      allRecords: detailAllRecords,
+      allRecords: detailAllRecordsWithLive,
       weekDates,
       weekDateSet,
       weekCredits: detailWeekCredits,
@@ -546,7 +619,7 @@ export function useAdminHoursMonitor(userRole?: string) {
       schedule: detailSchedule,
       holidayDates: holidayDateSet,
     });
-  }, [collaboratorUsers, credits, detailUser, holidayDateSet, liveRecords, scheduleById, scheduleOptions, weekDateSet, weekDates, weekKey]);
+  }, [collaboratorUsers, credits, detailUser, detailUserAllRecords, holidayDateSet, liveRecords, scheduleById, scheduleOptions, weekDateSet, weekDates, weekKey]);
 
   const handleSelectCollaborator = (clickedUid: string) => {
     setDetailUserId(clickedUid);
@@ -583,26 +656,27 @@ export function useAdminHoursMonitor(userRole?: string) {
           if (r.userId && r.date) uidDateMap.set(`${r.userId}_${r.date}`, { uid: r.userId, date: r.date });
         });
 
-      // Step 1: delete open hours subdocs
-      const allHoursSnapshot = await getDocs(collectionGroup(db, "hours"));
-      const openHoursDocs = allHoursSnapshot.docs.filter(
-        (docSnap) => (docSnap.data() as DocumentData).status === "OPEN",
-      );
+      // Step 1: delete open hours subdocs (query per-user to avoid full collectionGroup scan)
+      const uniqueUids = [...new Set([...uidDateMap.values()].map((v) => v.uid))];
 
       let currentBatch = writeBatch(db);
       let batchCount = 0;
 
-      for (const docSnap of openHoursDocs) {
-        const data = docSnap.data() as DocumentData;
-        const uid = (data.uid ?? docSnap.ref.parent.parent?.id) as string | undefined;
-        const date = data.date as string | undefined;
-        if (uid && date) uidDateMap.set(`${uid}_${date}`, { uid, date });
-        currentBatch.delete(docSnap.ref);
-        batchCount++;
-        if (batchCount >= 400) {
-          await currentBatch.commit();
-          currentBatch = writeBatch(db);
-          batchCount = 0;
+      for (const uid of uniqueUids) {
+        const hoursSnap = await getDocs(
+          query(collection(db, "users", uid, "hours"), where("status", "==", "OPEN")),
+        );
+        for (const docSnap of hoursSnap.docs) {
+          const data = docSnap.data() as DocumentData;
+          const date = data.date as string | undefined;
+          if (uid && date) uidDateMap.set(`${uid}_${date}`, { uid, date });
+          currentBatch.delete(docSnap.ref);
+          batchCount++;
+          if (batchCount >= 400) {
+            await currentBatch.commit();
+            currentBatch = writeBatch(db);
+            batchCount = 0;
+          }
         }
       }
       if (batchCount > 0) await currentBatch.commit();
@@ -632,6 +706,226 @@ export function useAdminHoursMonitor(userRole?: string) {
       window.alert("Ocurrió un error al limpiar los fichajes abiertos. Intenta nuevamente.");
     } finally {
       setCleaningOpenShifts(false);
+    }
+  };
+
+  const [applyingLunchFix, setApplyingLunchFix] = useState(false);
+
+  const handleRetroactiveLunchFix = async () => {
+    const LUNCH_MINUTES = 75;
+    const MIN_BREAK_MINUTES = 30;
+    const MIN_ELAPSED_MINUTES = 240;
+
+    type AffectedRecord = {
+      uid: string;
+      docId: string;
+      checkInAt: string;
+      checkOutAt: string;
+      breaks: { startAt: string; endAt: string | null }[];
+    };
+    const affected: AffectedRecord[] = [];
+
+    const PART_TIME_SCHEDULE_IDS = ["part_time_24", "practicante_part_time_20"];
+
+    for (const user of collaboratorUsers) {
+      if (PART_TIME_SCHEDULE_IDS.includes(user.workScheduleId ?? "")) continue;
+
+      const snap = await getDocs(
+        query(collection(db, "users", user.uid, "hours"), where("status", "==", "CLOSED")),
+      );
+      snap.docs.forEach((d) => {
+        const data = d.data() as DocumentData;
+        const checkInAt = data.checkInAt as string | null;
+        const checkOutAt = data.checkOutAt as string | null;
+        if (!checkInAt || !checkOutAt) return;
+
+        // Omitir sábados (día 6)
+        if (new Date(checkInAt).getDay() === 6) return;
+
+        const elapsed = (new Date(checkOutAt).getTime() - new Date(checkInAt).getTime()) / 60000;
+        if (elapsed < MIN_ELAPSED_MINUTES) return;
+
+        const breaks = (Array.isArray(data.breaks) ? data.breaks : []) as AffectedRecord["breaks"];
+        const breakMins = breaks.reduce((total, b) => {
+          if (!b.endAt) return total;
+          return total + Math.max(0, Math.round((new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60000));
+        }, 0);
+
+        if (breakMins >= MIN_BREAK_MINUTES) return;
+        affected.push({ uid: user.uid, docId: d.id, checkInAt, checkOutAt, breaks });
+      });
+    }
+
+    if (affected.length === 0) {
+      window.alert("No se encontraron registros sin almuerzo para corregir. Todo está en orden.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Se asignarán 1:15 h de almuerzo retroactivo a ${affected.length} registro(s) de días pasados sin descanso registrado.\n\nEsta acción ajustará las horas trabajadas de esos días. ¿Continuar?`,
+    );
+    if (!confirmed) return;
+
+    setApplyingLunchFix(true);
+    try {
+      let batch = writeBatch(db);
+      let batchCount = 0;
+
+      for (const record of affected) {
+        const breakEndISO = record.checkOutAt;
+        const breakStartISO = new Date(new Date(record.checkOutAt).getTime() - LUNCH_MINUTES * 60000).toISOString();
+        const updatedBreaks = [...record.breaks, { startAt: breakStartISO, endAt: breakEndISO }];
+
+        const totalBreakMins = updatedBreaks.reduce((total, b) => {
+          if (!b.endAt) return total;
+          return total + Math.max(0, Math.round((new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60000));
+        }, 0);
+        const elapsedMins = Math.round(
+          (new Date(record.checkOutAt).getTime() - new Date(record.checkInAt).getTime()) / 60000,
+        );
+        const newTotalMinutes = Math.max(0, elapsedMins - totalBreakMins);
+
+        batch.update(doc(db, "users", record.uid, "hours", record.docId), {
+          breaks: updatedBreaks,
+          totalMinutes: newTotalMinutes,
+          hours: Math.round((newTotalMinutes / 60) * 10) / 10,
+          updatedAt: serverTimestamp(),
+        });
+        batchCount++;
+
+        if (batchCount >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          batchCount = 0;
+        }
+      }
+
+      if (batchCount > 0) await batch.commit();
+      window.alert(`Listo. Se corrigieron ${affected.length} registro(s) con almuerzo retroactivo de 1:15 h.`);
+    } catch (err) {
+      console.error("[admin/hours] Error applying retroactive lunch fix", err);
+      window.alert("Ocurrió un error al aplicar la corrección. Intenta nuevamente.");
+    } finally {
+      setApplyingLunchFix(false);
+    }
+  };
+
+  const [revertingLunchFix, setRevertingLunchFix] = useState(false);
+
+  const handleRevertWrongLunchFix = async () => {
+    const LUNCH_MINUTES = 75;
+    const PART_TIME_SCHEDULE_IDS = ["part_time_24", "practicante_part_time_20"];
+
+    type AffectedRecord = {
+      uid: string;
+      docId: string;
+      checkInAt: string;
+      checkOutAt: string;
+      breaks: { startAt: string; endAt: string | null }[];
+    };
+    const affected: AffectedRecord[] = [];
+
+    for (const user of collaboratorUsers) {
+      const isPartTime = PART_TIME_SCHEDULE_IDS.includes(user.workScheduleId ?? "");
+
+      const snap = await getDocs(
+        query(collection(db, "users", user.uid, "hours"), where("status", "==", "CLOSED")),
+      );
+      snap.docs.forEach((d) => {
+        const data = d.data() as DocumentData;
+        const checkInAt = data.checkInAt as string | null;
+        const checkOutAt = data.checkOutAt as string | null;
+        if (!checkInAt || !checkOutAt) return;
+
+        const isSaturday = new Date(checkInAt).getDay() === 6;
+        if (!isPartTime && !isSaturday) return;
+
+        const breaks = (Array.isArray(data.breaks) ? data.breaks : []) as AffectedRecord["breaks"];
+        const rawMins = Math.round(
+          (new Date(checkOutAt).getTime() - new Date(checkInAt).getTime()) / 60000,
+        );
+        const storedTotal = typeof data.totalMinutes === 'number' ? data.totalMinutes : rawMins;
+
+        const checkOutMs = new Date(checkOutAt).getTime();
+        // Patrón A: break retroactivo con endAt ≈ checkOutAt (±2 min) y duración = 75 min
+        // Usamos comparación fuzzy porque `now` se captura antes de la llamada a checkOut()
+        // y el checkOutAt real puede estar unos ms/s después.
+        const isRetroBreak = (b: AffectedRecord["breaks"][number]) => {
+          if (!b.endAt) return false;
+          const endMs  = new Date(b.endAt).getTime();
+          const durMins = Math.round((endMs - new Date(b.startAt).getTime()) / 60000);
+          return Math.abs(endMs - checkOutMs) <= 2 * 60000 && durMins === LUNCH_MINUTES;
+        };
+        const hasRetroBreak = breaks.some(isRetroBreak);
+        // Patrón B: totalMinutes tiene el descuento de 75 min pero breaks está vacío
+        const hasHiddenDeduction =
+          breaks.length === 0 && rawMins - storedTotal === LUNCH_MINUTES;
+
+        if (!hasRetroBreak && !hasHiddenDeduction) return;
+
+        affected.push({ uid: user.uid, docId: d.id, checkInAt, checkOutAt, breaks });
+      });
+    }
+
+    if (affected.length === 0) {
+      window.alert("No se encontraron correcciones incorrectas para revertir.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Se revertirá el descanso retroactivo de 1:15 h en ${affected.length} registro(s) de sábados y colaboradores part-time.\n\n¿Continuar?`,
+    );
+    if (!confirmed) return;
+
+    setRevertingLunchFix(true);
+    try {
+      let batch = writeBatch(db);
+      let batchCount = 0;
+
+      for (const record of affected) {
+        const recCheckOutMs = new Date(record.checkOutAt).getTime();
+        const cleanedBreaks = record.breaks.filter((b) => {
+          if (!b.endAt) return true;
+          const endMs  = new Date(b.endAt).getTime();
+          const durMins = Math.round((endMs - new Date(b.startAt).getTime()) / 60000);
+          // Eliminar el break retroactivo de 75 min cercano al checkout
+          if (Math.abs(endMs - recCheckOutMs) <= 2 * 60000 && durMins === LUNCH_MINUTES) return false;
+          // Eliminar breaks fantasma de 0 min con endAt ≈ checkOutAt
+          if (Math.abs(endMs - recCheckOutMs) <= 2 * 60000 && durMins === 0) return false;
+          return true;
+        });
+
+        const remainingBreakMins = cleanedBreaks.reduce((total, b) => {
+          if (!b.endAt) return total;
+          return total + Math.max(0, Math.round((new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60000));
+        }, 0);
+        const elapsedMins = Math.round(
+          (new Date(record.checkOutAt).getTime() - new Date(record.checkInAt).getTime()) / 60000,
+        );
+        const newTotalMinutes = Math.max(0, elapsedMins - remainingBreakMins);
+
+        batch.update(doc(db, "users", record.uid, "hours", record.docId), {
+          breaks: cleanedBreaks,
+          totalMinutes: newTotalMinutes,
+          hours: Math.round((newTotalMinutes / 60) * 10) / 10,
+          updatedAt: serverTimestamp(),
+        });
+        batchCount++;
+
+        if (batchCount >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          batchCount = 0;
+        }
+      }
+
+      if (batchCount > 0) await batch.commit();
+      window.alert(`Listo. Se revirtieron ${affected.length} registro(s) incorrectos.`);
+    } catch (err) {
+      console.error("[admin/hours] Error reverting wrong lunch fix", err);
+      window.alert("Ocurrió un error al revertir. Intenta nuevamente.");
+    } finally {
+      setRevertingLunchFix(false);
     }
   };
 
@@ -717,11 +1011,18 @@ export function useAdminHoursMonitor(userRole?: string) {
     globalChartData,
     detail,
     holidays,
+    scheduleById,
     holidayDateSet,
     openRecordsCount,
     cleaningOpenShifts,
     handleCleanOpenShifts,
     handleSelectCollaborator,
     handleDeleteCollaboratorData,
+    applyingLunchFix,
+    handleRetroactiveLunchFix,
+    revertingLunchFix,
+    handleRevertWrongLunchFix,
+    todayNoBreak,
+    bumpHoursVersion,
   };
 }

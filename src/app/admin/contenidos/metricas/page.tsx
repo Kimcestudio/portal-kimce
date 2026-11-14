@@ -1,8 +1,8 @@
 'use client'
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-} from 'recharts'
+import dynamic from 'next/dynamic'
+
+const MetricsCharts = dynamic(() => import('@/components/cmhub/MetricsCharts'), { ssr: false })
 import {
   BarChart2, Upload, Eye, TrendingUp, Heart, MessageCircle,
   AlertCircle, ChevronDown, ChevronUp, Check,
@@ -19,7 +19,7 @@ function fmt(n: number | undefined) {
   if (n === undefined) return '—'
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
-  return n.toLocaleString()
+  return n.toLocaleString('es-PE')
 }
 
 function sumMetric(list: Content[], key: keyof ContentMetrics): number {
@@ -36,7 +36,7 @@ function avgMetric(list: Content[], key: keyof ContentMetrics): number | undefin
 
 // ── KPI card ──────────────────────────────────────────────────────────────────
 function KpiCard({ label, value, icon: Icon, color }: {
-  label: string; value: string; icon: React.ElementType; color: string
+  label: string; value: string; icon: import("lucide-react").LucideIcon; color: string
 }) {
   return (
     <div className="bg-white rounded-2xl border border-[#e5e7eb] p-5 flex items-start gap-4">
@@ -406,38 +406,12 @@ export default function MetricasPage() {
 
         {/* Charts */}
         {(byNetwork.length > 0 || byBrand.length > 0) && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {byNetwork.length > 0 && (
-              <div className="bg-white rounded-2xl border border-[#e5e7eb] p-5">
-                <p className="text-[13px] font-bold text-[#111827] mb-4">Alcance por red social</p>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={byNetwork} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
-                    <XAxis type="number" tick={{ fontSize: 10, fill: tickColor }} tickFormatter={v => fmt(v as number)} />
-                    <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: labelColor }} width={80} />
-                    <Tooltip content={<BarTip />} />
-                    <Bar dataKey="reach" radius={[0, 6, 6, 0]}>
-                      {byNetwork.map(e => <Cell key={e.network} fill={NETWORK_META[e.network]?.dot ?? '#7c3aed'} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-            {byBrand.length > 0 && (
-              <div className="bg-white rounded-2xl border border-[#e5e7eb] p-5">
-                <p className="text-[13px] font-bold text-[#111827] mb-4">Alcance por cliente</p>
-                <ResponsiveContainer width="100%" height={200}>
-                  <BarChart data={byBrand} layout="vertical" margin={{ left: 10, right: 20, top: 0, bottom: 0 }}>
-                    <XAxis type="number" tick={{ fontSize: 10, fill: tickColor }} tickFormatter={v => fmt(v as number)} />
-                    <YAxis type="category" dataKey="label" tick={{ fontSize: 11, fill: labelColor }} width={80} />
-                    <Tooltip content={<BarTip />} />
-                    <Bar dataKey="reach" radius={[0, 6, 6, 0]}>
-                      {byBrand.map(e => <Cell key={e.brandId} fill={e.color} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
+          <MetricsCharts
+            byNetwork={byNetwork}
+            byBrand={byBrand}
+            tickColor={tickColor}
+            labelColor={labelColor}
+          />
         )}
 
         {/* Table */}

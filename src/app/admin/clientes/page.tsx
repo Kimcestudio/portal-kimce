@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Copy, ExternalLink, FileUp, Loader2, Plus, RefreshCw, UploadCloud } from "lucide-react";
+import { Copy, Download, ExternalLink, FileUp, Loader2, Plus, RefreshCw, Trash2, UploadCloud } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { readFileAsDataUrl } from "@/services/firebase/media";
 import {
+  deleteClientDocument,
   getClientDocumentUrl,
   listClientDocuments,
   updateClientDocumentFile,
@@ -35,6 +36,7 @@ export default function AdminClientesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [updatingDocumentId, setUpdatingDocumentId] = useState<string | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
   const canUpload = useMemo(() => {
@@ -62,7 +64,7 @@ export default function AdminClientesPage() {
     if (!selectedFile) return;
 
     if (selectedFile.size > MAX_FIRESTORE_FILE_SIZE) {
-      setMessage("Por ahora sube archivos de hasta 750 KB para mantener el enlace publico estable.");
+      setMessage("Por ahora sube archivos de hasta 750 KB para mantener el enlace público estable.");
       return;
     }
 
@@ -78,7 +80,7 @@ export default function AdminClientesPage() {
       });
       const publicUrl = absolutePublicUrl(getClientDocumentUrl(id));
       await navigator.clipboard?.writeText(publicUrl);
-      setMessage("Archivo publicado. El enlace publico fue copiado al portapapeles.");
+      setMessage("Archivo publicado. El enlace público fue copiado al portapapeles.");
       setTitle("");
       setClientName("");
       setSelectedFile(null);
@@ -87,6 +89,33 @@ export default function AdminClientesPage() {
       setMessage("No se pudo publicar el archivo. Verifica permisos de administrador y conexion.");
     } finally {
       setIsUploading(false);
+    }
+  }
+
+  function handleDownload(clientDoc: ClientDocument) {
+    const source = clientDoc.publicPath ?? clientDoc.dataUrl;
+    if (!source) return;
+    const a = window.document.createElement("a");
+    a.href = source;
+    a.download = clientDoc.fileName;
+    a.style.display = "none";
+    window.document.body.appendChild(a);
+    a.click();
+    window.document.body.removeChild(a);
+  }
+
+  async function handleDelete(clientDoc: ClientDocument) {
+    if (!window.confirm(`¿Eliminar "${clientDoc.title}"? Esta acción no se puede deshacer.`)) return;
+    try {
+      setDeletingDocumentId(clientDoc.id);
+      setMessage("");
+      await deleteClientDocument(clientDoc.id);
+      setMessage(`"${clientDoc.title}" eliminado correctamente.`);
+      await refreshDocuments();
+    } catch {
+      setMessage("No se pudo eliminar el documento. Verifica permisos de administrador.");
+    } finally {
+      setDeletingDocumentId(null);
     }
   }
 
@@ -105,7 +134,7 @@ export default function AdminClientesPage() {
     }
 
     if (file.size > MAX_FIRESTORE_FILE_SIZE) {
-      setMessage("Por ahora sube archivos de hasta 750 KB para mantener el enlace publico estable.");
+      setMessage("Por ahora sube archivos de hasta 750 KB para mantener el enlace público estable.");
       return;
     }
 
@@ -119,7 +148,7 @@ export default function AdminClientesPage() {
         dataUrl,
       });
       const publicUrl = absolutePublicUrl(getClientDocumentUrl(document.id));
-      setMessage(`Archivo actualizado. El enlace publico se mantiene: ${publicUrl}`);
+      setMessage(`Archivo actualizado. El enlace público se mantiene: ${publicUrl}`);
       await refreshDocuments();
     } catch {
       setMessage("No se pudo actualizar el archivo. Verifica permisos de administrador y conexion.");
@@ -140,7 +169,7 @@ export default function AdminClientesPage() {
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700"
           >
             <ExternalLink className="h-4 w-4" />
-            Ver portal publico
+            Ver portal público
           </a>
         }
       />
@@ -224,8 +253,8 @@ export default function AdminClientesPage() {
             </div>
           ) : (
             <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
-              <div className="min-w-[840px]">
-                <div className="grid grid-cols-[1.2fr_0.8fr_110px_220px] bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
+              <div className="min-w-[920px]">
+                <div className="grid grid-cols-[1.2fr_0.8fr_110px_280px] bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400">
                   <span>Documento</span>
                   <span>Cliente</span>
                   <span>Tamano</span>
@@ -237,7 +266,7 @@ export default function AdminClientesPage() {
                     return (
                       <article
                         key={document.id}
-                        className="grid grid-cols-[1.2fr_0.8fr_110px_220px] items-center gap-3 px-4 py-4 text-sm"
+                        className="grid grid-cols-[1.2fr_0.8fr_110px_280px] items-center gap-3 px-4 py-4 text-sm"
                       >
                         <div className="min-w-0">
                           <p className="truncate font-semibold text-slate-900">{document.title}</p>
@@ -277,8 +306,8 @@ export default function AdminClientesPage() {
                           type="button"
                             onClick={() => copyLink(document)}
                             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700"
-                            aria-label="Copiar enlace publico"
-                            title="Copiar enlace publico"
+                            aria-label="Copiar enlace público"
+                            title="Copiar enlace público"
                           >
                             <Copy className="h-4 w-4" />
                           </button>
@@ -287,11 +316,35 @@ export default function AdminClientesPage() {
                             target="_blank"
                             rel="noreferrer"
                             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700"
-                            aria-label="Abrir enlace publico"
-                            title="Abrir enlace publico"
+                            aria-label="Abrir enlace público"
+                            title="Abrir enlace público"
                           >
                             <ExternalLink className="h-4 w-4" />
                           </a>
+                          <button
+                            type="button"
+                            onClick={() => handleDownload(document)}
+                            disabled={!(document.publicPath ?? document.dataUrl)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label="Descargar archivo"
+                            title="Descargar archivo"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(document)}
+                            disabled={Boolean(deletingDocumentId || document.source === "static")}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-rose-200 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label="Eliminar documento"
+                            title={document.source === "static" ? "Archivo fijo, no se puede eliminar" : "Eliminar documento"}
+                          >
+                            {deletingDocumentId === document.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </button>
                         </div>
                       </article>
                     );

@@ -1,13 +1,16 @@
 'use client'
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, ChevronDown, Copy, Edit2, Plus, Trash2, Check, LayoutGrid } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Copy, Edit2, Plus, Trash2, Check, LayoutGrid, MessageSquare, MessageCircle } from 'lucide-react'
 import ContentViewSwitcher from '@/components/cmhub/ContentViewSwitcher'
 import { useHub } from '@/cmhub/context'
 import { useHubBase } from '@/cmhub/useHubBase'
 import { useHubTheme, useHubMeta } from '@/cmhub/theme'
+import { useOptionalAuth } from '@/components/auth/AuthProvider'
 import { ALL_STATUSES } from '@/cmhub/data'
-import ContentModal from '@/components/cmhub/ContentModal'
+import dynamic from 'next/dynamic'
+const ContentModal = dynamic(() => import('@/components/cmhub/ContentModal'), { ssr: false })
 import NetworkFilter from '@/components/cmhub/NetworkFilter'
 import NetworkIcon from '@/components/cmhub/NetworkIcon'
 import type { Content, ContentStatus, Network } from '@/cmhub/types'
@@ -74,7 +77,15 @@ export default function Calendario() {
   const { NETWORK_META, STATUS_META } = useHubMeta()
   const cardBase = isDark ? '#161820' : '#ffffff'
   const cardText = isDark ? '#e2e8f0' : '#374151'
-  const { contents, brands, updateContent, duplicateContent, deleteContent } = useHub()
+  const { contents, brands, updateContent, duplicateContent, deleteContent, comments } = useHub()
+  const auth = useOptionalAuth()
+  const currentUserName = (auth?.profile as { displayName?: string } | null)?.displayName ?? null
+  const searchParams = useSearchParams()
+  const commentCounts = useMemo(() => {
+    const map = new Map<string, number>()
+    comments.forEach(c => map.set(c.contentId, (map.get(c.contentId) ?? 0) + 1))
+    return map
+  }, [comments])
   const base = useHubBase()
 
   const now = new Date()
@@ -92,6 +103,21 @@ export default function Calendario() {
   const [showBrandDropdown, setShowBrandDropdown] = useState(false)
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing]     = useState<Partial<Content> | undefined>()
+  const openedFromLinkRef = useRef(false)
+
+  // Deep-link desde una notificación (?contentId=xxx) — abre la ficha del contenido
+  // (con sus comentarios) apenas carguen los contenidos. Solo una vez por carga de página.
+  useEffect(() => {
+    if (openedFromLinkRef.current) return
+    const contentId = searchParams.get('contentId')
+    if (!contentId || contents.length === 0) return
+    const found = contents.find(c => c.id === contentId)
+    if (found) {
+      openedFromLinkRef.current = true
+      setEditing(found)
+      setShowModal(true)
+    }
+  }, [searchParams, contents])
   const [draggingId, setDraggingId]     = useState<string | null>(null)
   const [isDuplicate, setIsDuplicate]   = useState(false)
   const [overDate, setOverDate]         = useState<string | null>(null)
@@ -107,6 +133,7 @@ export default function Calendario() {
   const hoverTimer    = useRef<ReturnType<typeof setTimeout>>(undefined)
   const wheelTimer  = useRef<ReturnType<typeof setTimeout>>(undefined)
   const wheelLocked = useRef(false)
+  const [showSidePanel, setShowSidePanel] = useState(true)
 
   useEffect(() => {
     if (!showBrandDropdown) return
@@ -222,11 +249,12 @@ export default function Calendario() {
   async function onCellDrop(e: React.DragEvent, dateISO: string) {
     e.preventDefault()
     if (!draggingId) return
+    const byWho = currentUserName ? { updatedBy: currentUserName } : {}
     if (isDuplicate) {
       const dup = await duplicateContent(draggingId)
-      if (dup) updateContent(dup.id, { date: dateISO })
+      if (dup) updateContent(dup.id, { date: dateISO, ...byWho })
     } else {
-      updateContent(draggingId, { date: dateISO })
+      updateContent(draggingId, { date: dateISO, ...byWho })
     }
     setDraggingId(null)
     setIsDuplicate(false)
@@ -353,7 +381,7 @@ export default function Calendario() {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-[#f8fafc]">
+    <div className="flex flex-col h-full overflow-hidden bg-[#f8fafc]" style={{ zoom: 0.95 }}>
       <div className="bg-white border-b border-[#e5e7eb] px-6 h-14 flex items-center gap-3 shrink-0">
         <div className="flex-1">
           <span className="text-[13px] text-[#9ca3af]">Dashboard</span>
@@ -567,6 +595,16 @@ export default function Calendario() {
                               <span className="text-[9px] font-bold opacity-60">+{channels.length - 3}</span>
                             )}
                             <span className="truncate font-semibold">{brand?.name.split(' ')[0]}</span>
+                            {c.approvalStatus === 'changes_requested' && (
+                              <span className="shrink-0 text-[#d97706]" title="El cliente solicito cambios">
+                                <MessageSquare size={9} />
+                              </span>
+                            )}
+                            {(commentCounts.get(c.id) ?? 0) > 0 && (
+                              <span className="shrink-0 flex items-center gap-0.5 opacity-70" title={`${commentCounts.get(c.id)} comentario(s)`}>
+                                <MessageCircle size={9} />
+                              </span>
+                            )}
                             <button
                               type="button"
                               onClick={e => handleDuplicateCard(e, c)}
@@ -598,64 +636,85 @@ export default function Calendario() {
         </div>
 
         {/* Side panel — upcoming posts from today onwards */}
-        <div className="w-72 border-l border-[#e5e7eb] bg-white flex flex-col shrink-0">
-          <div className="px-5 py-4 border-b border-[#f3f4f6] shrink-0">
-            <span className="text-[15px] font-bold text-[#111827]">Próximos posts</span>
-            <span className="text-[12px] text-[#9ca3af] ml-2">{monthLabel}</span>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {(() => {
-              const groups: Record<string, typeof upcoming> = {}
-              upcoming.forEach(c => {
-                const d = c.date!
-                if (!groups[d]) groups[d] = []
-                groups[d].push(c)
-              })
-              return Object.entries(groups).map(([date, posts]) => (
-                <div key={date} className="border-b border-[#f3f4f6]">
-                  <div className="px-5 py-2 bg-[#f9fafb] text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide capitalize">
-                    {getDayLabel(date)}
-                  </div>
-                  {posts.map(c => {
-                    const channels = c.channels?.length ? c.channels : [c.channel]
-                    const st = STATUS_META[c.status]
-                    const brand = brands.find(b => b.id === c.brandId)
-                    return (
-                      <div key={c.id} onClick={() => openEdit(c)} className="flex items-start gap-2.5 px-5 py-3 hover:bg-[#fafafa] cursor-pointer transition-colors">
-                        <div className="flex gap-0.5 shrink-0 pt-0.5">
-                          {channels.slice(0, 3).map(ch => {
-                            const m = NETWORK_META[ch]
-                            return (
-                              <div key={ch} className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: m?.bg, color: m?.dot }}>
-                                <NetworkIcon network={ch} size={12} />
+        {showSidePanel ? (
+          <div className="w-72 border-l border-[#e5e7eb] bg-white flex flex-col shrink-0">
+            <div className="px-5 py-4 border-b border-[#f3f4f6] shrink-0 flex items-center justify-between">
+              <div>
+                <span className="text-[15px] font-bold text-[#111827]">Próximos posts</span>
+                <span className="text-[12px] text-[#9ca3af] ml-2">{monthLabel}</span>
+              </div>
+              <button
+                onClick={() => setShowSidePanel(false)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-[#9ca3af] hover:bg-[#f3f4f6] hover:text-[#374151] transition-colors"
+                title="Ocultar panel"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {(() => {
+                const groups: Record<string, typeof upcoming> = {}
+                upcoming.forEach(c => {
+                  const d = c.date!
+                  if (!groups[d]) groups[d] = []
+                  groups[d].push(c)
+                })
+                return Object.entries(groups).map(([date, posts]) => (
+                  <div key={date} className="border-b border-[#f3f4f6]">
+                    <div className="px-5 py-2 bg-[#f9fafb] text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide capitalize">
+                      {getDayLabel(date)}
+                    </div>
+                    {posts.map(c => {
+                      const channels = c.channels?.length ? c.channels : [c.channel]
+                      const st = STATUS_META[c.status]
+                      const brand = brands.find(b => b.id === c.brandId)
+                      return (
+                        <div key={c.id} onClick={() => openEdit(c)} className="flex items-start gap-2.5 px-5 py-3 hover:bg-[#fafafa] cursor-pointer transition-colors">
+                          <div className="flex gap-0.5 shrink-0 pt-0.5">
+                            {channels.slice(0, 3).map(ch => {
+                              const m = NETWORK_META[ch]
+                              return (
+                                <div key={ch} className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: m?.bg, color: m?.dot }}>
+                                  <NetworkIcon network={ch} size={12} />
+                                </div>
+                              )
+                            })}
+                            {channels.length > 3 && (
+                              <div className="w-6 h-6 rounded-lg flex items-center justify-center bg-[#f3f4f6] text-[9px] font-bold text-[#6b7280]">
+                                +{channels.length - 3}
                               </div>
-                            )
-                          })}
-                          {channels.length > 3 && (
-                            <div className="w-6 h-6 rounded-lg flex items-center justify-center bg-[#f3f4f6] text-[9px] font-bold text-[#6b7280]">
-                              +{channels.length - 3}
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide">{brand?.name}</div>
+                            <div className="text-[12px] text-[#111827] truncate mt-0.5">{c.title}</div>
+                            <div className="flex items-center justify-between mt-1.5">
+                              <span className="text-[10px] font-mono text-[#9ca3af]">{c.time ?? '—'}</span>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: st?.bg, color: st?.text }}>{st?.label}</span>
                             </div>
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide">{brand?.name}</div>
-                          <div className="text-[12px] text-[#111827] truncate mt-0.5">{c.title}</div>
-                          <div className="flex items-center justify-between mt-1.5">
-                            <span className="text-[10px] font-mono text-[#9ca3af]">{c.time ?? '—'}</span>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: st?.bg, color: st?.text }}>{st?.label}</span>
                           </div>
                         </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              ))
-            })()}
-            {upcoming.length === 0 && (
-              <div className="px-5 py-8 text-center text-[13px] text-[#9ca3af]">Sin publicaciones próximas</div>
-            )}
+                      )
+                    })}
+                  </div>
+                ))
+              })()}
+              {upcoming.length === 0 && (
+                <div className="px-5 py-8 text-center text-[13px] text-[#9ca3af]">Sin publicaciones próximas</div>
+              )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="w-9 border-l border-[#e5e7eb] bg-white flex flex-col items-center pt-3 shrink-0">
+            <button
+              onClick={() => setShowSidePanel(true)}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-[#9ca3af] hover:bg-[#f3f4f6] hover:text-[#374151] transition-colors"
+              title="Mostrar próximos posts"
+            >
+              <ChevronLeft size={14} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Hover expand — celda que crece con animación ── */}

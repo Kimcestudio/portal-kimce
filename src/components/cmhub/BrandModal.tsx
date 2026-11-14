@@ -1,7 +1,10 @@
 'use client'
-import { useState } from 'react'
-import { X, Save } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
+import { X, Trash2 } from 'lucide-react'
+import { useAutoSave, SaveBadge } from '@/cmhub/useAutoSave'
 import { useHub } from '@/cmhub/context'
+import { useHubBase } from '@/cmhub/useHubBase'
 import { NETWORK_META, ALL_NETWORKS } from '@/cmhub/data'
 import NetworkIcon from '@/components/cmhub/NetworkIcon'
 import type { Brand, Network } from '@/cmhub/types'
@@ -19,19 +22,45 @@ function initials(name: string): string {
 }
 
 export default function BrandModal({ initial, onClose, onSaved }: Props) {
-  const { addBrand, updateBrand } = useHub()
+  const { addBrand, updateBrand, deleteBrand, getContentsByBrand, team } = useHub()
+  const router = useRouter()
+  const base = useHubBase()
   const isEdit = !!initial
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const [name, setName] = useState(initial?.name ?? '')
   const [color, setColor] = useState(initial?.color ?? '#3b82f6')
   const [industry, setIndustry] = useState(initial?.industry ?? '')
   const [country, setCountry] = useState(initial?.country ?? 'España')
   const [responsible, setResponsible] = useState(initial?.responsible ?? '')
+  const [responsibleId, setResponsibleId] = useState(initial?.responsibleId ?? '')
   const [status, setStatus] = useState<Brand['status']>(initial?.status ?? 'active')
   const [channels, setChannels] = useState<Network[]>(initial?.channels ?? ['instagram'])
   const [observations, setObservations] = useState(initial?.observations ?? '')
   const [links, setLinks] = useState(initial?.links ?? {})
   const [errors, setErrors] = useState<Record<string, string>>({})
+
+  // ── Autosave (solo en edición) ───────────────────────────────────────────
+  const [saveTick, setSaveTick] = useState(0)
+  const isFirstBrandRender      = useRef(true)
+  const allFields               = JSON.stringify({ name, color, industry, country, responsible, responsibleId, status, channels, observations, links })
+  useEffect(() => {
+    if (isFirstBrandRender.current) { isFirstBrandRender.current = false; return }
+    if (!isEdit) return
+    setSaveTick(t => t + 1)
+  }, [allFields]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const autoSaveState = useAutoSave(saveTick, async () => {
+    if (!name.trim() || !isEdit || !initial) return
+    updateBrand(initial.id, {
+      name: name.trim(), initials: initials(name),
+      color, industry, country, responsible, responsibleId: responsibleId || undefined,
+      status, channels, observations: observations || undefined, links,
+    })
+  })
 
   const toggleChannel = (n: Network) =>
     setChannels(prev => prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])
@@ -46,21 +75,40 @@ export default function BrandModal({ initial, onClose, onSaved }: Props) {
     return Object.keys(errs).length === 0
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!validate()) return
     const payload = {
       name: name.trim(),
       initials: initials(name),
-      color, industry, country, responsible,
+      color, industry, country, responsible, responsibleId: responsibleId || undefined,
       status, channels, observations: observations || undefined, links,
     }
     if (isEdit && initial) {
-      updateBrand(initial.id, payload)
-      onSaved?.({ ...initial, ...payload, updatedAt: new Date().toISOString() })
       onClose()
     } else {
-      addBrand(payload).then(saved => { onSaved?.(saved); onClose() })
+      setSaving(true)
+      setSaveError('')
+      try {
+        const saved = await addBrand(payload)
+        onSaved?.(saved)
+        onClose()
+      } catch (err) {
+        console.error('[BrandModal] addBrand error:', err)
+        setSaveError('No se pudo crear la marca. Intenta de nuevo.')
+      } finally {
+        setSaving(false)
+      }
     }
+  }
+
+  const associatedContents = isEdit && initial ? getContentsByBrand(initial.id) : []
+
+  function handleDelete() {
+    if (!initial) return
+    setDeleting(true)
+    deleteBrand(initial.id)
+    onClose()
+    router.push(`${base}/clientes`)
   }
 
   const iLabel = 'text-[11px] font-bold text-[#6b7280] uppercase tracking-wide'
@@ -102,7 +150,20 @@ export default function BrandModal({ initial, onClose, onSaved }: Props) {
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1.5">
                   <label className={iLabel}>Responsable interno</label>
-                  <input value={responsible} onChange={e => setResponsible(e.target.value)} placeholder="Ej: María García" className={iClass} />
+                  <select
+                    value={responsibleId}
+                    onChange={e => {
+                      const m = team.find(t => t.id === e.target.value)
+                      setResponsibleId(e.target.value)
+                      setResponsible(m?.name ?? '')
+                    }}
+                    className={iClass}
+                  >
+                    <option value="">Sin asignar</option>
+                    {team.filter(m => m.status === 'active').map(m => (
+                      <option key={m.id} value={m.id}>{m.name}{m.category ? ` · ${m.category}` : ''}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className={iLabel}>Estado</label>
@@ -186,12 +247,49 @@ export default function BrandModal({ initial, onClose, onSaved }: Props) {
 
         {/* Footer */}
         <div className="px-6 py-4 border-t border-[#f3f4f6] flex items-center justify-between shrink-0 bg-[#fafafa]">
-          <button onClick={onClose} className="text-[13px] text-[#9ca3af] hover:text-[#6b7280] transition-colors">Cancelar</button>
-          <button onClick={handleSave} className="flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#5b21b6] text-white text-[13px] font-semibold px-5 py-2.5 rounded-xl transition-colors shadow-sm">
-            <Save size={14} /> {isEdit ? 'Guardar cambios' : 'Crear marca'}
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={onClose} className="text-[13px] text-[#9ca3af] hover:text-[#6b7280] transition-colors">Cancelar</button>
+            {isEdit && (
+              <button onClick={() => setConfirmDelete(true)}
+                className="flex items-center gap-1.5 text-[13px] font-semibold text-red-500 hover:text-red-600 transition-colors">
+                <Trash2 size={14} /> Eliminar cliente
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            {isEdit && <SaveBadge state={autoSaveState} />}
+            {saveError && <span className="text-[11px] text-red-500">{saveError}</span>}
+            <button onClick={handleSave} disabled={saving}
+              className="flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#5b21b6] disabled:opacity-60 text-white text-[13px] font-semibold px-5 py-2.5 rounded-xl transition-colors shadow-sm">
+              {saving ? 'Creando…' : isEdit ? 'Cerrar' : 'Crear marca'}
+            </button>
+          </div>
         </div>
       </div>
+
+      {confirmDelete && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={e => e.target === e.currentTarget && setConfirmDelete(false)}>
+          <div className="bg-white rounded-2xl p-6 w-[400px] shadow-2xl">
+            <div className="text-[16px] font-bold text-[#111827] mb-1.5">¿Eliminar a {initial?.name}?</div>
+            <div className="text-[13px] text-[#6b7280] mb-2">Esta acción no se puede deshacer.</div>
+            {associatedContents.length > 0 && (
+              <div className="text-[12px] text-red-700 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3">
+                Este cliente tiene {associatedContents.length} contenido{associatedContents.length === 1 ? '' : 's'} asociado{associatedContents.length === 1 ? '' : 's'}. Se eliminará{associatedContents.length === 1 ? '' : 'n'} también, junto con la marca.
+              </div>
+            )}
+            <div className="flex gap-2 mt-3">
+              <button onClick={() => setConfirmDelete(false)}
+                className="flex-1 border border-[#e5e7eb] text-[#6b7280] text-[13px] py-2.5 rounded-xl hover:bg-[#f9fafb] transition-colors">
+                Cancelar
+              </button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex-1 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white text-[13px] font-semibold py-2.5 rounded-xl transition-colors">
+                {deleting ? 'Eliminando…' : 'Eliminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,3 +1,29 @@
+// ── WorkLog — registro de actividad diaria del colaborador ────────────────
+export type WorkLogTipo =
+  | 'redaccion' | 'diseno' | 'video' | 'llamada' | 'reunion'
+  | 'estrategia' | 'administrativo' | 'investigacion' | 'otro'
+
+export interface WorkLog {
+  id: string
+  userId: string
+  userDisplayName: string
+  date: string             // YYYY-MM-DD
+  tipo: WorkLogTipo
+  titulo: string
+  descripcion?: string
+  brandId?: string
+  minutosEstimados?: number
+  minutosReales?: number
+  completado: boolean
+  completadoAt?: string | null
+  startedAt?: string | null  // timestamp ISO para timer en vivo
+  recurrencia?: 'diaria' | 'semanal' | null
+  diaSemana?: number         // 0=dom … 6=sab, para recurrencia semanal
+  orden?: number
+  overdueFrom?: string       // fecha original YYYY-MM-DD si fue movida desde un día pasado
+  createdAt: unknown
+}
+
 export type Network =
   | 'instagram' | 'facebook' | 'fb_comunidad' | 'tiktok' | 'linkedin'
   | 'youtube' | 'whatsapp' | 'blog' | 'email' | 'web' | 'stories'
@@ -20,6 +46,14 @@ export type Role = 'Admin' | 'CM' | 'Cliente'
 
 export type ApprovalStatus = 'pending' | 'approved' | 'changes_requested'
 
+export interface BrandContact {
+  name: string
+  category: TeamCategory
+  email?: string
+  /** Formato internacional sin espacios ni guiones, ej: "51987654321" */
+  phone?: string
+}
+
 export interface Brand {
   id: string
   name: string
@@ -29,10 +63,18 @@ export interface Brand {
   industry: string
   country: string
   responsible: string
+  /** UID en userDirectory del responsable interno — más fiable que buscar por nombre */
+  responsibleId?: string
   status: 'active' | 'paused' | 'closed'
   channels: Network[]
   observations?: string
   calendarShareEnabled?: boolean
+  /** Slug público del link del cliente (ej: "belcorp"). Separado del ID interno. */
+  slug?: string
+  /** ID del Google Sheet vinculado a esta marca para sincronización bidireccional */
+  sheetId?: string
+  /** Contactos del equipo KIMCE asignados a esta marca, visibles en el portal del cliente */
+  contacts?: BrandContact[]
   links: {
     instagram?: string
     facebook?: string
@@ -96,6 +138,8 @@ export interface Content {
   internalComments?: string
   approvedAt?: string
   approvedBy?: string
+  /** Estado guardado al congelar en "revision" por un comentario nuevo — se restaura cuando ya no quedan comentarios sin resolver. */
+  previousStatus?: ContentStatus | null
 
   metrics?: ContentMetrics
 
@@ -104,6 +148,8 @@ export interface Content {
 
   createdAt: string
   updatedAt: string
+  /** Nombre/correo de quien hizo el ultimo guardado — usado para notificaciones (ej. cambio de fecha). */
+  updatedBy?: string | null
 }
 
 export interface Tag {
@@ -116,15 +162,18 @@ export interface Tag {
 export interface Comment {
   id: string
   contentId: string
+  /** Denormalizado desde el contenido — permite validar acceso publico (calendarShareEnabled) sin un segundo lookup. */
+  brandId: string
   author: string
   message: string
   resolved: boolean
   createdAt: string
 }
 
-export type TeamCategory = 'Diseño' | 'Audiovisual' | 'Estrategia' | 'Otro'
+export type TeamCategory = 'Diseño' | 'Audiovisual' | 'Estrategia' | 'CM' | 'Agencia' | 'Otro'
 
 export interface TeamMember {
+  photoURL?: string
   id: string
   initials: string
   name: string
@@ -135,6 +184,14 @@ export interface TeamMember {
   status: 'active' | 'invited'
   category?: TeamCategory
   position?: string
+  /** Número de WhatsApp en formato internacional sin espacios (ej: "51987654321") */
+  phone?: string
+  /** Presencia real (no confundir con `status`, que es el estado de la membresía). */
+  onlineStatus?: 'online' | 'offline'
+  lastSeenAt?: string
+  isOnline?: boolean
+  presenceStatus?: 'disponible' | 'en_reunion' | 'concentrado' | 'fuera'
+  personalMeetLink?: string
 }
 
 // Legacy interfaces kept for backward compat
@@ -182,6 +239,9 @@ export interface TareaD {
   contentId?: string      // link a contenido
   brandId?: string        // link a marca/cliente
   observaciones?: string  // nota rápida inline
+  source?: 'admin' | 'equipo' | 'quick'
+  completedAt?: string | null
+  deliveryTiming?: 'early' | 'on_time' | 'late'
   createdAt: string
 }
 
@@ -190,23 +250,86 @@ export interface ProyectoObjetivo {
   done: boolean
 }
 
+export interface ProyectoLink {
+  label: string
+  url: string
+}
+
+export type ProyectoNotaTipo = 'idea' | 'anotacion' | 'resumen' | 'otro'
+
+export interface ProyectaNota {
+  id: string
+  texto: string
+  autor: string
+  tipo: ProyectoNotaTipo
+  createdAt: string
+  updatedAt?: string
+  pinned?: boolean
+}
+
+export interface GanttTarea {
+  id: string
+  nombre: string
+  fechaInicio: string
+  fechaFin: string
+  avance: number
+  responsable?: string
+  estado: 'pendiente' | 'en_curso' | 'completado'
+  color?: string
+  parentId?: string   // convierte esta tarea en subtarea del grupo referenciado
+  isGroup?: boolean   // grupo explícito (incluso sin hijos aún)
+}
+
 export interface Proyecto {
   id: string
   nombre: string
   brandId: string
-  estado: 'activo' | 'pausado' | 'completado'
+  estado: 'prospecto' | 'activo' | 'pausado' | 'completado'
   avance: number      // 0-100
   descripcion?: string
   fechaInicio: string
   fechaFin?: string
   responsable: string
+  responsables?: string[]
   objetivoGeneral?: string
   objetivos?: ProyectoObjetivo[]
+  links?: ProyectoLink[]
+  notas?: ProyectaNota[]
+  ganttTareas?: GanttTarea[]
+  tasksMigrated?: boolean
+  archived?: boolean
+  ownerIds?: string[]
+  workingDays?: number[]
+  shareToken?: string
+  weeklyCapacityHours?: number
+  tipo?: 'campaña' | 'lanzamiento' | 'estrategia' | 'web' | 'contenido_especial' | 'interno' | 'propuesta'
+  criterioExito?: string
+  brief?: string
+  briefUpdatedAt?: string
   createdAt: string
   updatedAt: string
 }
 
+export interface ActividadAdjunto {
+  url: string
+  nombre: string
+  tipo: 'imagen' | 'archivo'
+  storagePath: string
+}
+
 export interface HubActividad {
+  startDate?: string
+  progress?: number
+  assigneeIds?: string[]
+  parentId?: string
+  sortOrder?: number
+  isGroup?: boolean
+  milestone?: boolean
+  dependencies?: string[]
+  blockedReason?: string
+  effortHours?: number
+  archived?: boolean
+  priority?: 'urgente' | 'alta' | 'normal'
   id: string
   title: string
   status: 'pendiente' | 'en_curso' | 'completado'
@@ -217,7 +340,36 @@ export interface HubActividad {
   dueDate?: string
   description?: string
   linkEntrega?: string
+  adjuntos?: ActividadAdjunto[]
+  completedAt?: string | null
+  deliveryTiming?: 'early' | 'on_time' | 'late'
   createdAt?: unknown
+  // Flujo de pasos
+  flujoId?: string
+  pasoIndex?: number
+  totalPasos?: number
+  flujoNombre?: string
+}
+
+export interface FlujoStep {
+  titulo: string
+  assigneeNames: string[]
+  category?: string
+  descripcion?: string
+  dueDate?: string
+}
+
+export interface HubFlujo {
+  id: string
+  nombre: string
+  descripcion?: string
+  plantillaId?: string
+  capturaUrls?: string[]
+  pasos: FlujoStep[]
+  actividadIds: (string | null)[]
+  pasoActual: number
+  estado: 'activo' | 'completado'
+  createdAt: unknown
 }
 
 export type NotificationType =
@@ -225,7 +377,13 @@ export type NotificationType =
   | 'content_changes_requested'
   | 'content_in_review'
   | 'content_ready_to_publish'
+  | 'content_date_changed'
+  | 'content_comment_new'
   | 'activity_new'
+  | 'task_overdue'
+  | 'activity_overdue'
+  | 'content_request_new'
+  | 'call_incoming'
 
 export interface AppNotification {
   id: string
@@ -248,6 +406,27 @@ export interface MensajeSala {
   autorInitials: string
   autorColor: string
   texto: string
-  tipo: 'mensaje' | 'anuncio'
+  tipo: 'mensaje' | 'anuncio' | 'bot'
   createdAt: string
+}
+
+// ── Puntos ────────────────────────────────────────────────────────────────────
+
+export interface UserPoints {
+  userId: string
+  puntos: number
+  fichas: number
+  updatedAt: string
+}
+
+export type PuntosRefType = 'tarea' | 'actividad' | 'contenido' | 'tienda' | 'admin'
+
+export interface PuntosLog {
+  id: string
+  userId: string
+  amount: number
+  reason: string
+  refType: PuntosRefType
+  refId: string
+  createdAt: unknown
 }

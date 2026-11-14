@@ -1,744 +1,813 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
+import { AvatarGroup } from '@/components/cmhub/projects/Avatar'
+import { useRouter } from 'next/navigation'
 import {
-  Plus, X, Pencil, Trash2,
-  PlayCircle, PauseCircle, CheckCircle2,
-  Calendar, TrendingUp, FolderKanban, ChevronDown,
-  ClipboardList, CheckCheck, Target, Check,
-  Clock, Circle, ArrowRight,
-  User, FolderOpen,
+  Plus, ArrowRight, FolderOpen, X,
+  MoreHorizontal, Archive, RotateCcw, ChevronRight, Trash2,
+  AlertTriangle, ShieldAlert, Clock, CheckCircle2, ChevronDown,
+  ArrowUpDown, Calendar, TrendingUp, LayoutList, LayoutGrid,
 } from 'lucide-react'
 import { useHub } from '@/cmhub/context'
 import { useHubTheme } from '@/cmhub/theme'
-import { getActividadAssignees } from '@/cmhub/activities'
-import type { Proyecto, ProyectoObjetivo } from '@/cmhub/types'
+import { useHubBase } from '@/cmhub/useHubBase'
+import { useAuth } from '@/components/auth/AuthProvider'
+import { projectTasks, projectProgress, today, validDate } from '@/cmhub/projects/domain'
+import '@/components/cmhub/projects/projects.css'
+import type { Proyecto } from '@/cmhub/types'
 
-type EstadoP = 'activo' | 'pausado' | 'completado'
-
-const EMPTY: Omit<Proyecto, 'id' | 'createdAt' | 'updatedAt'> = {
-  nombre: '', brandId: '', estado: 'activo', avance: 0,
-  descripcion: '', fechaInicio: '', fechaFin: '', responsable: '',
+const TIPO_CFG: Record<string, { label: string; color: string; bg: string }> = {
+  campaña:            { label: 'Campaña',       color: '#7c3aed', bg: '#f5f3ff' },
+  lanzamiento:        { label: 'Lanzamiento',    color: '#ea580c', bg: '#fff7ed' },
+  estrategia:         { label: 'Estrategia',     color: '#2563eb', bg: '#eff6ff' },
+  web:                { label: 'Web',            color: '#0891b2', bg: '#ecfeff' },
+  contenido_especial: { label: 'Cont. especial', color: '#db2777', bg: '#fdf2f8' },
+  interno:            { label: 'Interno',        color: '#64748b', bg: '#f8fafc' },
+  propuesta:          { label: 'Propuesta',      color: '#16a34a', bg: '#f0fdf4' },
 }
 
-const ESTADO_CFG = {
-  activo:     { label: 'Activo',     Icon: PlayCircle,   color: '#16a34a', light: '#dcfce7', dark: 'rgba(22,163,74,0.15)'   },
-  pausado:    { label: 'Pausado',    Icon: PauseCircle,  color: '#d97706', light: '#fef3c7', dark: 'rgba(217,119,6,0.15)'   },
-  completado: { label: 'Completado', Icon: CheckCircle2, color: '#7c3aed', light: '#ede9fe', dark: 'rgba(124,58,237,0.15)'  },
+const ESTADOS: Array<[Proyecto['estado'], string]> = [
+  ['activo', 'Activo'],
+  ['pausado', 'Pausado'],
+  ['completado', 'Completado'],
+  ['prospecto', 'Próximamente'],
+]
+
+const STATE_FILTERS: Array<[string, string]> = [
+  ['activo',    'Activos'],
+  ['prospecto', 'Próximos'],
+  ['pausado',   'Pausados'],
+  ['completado','Completados'],
+  ['all',       'Todos'],
+  ['archivado', 'Archivados'],
+]
+
+type CtxState = { pid: string; x: number; y: number; subOpen: boolean }
+type SortKey  = 'deadline' | 'name' | 'progress'
+
+function closeMenu(set: (v: CtxState | null) => void) { set(null) }
+
+const MONTHS = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
+
+function formatRelDate(iso: string): { label: string; color: string } {
+  const d = Math.ceil((Date.parse(iso) - Date.now()) / 86400000)
+  const dt = new Date(iso + 'T12:00:00')
+  const abs = `${dt.getDate()} ${MONTHS[dt.getMonth()]}`
+  if (d < 0)   return { label: `${abs} (vencida)`, color: '#b91c1c' }
+  if (d === 0) return { label: 'vence hoy',          color: '#b45309' }
+  if (d <= 3)  return { label: `en ${d}d`,            color: '#b45309' }
+  if (d <= 7)  return { label: `en ${d}d`,            color: '#7c3aed' }
+  return { label: abs, color: 'var(--pw-muted)' }
 }
 
-const ACT_CFG = {
-  pendiente:  { label: 'Pendiente',  Icon: Circle,        color: '#9ca3af', bg: 'rgba(156,163,175,0.12)' },
-  en_curso:   { label: 'En curso',   Icon: Clock,         color: '#2563eb', bg: 'rgba(37,99,235,0.1)'    },
-  completado: { label: 'Completado', Icon: CheckCircle2,  color: '#16a34a', bg: 'rgba(22,163,74,0.1)'   },
-}
-
-function fmt(d?: string) {
-  if (!d) return '—'
-  return new Date(d + 'T00:00:00').toLocaleDateString('es', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-// ── Modal de detalle ────────────────────────────────────────────────────────
-function ProyectoModal({
-  proyecto, onClose, onEdit,
-  isDark, T, actividades, brands, updateProyecto,
-}: {
-  proyecto: Proyecto
-  onClose: () => void
-  onEdit: () => void
-  isDark: boolean
-  T: Record<string, string>
-  actividades: ReturnType<typeof useHub>['actividades']
-  brands: ReturnType<typeof useHub>['brands']
-  updateProyecto: ReturnType<typeof useHub>['updateProyecto']
-}) {
-  const brand = brands.find(b => b.id === proyecto.brandId)
-  const es = ESTADO_CFG[proyecto.estado] ?? ESTADO_CFG.activo
-  const EstadoIcon = es.Icon
-  const estadoBg = isDark ? es.dark : es.light
-  const accentColor = brand?.color ?? '#7c3aed'
-
-  const pActs  = actividades.filter(a => a.proyectoId && String(a.proyectoId).trim() === String(proyecto.id).trim())
-  const pDone  = pActs.filter(a => a.status === 'completado').length
-  const pCurso = pActs.filter(a => a.status === 'en_curso').length
-  const pPend  = pActs.filter(a => a.status === 'pendiente').length
-  const actPct = pActs.length ? Math.round(pDone / pActs.length * 100) : 0
-
-  const [localObjGen, setLocalObjGen] = useState(proyecto.objetivoGeneral ?? '')
-  const [localObjs, setLocalObjs]     = useState<ProyectoObjetivo[]>(proyecto.objetivos ?? [])
-  const [newObj, setNewObj]           = useState('')
-
-  // Sync if project updates from Firestore while modal is open
-  useEffect(() => {
-    setLocalObjGen(proyecto.objetivoGeneral ?? '')
-    setLocalObjs(proyecto.objetivos ?? [])
-  }, [proyecto.objetivoGeneral, proyecto.objetivos])
-
-  function saveObjGen() {
-    updateProyecto(proyecto.id, { objetivoGeneral: localObjGen.trim() || '' })
-  }
-
-  function toggleObj(idx: number) {
-    const updated = localObjs.map((o, i) => i === idx ? { ...o, done: !o.done } : o)
-    setLocalObjs(updated)
-    updateProyecto(proyecto.id, { objetivos: updated })
-  }
-
-  function addObj() {
-    if (!newObj.trim()) return
-    const updated = [...localObjs, { texto: newObj.trim(), done: false }]
-    setLocalObjs(updated)
-    setNewObj('')
-    updateProyecto(proyecto.id, { objetivos: updated })
-  }
-
-  function removeObj(idx: number) {
-    const updated = localObjs.filter((_, i) => i !== idx)
-    setLocalObjs(updated)
-    updateProyecto(proyecto.id, { objetivos: updated })
-  }
-
-  const doneObjs = localObjs.filter(o => o.done).length
-  const objPct   = localObjs.length ? Math.round(doneObjs / localObjs.length * 100) : 0
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-end" onClick={onClose}>
-      <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.35)', backdropFilter: 'blur(3px)' }} />
-      <div
-        className="relative w-[600px] h-full flex flex-col overflow-hidden shadow-2xl"
-        style={{ background: T.card }}
-        onClick={e => e.stopPropagation()}
-      >
-        {/* color top bar */}
-        <div className="h-1.5 shrink-0" style={{ background: accentColor }} />
-
-        {/* Header */}
-        <div className="flex items-start gap-3 px-6 py-5 shrink-0"
-          style={{ borderBottom: `1px solid ${T.border}` }}>
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-[14px] font-bold text-white shrink-0"
-            style={{ background: accentColor }}>
-            {brand?.initials ?? proyecto.nombre.slice(0, 2).toUpperCase()}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h2 className="text-[17px] font-bold leading-tight" style={{ color: T.text }}>{proyecto.nombre}</h2>
-            {brand && <p className="text-[12px] mt-0.5" style={{ color: T.sub }}>{brand.name}</p>}
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full"
-                style={{ background: estadoBg, color: es.color }}>
-                <EstadoIcon size={9} /> {es.label}
-              </span>
-              {proyecto.responsable && (
-                <span className="text-[11px] flex items-center gap-1" style={{ color: T.muted }}><User size={11} /> {proyecto.responsable}</span>
-              )}
-              <span className="flex items-center gap-1 text-[11px]" style={{ color: T.muted }}>
-                <Calendar size={10} />
-                {fmt(proyecto.fechaInicio)}
-                {proyecto.fechaFin && <><ArrowRight size={9} className="inline mx-0.5" />{fmt(proyecto.fechaFin)}</>}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button onClick={onEdit}
-              className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-xl border transition-all"
-              style={{ borderColor: T.border, color: T.sub }}
-              onMouseEnter={e => (e.currentTarget.style.background = T.divider)}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <Pencil size={11} /> Editar
-            </button>
-            <button onClick={onClose}
-              className="w-8 h-8 rounded-xl flex items-center justify-center transition-all"
-              style={{ color: T.sub }}
-              onMouseEnter={e => (e.currentTarget.style.background = T.divider)}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              <X size={16} />
-            </button>
-          </div>
-        </div>
-
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto divide-y" style={{ borderColor: T.divider }}>
-
-          {/* Descripción */}
-          {proyecto.descripcion && (
-            <div className="px-6 py-4">
-              <p className="text-[11px] font-bold uppercase tracking-wider mb-2" style={{ color: T.muted }}>Descripción</p>
-              <p className="text-[13px] leading-relaxed" style={{ color: T.sub }}>{proyecto.descripcion}</p>
-            </div>
-          )}
-
-          {/* Objetivos */}
-          <div className="px-6 py-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: T.muted }}>
-              <Target size={11} /> Objetivos
-            </p>
-
-            {/* Objetivo general */}
-            <div className="mb-4">
-              <label className="text-[11px] font-medium mb-1.5 block" style={{ color: T.sub }}>Objetivo general</label>
-              <textarea
-                value={localObjGen}
-                onChange={e => setLocalObjGen(e.target.value)}
-                onBlur={saveObjGen}
-                placeholder="Describe el objetivo principal del proyecto…"
-                rows={3}
-                className="w-full rounded-xl px-3 py-2.5 text-[13px] outline-none border resize-none transition-colors"
-                style={{ background: T.input, color: T.text, borderColor: T.inputBorder }}
-              />
-            </div>
-
-            {/* Objetivos específicos */}
-            <div>
-              <label className="text-[11px] font-medium mb-2 block" style={{ color: T.sub }}>
-                Objetivos específicos
-                {localObjs.length > 0 && (
-                  <span className="ml-2 font-normal" style={{ color: T.muted }}>
-                    {doneObjs}/{localObjs.length} completados
-                  </span>
-                )}
-              </label>
-              <div className="flex flex-col gap-1.5 mb-3">
-                {localObjs.map((o, i) => (
-                  <div key={i} className="flex items-center gap-2.5 group px-2 py-1 rounded-lg transition-colors"
-                    onMouseEnter={e => (e.currentTarget.style.background = T.divider)}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <button onClick={() => toggleObj(i)}
-                      className="shrink-0 rounded border-2 flex items-center justify-center transition-all"
-                      style={{
-                        width: 18, height: 18,
-                        borderColor: o.done ? '#16a34a' : T.inputBorder,
-                        background: o.done ? '#16a34a' : 'transparent',
-                      }}>
-                      {o.done && <Check size={10} color="white" strokeWidth={3} />}
-                    </button>
-                    <span className="flex-1 text-[13px]" style={{
-                      color: o.done ? T.muted : T.text,
-                      textDecoration: o.done ? 'line-through' : 'none',
-                    }}>
-                      {o.texto}
-                    </span>
-                    <button onClick={() => removeObj(i)}
-                      className="opacity-0 group-hover:opacity-100 w-5 h-5 rounded flex items-center justify-center transition-all"
-                      style={{ color: T.muted }}
-                      onMouseEnter={e => (e.currentTarget.style.color = '#ef4444')}
-                      onMouseLeave={e => (e.currentTarget.style.color = T.muted)}>
-                      <X size={11} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  value={newObj}
-                  onChange={e => setNewObj(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addObj() } }}
-                  placeholder="Agregar objetivo específico…"
-                  className="flex-1 text-[12px] px-3 py-2 rounded-xl border outline-none transition-colors"
-                  style={{ background: T.input, color: T.text, borderColor: T.inputBorder }}
-                />
-                <button onClick={addObj}
-                  className="w-8 h-8 rounded-xl flex items-center justify-center bg-[#7c3aed] text-white transition-all hover:bg-[#6d28d9] shrink-0"
-                  style={{ opacity: newObj.trim() ? 1 : 0.4, cursor: newObj.trim() ? 'pointer' : 'not-allowed' }}>
-                  <Plus size={14} />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Progreso */}
-          <div className="px-6 py-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: T.muted }}>
-              <TrendingUp size={11} /> Progreso
-            </p>
-
-            {pActs.length > 0 && (
-              <div className="mb-3">
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-[12px]" style={{ color: T.sub }}>Avance por actividades</span>
-                  <span className="text-[13px] font-bold" style={{ color: '#16a34a' }}>{actPct}%</span>
-                </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: T.divider }}>
-                  <div className="h-full rounded-full transition-all" style={{ width: `${actPct}%`, background: '#22c55e' }} />
-                </div>
-                <div className="flex items-center gap-3 mt-1.5">
-                  {pDone > 0  && <span className="flex items-center gap-1 text-[11px] font-semibold" style={{ color: '#16a34a' }}><CheckCheck size={11}/>{pDone} completadas</span>}
-                  {pCurso > 0 && <span className="text-[11px] font-medium" style={{ color: '#2563eb' }}>· {pCurso} en curso</span>}
-                  {pPend > 0  && <span className="text-[11px]" style={{ color: T.muted }}>· {pPend} pendiente{pPend !== 1 ? 's' : ''}</span>}
-                </div>
-              </div>
-            )}
-
-            {localObjs.length > 0 && (
-              <div className="mb-3">
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-[12px]" style={{ color: T.sub }}>Objetivos completados</span>
-                  <span className="text-[13px] font-bold" style={{ color: '#7c3aed' }}>{objPct}%</span>
-                </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: T.divider }}>
-                  <div className="h-full rounded-full transition-all" style={{ width: `${objPct}%`, background: '#7c3aed' }} />
-                </div>
-              </div>
-            )}
-
-            <div>
-              <div className="flex justify-between items-center mb-1.5">
-                <span className="text-[12px]" style={{ color: T.sub }}>Avance general (manual)</span>
-                <span className="text-[13px] font-bold" style={{ color: accentColor }}>{proyecto.avance}%</span>
-              </div>
-              <div className="h-2 rounded-full overflow-hidden" style={{ background: T.divider }}>
-                <div className="h-full rounded-full transition-all" style={{ width: `${proyecto.avance}%`, background: accentColor }} />
-              </div>
-            </div>
-          </div>
-
-          {/* Actividades vinculadas */}
-          <div className="px-6 py-4">
-            <p className="text-[11px] font-bold uppercase tracking-wider mb-3 flex items-center gap-1.5" style={{ color: T.muted }}>
-              <ClipboardList size={11} /> Actividades vinculadas
-              <span className="ml-auto text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                style={{ background: T.divider, color: T.sub }}>{pActs.length}</span>
-            </p>
-            {pActs.length === 0 ? (
-              <p className="text-[12px] italic" style={{ color: T.muted }}>
-                Sin actividades vinculadas. Vincúlalas desde la sección Actividades.
-              </p>
-            ) : (
-              <div className="flex flex-col gap-1.5">
-                {pActs.map(a => {
-                  const cfg = ACT_CFG[a.status as keyof typeof ACT_CFG] ?? ACT_CFG.pendiente
-                  const AIcon = cfg.Icon
-                  return (
-                    <div key={a.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
-                      style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f9fafb', border: `1px solid ${T.divider}` }}>
-                      <AIcon size={13} style={{ color: cfg.color, flexShrink: 0 }} />
-                      <span className="flex-1 text-[13px] min-w-0 truncate" style={{ color: T.text }}>{a.title}</span>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0"
-                        style={{ color: cfg.color, background: cfg.bg }}>{cfg.label}</span>
-                      {(() => {
-                        const names = getActividadAssignees(a)
-                        if (names.length === 0) return null
-                        const label = names.length === 1 ? names[0].split(' ')[0] : `${names.length} personas`
-                        return (
-                          <span className="text-[11px] shrink-0" style={{ color: T.muted }}>
-                            {label}
-                          </span>
-                        )
-                      })()}
-                      {a.dueDate && (
-                        <span className="text-[10px] shrink-0" style={{ color: T.muted }}>{fmt(a.dueDate)}</span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="h-6" />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── Página principal ────────────────────────────────────────────────────────
 export default function ProyectosPage() {
   const { isDark } = useHubTheme()
-  const { proyectos, addProyecto, updateProyecto, deleteProyecto, brands, team, actividades } = useHub()
-  const [showForm,     setShowForm]     = useState(false)
-  const [editId,       setEditId]       = useState<string | null>(null)
-  const [form,         setForm]         = useState(EMPTY)
-  const [filterEstado, setFilterEstado] = useState<EstadoP | 'all'>('all')
-  const [selectedId,   setSelectedId]   = useState<string | null>(null)
+  const {
+    proyectos, archivedProyectos, projectActivities: actividades, brands, team,
+    loadingProyectos, proyectosError,
+    addProyecto, updateProyecto, deleteProyecto,
+  } = useHub()
+  const { profile, authUser } = useAuth()
+  const base = useHubBase()
+  const router = useRouter()
+  const admin = profile?.role?.toLowerCase() === 'admin'
 
-  const T = isDark ? {
-    page: '#0d0f12', card: '#161820', border: 'rgba(255,255,255,0.07)',
-    text: '#f1f5f9', sub: '#94a3b8', muted: '#64748b',
-    input: '#1e2028', inputBorder: 'rgba(255,255,255,0.12)',
-    divider: 'rgba(255,255,255,0.05)',
-  } : {
-    page: '#f8fafc', card: '#ffffff', border: '#e5e7eb',
-    text: '#111827', sub: '#6b7280', muted: '#9ca3af',
-    input: '#f9fafb', inputBorder: '#e5e7eb',
-    divider: '#f3f4f6',
-  }
+  const [search,  setSearch]  = useState('')
+  const [state,   setState]   = useState('activo')
+  const [brand,   setBrand]   = useState('')
+  const [mine,    setMine]    = useState(!admin)
+  const [sortBy,    setSortBy]    = useState<SortKey>('deadline')
+  const [showSort,  setShowSort]  = useState(false)
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [viewMode,  setViewMode]  = useState<'lista' | 'tarjetas'>('lista')
 
-  const inputCls = 'w-full rounded-xl px-3 py-2.5 text-[13px] outline-none border transition-colors'
+  const [show, setShow] = useState(false)
+  const [showBrandId, setShowBrandId] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    nombre: '', brandId: '', descripcion: '',
+    fechaInicio: today(), fechaFin: '',
+    ownerIds: [] as string[], tipo: '' as string, criterioExito: '',
+  })
 
-  const selected = selectedId ? proyectos.find(p => p.id === selectedId) ?? null : null
+  const [ctx, setCtx] = useState<CtxState | null>(null)
+  const [actionError, setActionError] = useState('')
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
-  function abrir(id?: string) {
-    if (id) {
-      const p = proyectos.find(x => x.id === id)
-      if (!p) return
-      setEditId(id)
-      setForm({
-        nombre: p.nombre, brandId: p.brandId, estado: p.estado,
-        avance: p.avance, descripcion: p.descripcion ?? '',
-        fechaInicio: p.fechaInicio, fechaFin: p.fechaFin ?? '', responsable: p.responsable,
+  const rows = useMemo(() => {
+    const pool = state === 'archivado' ? archivedProyectos : proyectos
+    return pool
+      .map(p => {
+        const tasks = projectTasks(p, actividades)
+        const leaves = tasks.filter(t => !t.isGroup)
+        const remaining = leaves.filter(t => t.estado !== 'completado')
+        const next = remaining
+          .filter(t => t.fechaFin)
+          .sort((a, b) => a.fechaFin.localeCompare(b.fechaFin))[0]
+        return {
+          p, tasks, next,
+          progress: projectProgress(tasks),
+          overdue: remaining.filter(t => t.fechaFin && t.fechaFin < today()).length,
+          blocked: remaining.filter(t => t.blockedReason).length,
+        }
       })
-    } else {
-      setEditId(null)
-      setForm(EMPTY)
-    }
-    setShowForm(true)
-    setSelectedId(null)
+      .filter(({ p, tasks }) =>
+        (state !== 'archivado' && state !== 'all' ? p.estado === state : true) &&
+        (!brand || p.brandId === brand) &&
+        (!search || `${p.nombre} ${brands.find(b => b.id === p.brandId)?.name ?? ''}`
+          .toLowerCase().includes(search.toLowerCase())) &&
+        (!mine ||
+          p.ownerIds?.includes(authUser?.uid ?? '') ||
+          p.responsables?.includes(profile?.displayName ?? '') ||
+          p.responsable === profile?.displayName ||
+          tasks.some(t =>
+            t.assigneeIds?.includes(authUser?.uid ?? '') ||
+            t.responsable === profile?.displayName
+          ))
+      )
+      .sort((a, b) => {
+        if (sortBy === 'name')     return a.p.nombre.localeCompare(b.p.nombre)
+        if (sortBy === 'progress') return b.progress - a.progress
+        return b.overdue - a.overdue ||
+          (a.next?.fechaFin ?? '9999').localeCompare(b.next?.fechaFin ?? '9999')
+      })
+  }, [proyectos, archivedProyectos, actividades, state, brand, search, mine, sortBy, authUser?.uid, profile?.displayName, brands])
+
+  const kpi = useMemo(() => ({
+    total:    rows.length,
+    overdue:  rows.filter(r => r.overdue > 0).length,
+    blocked:  rows.filter(r => r.blocked > 0 && r.overdue === 0).length,
+    thisWeek: rows.filter(r => {
+      if (!r.next?.fechaFin) return false
+      const d = Math.ceil((Date.parse(r.next.fechaFin) - Date.now()) / 86400000)
+      return d >= 0 && d <= 7
+    }).length,
+  }), [rows])
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, typeof rows>()
+    rows.forEach(row => {
+      if (!map.has(row.p.brandId)) map.set(row.p.brandId, [])
+      map.get(row.p.brandId)!.push(row)
+    })
+    return [...map.entries()].map(([brandId, items]) => ({
+      brand: brands.find(b => b.id === brandId),
+      items,
+      totalOverdue: items.reduce((s, r) => s + r.overdue, 0),
+      totalBlocked: items.reduce((s, r) => s + r.blocked, 0),
+    }))
+  }, [rows, brands])
+
+  function toggleCollapse(id: string) {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
   }
 
-  async function guardar(e: React.FormEvent) {
+  function openCtx(e: React.MouseEvent, pid: string) {
+    e.stopPropagation()
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setCtx({ pid, x: rect.right, y: rect.bottom, subOpen: false })
+  }
+
+  async function handleStatus(p: Proyecto, estado: Proyecto['estado']) {
+    closeMenu(setCtx)
+    try { await updateProyecto(p.id, { estado }) }
+    catch { setActionError('No se pudo cambiar el estado.') }
+  }
+
+  async function handleArchive(p: Proyecto) {
+    closeMenu(setCtx)
+    try { await updateProyecto(p.id, { archived: !p.archived }) }
+    catch { setActionError('No se pudo archivar el proyecto.') }
+  }
+
+  async function handleDelete(id: string) {
+    setDeleteConfirm(null)
+    try { await deleteProyecto(id) }
+    catch { setActionError('No se pudo eliminar el proyecto.') }
+  }
+
+  async function create(e: React.FormEvent) {
     e.preventDefault()
-    if (editId) updateProyecto(editId, { ...form })
-    else await addProyecto({ ...form })
-    setShowForm(false)
+    if (!form.nombre.trim() || !form.brandId) return
+    if (
+      !validDate(form.fechaInicio) ||
+      (form.fechaFin && (!validDate(form.fechaFin) || form.fechaFin < form.fechaInicio))
+    ) {
+      setError('Revisa las fechas del proyecto.')
+      return
+    }
+    setBusy(true); setError('')
+    try {
+      const names = team.filter(m => form.ownerIds.includes(m.id)).map(m => m.name)
+      const { tipo: _t, criterioExito: _c, ...formBase } = form
+      const p = await addProyecto({
+        ...formBase,
+        nombre: form.nombre.trim(),
+        responsable: names[0] ?? '',
+        responsables: names,
+        estado: 'activo',
+        avance: 0,
+        tasksMigrated: true,
+        ...(form.tipo ? { tipo: form.tipo as Proyecto['tipo'] } : {}),
+        ...(form.criterioExito.trim() ? { criterioExito: form.criterioExito.trim() } : {}),
+      })
+      router.push(`${base}/proyectos/${p.id}`)
+    } catch {
+      setError('No se pudo crear el proyecto.')
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const counts = {
-    total:      proyectos.length,
-    activo:     proyectos.filter(p => p.estado === 'activo').length,
-    pausado:    proyectos.filter(p => p.estado === 'pausado').length,
-    completado: proyectos.filter(p => p.estado === 'completado').length,
+  function daysUntil(date: string) {
+    const diff = Date.parse(date) - Date.now()
+    return isNaN(diff) ? null : Math.ceil(diff / 86400000)
   }
 
-  const visible = filterEstado === 'all' ? proyectos : proyectos.filter(p => p.estado === filterEstado)
+  const ctxProject = ctx ? [...proyectos, ...archivedProyectos].find(p => p.id === ctx.pid) : null
+
+  function openForm(brandId?: string) {
+    setForm(f => ({ ...f, brandId: brandId ?? '' }))
+    setShow(true)
+  }
+  function dismissForm() { setShow(false); setError(''); setShowBrandId('') }
+
+  const SORT_LABELS: Record<SortKey, string> = {
+    deadline: 'Vencimiento',
+    name:     'Nombre',
+    progress: 'Progreso',
+  }
 
   return (
-    <div className="flex h-full overflow-hidden" style={{ background: T.page }}>
+    <div className="flex flex-col h-full overflow-hidden" style={{
+      background: isDark
+        ? 'linear-gradient(160deg, #0f111a 0%, #111422 60%, #12102a 100%)'
+        : 'linear-gradient(160deg, #f8fafc 0%, #f0f4ff 60%, #f5f3ff 100%)',
+    }}>
 
-      {/* Modal detalle */}
-      {selected && (
-        <ProyectoModal
-          proyecto={selected}
-          onClose={() => setSelectedId(null)}
-          onEdit={() => abrir(selected.id)}
-          isDark={isDark}
-          T={T}
-          actividades={actividades}
-          brands={brands}
-          updateProyecto={updateProyecto}
-        />
-      )}
-
-      {/* ── Contenido principal ──────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-
-        {/* Header */}
-        <div className="px-6 h-14 flex items-center gap-3 shrink-0"
-          style={{ background: T.card, borderBottom: `1px solid ${T.border}` }}>
-          <div className="flex-1 flex items-center gap-1.5">
-            <span className="text-[13px]" style={{ color: T.sub }}>Producción</span>
-            <span style={{ color: T.border }}>›</span>
-            <span className="text-[13px] font-semibold" style={{ color: T.text }}>Proyectos</span>
-          </div>
-          <button onClick={() => abrir()}
-            className="flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[13px] font-semibold px-4 py-2 rounded-xl transition-colors">
+      {/* ── Glass header ─────────────────────────────── */}
+      <div className="px-6 flex items-center gap-3 shrink-0" style={{
+        height: 52,
+        background: isDark ? 'rgba(13,15,18,0.97)' : 'rgba(255,255,255,0.97)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'}`,
+        boxShadow: isDark ? 'none' : '0 1px 0 rgba(255,255,255,1), 0 2px 12px rgba(0,0,0,0.04)',
+      }}>
+        <span style={{ flex: 1, fontSize: 15, fontWeight: 700, letterSpacing: '-.015em' }}>Proyectos</span>
+        {(proyectosError || actionError) && (
+          <span style={{ fontSize: 12, color: '#b91c1c', flex: 1 }}>{proyectosError || actionError}</span>
+        )}
+        {admin && (
+          <button onClick={() => openForm()} style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+            color: 'white', border: 'none', borderRadius: 10,
+            padding: '7px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(109,40,217,0.3)',
+          }}>
             <Plus size={14} /> Nuevo proyecto
           </button>
+        )}
+      </div>
+
+      {/* ── Scrollable content ───────────────────────── */}
+      <main
+        className="project-work pw-shell" data-dark={isDark}
+        style={{ flex: 1, height: 0, overflowY: 'auto', paddingTop: 16 }}
+      >
+
+        {/* KPI strip — only when there's data */}
+        {!loadingProyectos && rows.length > 0 && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 18 }}>
+            <div className="pw-kpi-card" data-v="violet" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <div className="pw-kpi-icon pw-kpi-violet" style={{ width: 28, height: 28, borderRadius: 8 }}>
+                  <FolderOpen size={14} />
+                </div>
+                <span className="pw-kpi-label" style={{ marginBottom: 0 }}>Proyectos</span>
+              </div>
+              <div className="pw-kpi-value" style={{ fontSize: 22 }}>{kpi.total}</div>
+            </div>
+
+            <div className="pw-kpi-card" data-v={kpi.overdue > 0 ? 'red' : 'green'} style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <div className={`pw-kpi-icon ${kpi.overdue > 0 ? 'pw-kpi-red' : 'pw-kpi-green'}`} style={{ width: 28, height: 28, borderRadius: 8 }}>
+                  <AlertTriangle size={14} />
+                </div>
+                <span className="pw-kpi-label" style={{ marginBottom: 0 }}>Vencidas</span>
+              </div>
+              <div className="pw-kpi-value" style={{ fontSize: 22 }}>{kpi.overdue}</div>
+            </div>
+
+            <div className="pw-kpi-card" data-v={kpi.thisWeek > 0 ? 'amber' : 'teal'} style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <div className={`pw-kpi-icon ${kpi.thisWeek > 0 ? 'pw-kpi-amber' : 'pw-kpi-teal'}`} style={{ width: 28, height: 28, borderRadius: 8 }}>
+                  <Calendar size={14} />
+                </div>
+                <span className="pw-kpi-label" style={{ marginBottom: 0 }}>Esta semana</span>
+              </div>
+              <div className="pw-kpi-value" style={{ fontSize: 22 }}>{kpi.thisWeek}</div>
+            </div>
+
+            <div className="pw-kpi-card" data-v={kpi.blocked > 0 ? 'amber' : 'blue'} style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                <div className={`pw-kpi-icon ${kpi.blocked > 0 ? 'pw-kpi-amber' : 'pw-kpi-blue'}`} style={{ width: 28, height: 28, borderRadius: 8 }}>
+                  <ShieldAlert size={14} />
+                </div>
+                <span className="pw-kpi-label" style={{ marginBottom: 0 }}>Bloqueados</span>
+              </div>
+              <div className="pw-kpi-value" style={{ fontSize: 22 }}>{kpi.blocked}</div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Toolbar ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+          {/* Search */}
+          <input
+            type="search" aria-label="Buscar proyectos"
+            placeholder="Buscar proyecto o cliente…"
+            value={search} onChange={e => setSearch(e.target.value)}
+            style={{ flex: 1, maxWidth: 320 }}
+          />
+
+          {/* Mine/All toggle */}
+          <div className="pw-segment" style={{ flexShrink: 0 }}>
+            <button aria-pressed={mine}  onClick={() => setMine(true)}>Míos</button>
+            <button aria-pressed={!mine} onClick={() => setMine(false)}>Todos</button>
+          </div>
+
+          {/* Brand filter */}
+          <select
+            aria-label="Cliente" value={brand} onChange={e => setBrand(e.target.value)}
+            style={{ flexShrink: 0, maxWidth: 180 }}
+          >
+            <option value="">Todos los clientes</option>
+            {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+
+          {/* View toggle */}
+          <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`, flexShrink: 0 }}>
+            <button onClick={() => setViewMode('lista')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: 'none', cursor: 'pointer', background: viewMode === 'lista' ? (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(109,40,217,0.1)') : 'transparent', color: viewMode === 'lista' ? '#7c3aed' : 'var(--pw-muted)', transition: 'background 0.12s' }}>
+              <LayoutList size={15} />
+            </button>
+            <button onClick={() => setViewMode('tarjetas')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, border: 'none', cursor: 'pointer', background: viewMode === 'tarjetas' ? (isDark ? 'rgba(255,255,255,0.12)' : 'rgba(109,40,217,0.1)') : 'transparent', color: viewMode === 'tarjetas' ? '#7c3aed' : 'var(--pw-muted)', transition: 'background 0.12s' }}>
+              <LayoutGrid size={15} />
+            </button>
+          </div>
+
+          {/* Sort control */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button
+              className="pw-button"
+              onClick={() => setShowSort(s => !s)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', fontSize: 12, minHeight: 40 }}
+            >
+              <ArrowUpDown size={13} />
+              {SORT_LABELS[sortBy]}
+            </button>
+            {showSort && (
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 50 }} onClick={() => setShowSort(false)} />
+                <div className="pw-ctx-menu" style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 51, minWidth: 160 }}>
+                  {(['deadline', 'name', 'progress'] as SortKey[]).map(k => (
+                    <button key={k} onClick={() => { setSortBy(k); setShowSort(false) }}
+                      style={sortBy === k ? { fontWeight: 700, color: 'var(--pw-accent)' } : {}}>
+                      {k === 'deadline' && <Calendar size={14} />}
+                      {k === 'name'     && <TrendingUp size={14} />}
+                      {k === 'progress' && <TrendingUp size={14} />}
+                      {SORT_LABELS[k]}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
+        {/* State filter pills */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16, flexWrap: 'wrap' }}>
+          {STATE_FILTERS.map(([v, l]) => (
+            <button
+              key={v}
+              onClick={() => setState(v)}
+              style={{
+                padding: '5px 12px', borderRadius: 20, border: 'none',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                background: state === v
+                  ? 'linear-gradient(135deg, #7c3aed, #6d28d9)'
+                  : isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)',
+                color: state === v ? 'white' : 'var(--pw-muted)',
+                transition: 'background 0.12s, color 0.12s',
+                boxShadow: state === v ? '0 2px 8px rgba(109,40,217,0.25)' : 'none',
+              }}
+            >
+              {l}
+            </button>
+          ))}
+        </div>
 
-          {/* Stats */}
-          <div className="grid grid-cols-4 gap-3">
-            {([
-              { key: 'all',        label: 'Total',       val: counts.total,      color: T.text,    bg: T.card,  icon: FolderKanban },
-              { key: 'activo',     label: 'Activos',     val: counts.activo,     color: '#16a34a', bg: isDark ? 'rgba(22,163,74,0.08)'  : '#f0fdf4', icon: PlayCircle   },
-              { key: 'pausado',    label: 'Pausados',    val: counts.pausado,    color: '#d97706', bg: isDark ? 'rgba(217,119,6,0.08)'  : '#fffbeb', icon: PauseCircle  },
-              { key: 'completado', label: 'Completados', val: counts.completado, color: '#7c3aed', bg: isDark ? 'rgba(124,58,237,0.08)' : '#faf5ff', icon: CheckCircle2 },
-            ] as const).map(s => {
-              const Icon = s.icon
-              const active = filterEstado === s.key
+        {loadingProyectos ? (
+          <div className="pw-empty" role="status">Cargando proyectos…</div>
+        ) : !rows.length ? (
+          <div className="pw-empty">
+            <FolderOpen size={30} style={{ margin: '0 auto 12px' }} />
+            <h2>No hay proyectos en esta vista</h2>
+            <p>Prueba otros filtros o crea un proyecto nuevo.</p>
+            <button className="pw-button" onClick={() => { setState('all'); setMine(false); setSearch(''); setBrand('') }}>
+              Ver todos los proyectos
+            </button>
+          </div>
+        ) : viewMode === 'tarjetas' ? (
+          /* ── CARD GRID VIEW (inspired by references) ── */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+            {grouped.map(({ brand, items, totalOverdue, totalBlocked }) => {
+              const gid = brand?.id ?? 'none'
+              const isCollapsed = collapsed.has(gid)
+              const brandColor = brand?.color ?? '#7c3aed'
               return (
-                <button key={s.key}
-                  onClick={() => setFilterEstado(active ? 'all' : s.key as typeof filterEstado)}
-                  className="flex items-center gap-3 p-4 rounded-2xl border transition-all text-left"
-                  style={{
-                    background: active ? s.bg : T.card,
-                    borderColor: active ? s.color + '60' : T.border,
-                    boxShadow: active ? `0 0 0 1px ${s.color}30` : 'none',
-                  }}>
-                  <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                    style={{ background: s.bg, color: s.color }}>
-                    <Icon size={16} />
+                <div key={gid}>
+                  {/* Brand header */}
+                  <div onClick={() => toggleCollapse(gid)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 2px 12px', cursor: 'pointer', userSelect: 'none' }}>
+                    <ChevronDown size={14} style={{ color: 'var(--pw-muted)', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', flexShrink: 0 }} />
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, background: brandColor, boxShadow: `0 0 0 2px color-mix(in srgb, ${brandColor} 20%, transparent)` }} />
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>{brand?.name ?? 'Sin cliente'}</span>
+                    <span className="pw-muted" style={{ fontSize: 12 }}>· {items.length} proyecto{items.length !== 1 ? 's' : ''}</span>
+                    {totalOverdue > 0 && <span className="pw-chip pw-chip-red" style={{ gap: 3, padding: '2px 7px' }}><AlertTriangle size={10} />{totalOverdue} vencida{totalOverdue !== 1 ? 's' : ''}</span>}
+                    {totalBlocked > 0 && <span className="pw-chip pw-chip-amber" style={{ gap: 3, padding: '2px 7px' }}><ShieldAlert size={10} />{totalBlocked} bloqueada{totalBlocked !== 1 ? 's' : ''}</span>}
+                    {admin && <button onClick={e => { e.stopPropagation(); openForm(brand?.id) }} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--pw-muted)', fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 6 }}><Plus size={12} /> Agregar</button>}
                   </div>
-                  <div>
-                    <p className="text-[22px] font-bold leading-none" style={{ color: s.color }}>{s.val}</p>
-                    <p className="text-[11px] mt-0.5" style={{ color: T.sub }}>{s.label}</p>
-                  </div>
-                </button>
+
+                  {/* Card grid */}
+                  {!isCollapsed && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(290px, 1fr))', gap: 14 }}>
+                      {items.map(({ p, tasks, next, overdue, blocked, progress }) => {
+                        const leaves = tasks.filter(t => !t.isGroup)
+                        const completedCount = leaves.filter(t => t.estado === 'completado').length
+                        const d = p.fechaFin ? daysUntil(p.fechaFin) : null
+
+                        // Priority strip (ref 4 pattern)
+                        const priority = overdue > 0
+                          ? { label: 'VENCIDO',   strip: '#ef4444', bg: isDark ? 'rgba(127,29,29,0.3)'  : '#fff5f5', textColor: '#ef4444' }
+                          : blocked > 0
+                          ? { label: 'BLOQUEADO', strip: '#f59e0b', bg: isDark ? 'rgba(120,53,15,0.25)' : '#fffbeb', textColor: '#b45309' }
+                          : d !== null && d <= 7 && d >= 0 && p.estado === 'activo'
+                          ? { label: 'EN RIESGO', strip: '#7c3aed', bg: isDark ? 'rgba(109,40,217,0.15)': '#f5f3ff', textColor: '#7c3aed' }
+                          : p.estado === 'completado'
+                          ? { label: 'COMPLETADO',strip: '#22c55e', bg: isDark ? 'rgba(21,128,61,0.15)' : '#f0fdf4', textColor: '#16a34a' }
+                          : p.estado === 'pausado'
+                          ? { label: 'PAUSADO',   strip: '#94a3b8', bg: isDark ? 'rgba(100,116,139,0.15)':'#f8fafc',  textColor: '#64748b' }
+                          : { label: 'AL DÍA',    strip: brandColor,bg: isDark ? `color-mix(in srgb, ${brandColor} 15%, #161820)` : `color-mix(in srgb, ${brandColor} 7%, white)`, textColor: brandColor }
+
+                        return (
+                          <div key={p.id} style={{
+                            borderRadius: 18, overflow: 'hidden',
+                            background: priority.bg,
+                            border: `1px solid color-mix(in srgb, ${priority.strip} 25%, ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'})`,
+                            boxShadow: isDark ? '0 2px 12px rgba(0,0,0,0.3)' : '0 2px 12px rgba(0,0,0,0.06)',
+                            display: 'flex', flexDirection: 'column',
+                            transition: 'transform 0.15s, box-shadow 0.15s',
+                          }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLElement).style.boxShadow = isDark ? '0 8px 24px rgba(0,0,0,0.4)' : '0 8px 24px rgba(0,0,0,0.12)' }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'; (e.currentTarget as HTMLElement).style.boxShadow = isDark ? '0 2px 12px rgba(0,0,0,0.3)' : '0 2px 12px rgba(0,0,0,0.06)' }}
+                          >
+                            {/* Priority strip top bar */}
+                            <div style={{ height: 4, background: priority.strip, flexShrink: 0 }} />
+
+                            {/* Card body */}
+                            <div style={{ padding: '14px 16px 16px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+
+                              {/* Top row: brand + priority label + date */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ width: 7, height: 7, borderRadius: '50%', background: brandColor, flexShrink: 0 }} />
+                                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--pw-muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {brand?.name ?? 'Sin cliente'}
+                                </span>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: priority.textColor, letterSpacing: '.04em', flexShrink: 0 }}>
+                                  {priority.label}
+                                </span>
+                              </div>
+
+                              {/* Project name */}
+                              <div>
+                                <Link href={`${base}/proyectos/${p.id}`} style={{ fontSize: 16, fontWeight: 750, letterSpacing: '-.01em', lineHeight: 1.3, display: 'block', textDecoration: 'none', color: 'inherit' }}>
+                                  {p.nombre}
+                                </Link>
+                                {p.tipo && TIPO_CFG[p.tipo] && (
+                                  <span style={{ marginTop: 5, display: 'inline-flex', fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 6, background: TIPO_CFG[p.tipo].bg, color: TIPO_CFG[p.tipo].color }}>
+                                    {TIPO_CFG[p.tipo].label}
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* Progress */}
+                              <div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+                                  <span style={{ fontSize: 11, color: 'var(--pw-muted)', fontWeight: 600 }}>Avance</span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: priority.strip }}>{progress}%</span>
+                                </div>
+                                <div style={{ height: 6, background: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)', borderRadius: 4, overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', borderRadius: 4, width: `${progress}%`, background: `linear-gradient(90deg, ${priority.strip}, color-mix(in srgb, ${priority.strip} 70%, white))`, transition: 'width 0.6s cubic-bezier(0.16,1,0.3,1)' }} />
+                                </div>
+                              </div>
+
+                              {/* Next delivery */}
+                              {next ? (() => {
+                                const rel = formatRelDate(next.fechaFin)
+                                return (
+                                  <div style={{ padding: '8px 10px', borderRadius: 10, background: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)', borderLeft: `3px solid ${priority.strip}` }}>
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--pw-muted)', textTransform: 'uppercase', letterSpacing: '.04em', display: 'block', marginBottom: 2 }}>Próx. entrega</span>
+                                    <span style={{ fontSize: 12, fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{next.nombre}</span>
+                                    <span style={{ fontSize: 11, fontWeight: 600, color: rel.color, fontVariantNumeric: 'tabular-nums' }}>{rel.label}</span>
+                                  </div>
+                                )
+                              })() : (
+                                <div style={{ padding: '8px 10px', borderRadius: 10, background: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.03)' }}>
+                                  <span style={{ fontSize: 11, color: 'var(--pw-muted)', fontStyle: 'italic' }}>Sin entregas pendientes</span>
+                                </div>
+                              )}
+
+                              {/* Footer: avatars + task count + CTA */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 'auto', paddingTop: 4 }}>
+                                <AvatarGroup team={team} ids={p.ownerIds} names={p.responsables ?? [p.responsable]} />
+                                {leaves.length > 0 && (
+                                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--pw-muted)', display: 'flex', alignItems: 'center', gap: 3 }}>
+                                    <CheckCircle2 size={11} /> {completedCount}/{leaves.length}
+                                  </span>
+                                )}
+                                <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+                                  {admin && (
+                                    <button className="pw-button pw-icon" style={{ width: 32, height: 32, minHeight: 32, borderRadius: 8 }} onClick={e => openCtx(e, p.id)}>
+                                      <MoreHorizontal size={14} />
+                                    </button>
+                                  )}
+                                  <Link href={`${base}/proyectos/${p.id}`} style={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                                    padding: '6px 14px', borderRadius: 20, textDecoration: 'none',
+                                    background: isDark ? 'rgba(255,255,255,0.12)' : '#1a1a2e',
+                                    color: 'white', fontSize: 12, fontWeight: 700,
+                                  }}>
+                                    Abrir <ArrowRight size={12} />
+                                  </Link>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>
-
-          {/* Lista de proyectos */}
-          {visible.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-3 rounded-2xl border"
-              style={{ background: T.card, borderColor: T.border }}>
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center "
-                style={{ background: isDark ? 'rgba(255,255,255,0.05)' : '#f3f4f6' }}><FolderOpen size={28} /></div>
-              <p className="text-[14px] font-semibold" style={{ color: T.text }}>Sin proyectos</p>
-              <p className="text-[12px]" style={{ color: T.sub }}>Crea el primer proyecto del equipo</p>
-              <button onClick={() => abrir()}
-                className="mt-1 flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#6d28d9] text-white text-[12px] font-semibold px-4 py-2 rounded-xl transition-colors">
-                <Plus size={13} /> Nuevo proyecto
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-4">
-              {visible.map(p => {
-                const brand = brands.find(b => b.id === p.brandId)
-                const es = ESTADO_CFG[p.estado] ?? ESTADO_CFG.activo
-                const EstadoIcon = es.Icon
-                const accentColor = brand?.color ?? '#7c3aed'
-                const estadoBg = isDark ? es.dark : es.light
-
-                const pActs  = actividades.filter(a => a.proyectoId && String(a.proyectoId).trim() === String(p.id).trim())
-                const pDone  = pActs.filter(a => a.status === 'completado').length
-                const actPct = pActs.length ? Math.round(pDone / pActs.length * 100) : null
-
-                // Avance general: derivado de actividades si existen, manual si no
-                const displayAvance = pActs.length > 0 ? actPct! : p.avance
-                const displayColor  = pActs.length > 0 ? '#22c55e' : accentColor
-
-                const pCurso = pActs.filter(a => a.status === 'en_curso').length
-                const pPend  = pActs.filter(a => a.status === 'pendiente').length
-
-                return (
-                  <div key={p.id}
-                    className="rounded-2xl border overflow-hidden transition-all group hover:shadow-md cursor-pointer"
-                    style={{ background: T.card, borderColor: T.border }}
-                    onClick={() => setSelectedId(p.id)}>
-
-                    <div className="h-1" style={{ background: accentColor }} />
-
-                    <div className="p-5">
-                      {/* Cabecera */}
-                      <div className="flex items-start gap-3 mb-4">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-[13px] font-bold text-white shrink-0"
-                          style={{ background: accentColor }}>
-                          {brand?.initials ?? p.nombre.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-[14px] font-bold truncate leading-tight" style={{ color: T.text }}>{p.nombre}</p>
-                          {brand && <p className="text-[12px] mt-0.5" style={{ color: T.sub }}>{brand.name}</p>}
-                        </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded-full"
-                            style={{ background: estadoBg, color: es.color }}>
-                            <EstadoIcon size={9} /> {es.label}
-                          </span>
-                          <button
-                            onClick={e => { e.stopPropagation(); abrir(p.id) }}
-                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all"
-                            style={{ color: T.muted }}
-                            onMouseEnter={e => (e.currentTarget.style.background = T.divider)}
-                            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                            <Pencil size={12} />
-                          </button>
-                          <button
-                            onClick={e => { e.stopPropagation(); if (confirm('¿Eliminar proyecto?')) deleteProyecto(p.id) }}
-                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg transition-all"
-                            style={{ color: T.muted }}
-                            onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#ef4444' }}
-                            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = T.muted }}>
-                            <Trash2 size={12} />
-                          </button>
-                        </div>
-                      </div>
-
-                      {p.descripcion && (
-                        <p className="text-[12px] mb-4 line-clamp-2" style={{ color: T.sub }}>{p.descripcion}</p>
-                      )}
-
-                      {/* Avance general */}
-                      <div className="mb-3">
-                        <div className="flex justify-between items-center mb-1.5">
-                          <span className="text-[11px] font-semibold flex items-center gap-1" style={{ color: T.muted }}>
-                            <TrendingUp size={10} />
-                            Avance general
-                            {pActs.length > 0 && <span className="font-normal italic">(por actividades)</span>}
-                          </span>
-                          <span className="text-[12px] font-bold" style={{ color: displayColor }}>{displayAvance}%</span>
-                        </div>
-                        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: T.divider }}>
-                          <div className="h-full rounded-full transition-all"
-                            style={{ width: `${displayAvance}%`, background: displayColor }} />
-                        </div>
-                      </div>
-
-                      {/* Actividades vinculadas */}
-                      {pActs.length > 0 ? (
-                        <div className="rounded-xl p-3 mb-3"
-                          style={{ background: isDark ? 'rgba(255,255,255,0.03)' : '#f9fafb', border: `1px solid ${T.divider}` }}>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1"
-                              style={{ color: T.muted }}>
-                              <ClipboardList size={9} /> Actividades
-                            </span>
-                            <span className="text-[10px] font-bold" style={{ color: '#16a34a' }}>{actPct}%</span>
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {pDone > 0 && (
-                              <span className="flex items-center gap-0.5 text-[10px] font-semibold" style={{ color: '#16a34a' }}>
-                                <CheckCheck size={10} /> {pDone} listas
-                              </span>
-                            )}
-                            {pCurso > 0 && (
-                              <span className="text-[10px] font-semibold" style={{ color: '#2563eb' }}>· {pCurso} en curso</span>
-                            )}
-                            {pPend > 0 && (
-                              <span className="text-[10px]" style={{ color: T.muted }}>· {pPend} pendiente{pPend !== 1 ? 's' : ''}</span>
-                            )}
-                            <span className="ml-auto text-[10px] font-medium" style={{ color: T.muted }}>{pActs.length} total</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 rounded-xl px-3 py-2 mb-3"
-                          style={{ border: `1px dashed ${T.divider}` }}>
-                          <ClipboardList size={11} style={{ color: T.muted }} />
-                          <span className="text-[11px] italic" style={{ color: T.muted }}>Sin actividades vinculadas</span>
-                        </div>
-                      )}
-
-                      {/* Meta */}
-                      <div className="flex items-center gap-4 pt-3" style={{ borderTop: `1px solid ${T.divider}` }}>
-                        <span className="flex items-center gap-1 text-[11px]" style={{ color: T.sub }}>
-                          <Calendar size={10} />
-                          {fmt(p.fechaInicio)}
-                          {p.fechaFin && <> → {fmt(p.fechaFin)}</>}
-                        </span>
-                        {p.responsable && (
-                          <span className="ml-auto text-[11px] flex items-center gap-1" style={{ color: T.sub }}><User size={11} /> {p.responsable}</span>
-                        )}
-                      </div>
-                    </div>
+        ) : (
+          /* ── LIST VIEW ── */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {grouped.map(({ brand, items, totalOverdue, totalBlocked }) => {
+              const gid = brand?.id ?? 'none'
+              const isCollapsed = collapsed.has(gid)
+              return (
+                <div key={gid}>
+                  {/* ── Brand group header ── */}
+                  <div
+                    onClick={() => toggleCollapse(gid)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 4px 10px', cursor: 'pointer', userSelect: 'none' }}
+                  >
+                    <ChevronDown size={14} style={{ color: 'var(--pw-muted)', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s', flexShrink: 0 }} />
+                    <span style={{ width: 9, height: 9, borderRadius: '50%', flexShrink: 0, display: 'inline-block', background: brand?.color ?? '#7c3aed', boxShadow: `0 0 0 2px color-mix(in srgb, ${brand?.color ?? '#7c3aed'} 20%, transparent)` }} />
+                    <span style={{ fontSize: 13, fontWeight: 700, letterSpacing: '.01em' }}>{brand?.name ?? 'Sin cliente'}</span>
+                    <span className="pw-muted" style={{ fontSize: 12 }}>· {items.length} proyecto{items.length !== 1 ? 's' : ''}</span>
+                    {totalOverdue > 0 && <span className="pw-chip pw-chip-red" style={{ gap: 3, padding: '2px 7px' }}><AlertTriangle size={10} />{totalOverdue} vencida{totalOverdue !== 1 ? 's' : ''}</span>}
+                    {totalBlocked > 0 && <span className="pw-chip pw-chip-amber" style={{ gap: 3, padding: '2px 7px' }}><ShieldAlert size={10} />{totalBlocked} bloqueada{totalBlocked !== 1 ? 's' : ''}</span>}
+                    {admin && <button onClick={e => { e.stopPropagation(); openForm(brand?.id) }} style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--pw-muted)', fontSize: 11, fontWeight: 600, padding: '2px 6px', borderRadius: 6 }}><Plus size={12} /> Agregar</button>}
                   </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* ── Panel formulario ─────────────────────────────────────────────────── */}
-      {showForm && (
-        <div className="w-80 shrink-0 flex flex-col overflow-hidden"
-          style={{ borderLeft: `1px solid ${T.border}`, background: T.card }}>
-          <div className="flex items-center justify-between px-5 py-4 shrink-0"
-            style={{ borderBottom: `1px solid ${T.border}` }}>
-            <p className="text-[14px] font-bold" style={{ color: T.text }}>
-              {editId ? 'Editar proyecto' : 'Nuevo proyecto'}
-            </p>
-            <button onClick={() => setShowForm(false)}
-              className="w-7 h-7 rounded-xl flex items-center justify-center"
-              style={{ color: T.sub }}><X size={14} /></button>
+                  {/* ── Projects list ── */}
+                  {!isCollapsed && (
+                    <div className="pw-list">
+                      {items.map(({ p, tasks, next, overdue, blocked, progress }) => {
+                        const brandColor = brand?.color ?? '#7c3aed'
+                        const leaves = tasks.filter(t => !t.isGroup)
+                        const completedCount = leaves.filter(t => t.estado === 'completado').length
+                        const d = p.fechaFin ? daysUntil(p.fechaFin) : null
+                        const nearDeadline = d !== null && d >= 0 && d <= 7 && p.estado === 'activo'
+
+                        const health = overdue > 0
+                          ? { color: '#ef4444', bg: isDark ? 'rgba(239,68,68,0.15)' : '#fee2e2', label: 'Vencido' }
+                          : blocked > 0
+                          ? { color: '#f59e0b', bg: isDark ? 'rgba(245,158,11,0.15)' : '#fef3c7', label: 'Bloqueado' }
+                          : p.estado === 'completado'
+                          ? { color: '#22c55e', bg: isDark ? 'rgba(34,197,94,0.15)' : '#dcfce7', label: 'Completado' }
+                          : p.estado === 'pausado'
+                          ? { color: '#94a3b8', bg: isDark ? 'rgba(148,163,184,0.15)' : '#f1f5f9', label: 'Pausado' }
+                          : { color: '#22c55e', bg: isDark ? 'rgba(34,197,94,0.15)' : '#dcfce7', label: 'Al día' }
+
+                        return (
+                          <article
+                            className="pw-list-row pw-project-row" key={p.id}
+                            style={{ '--brand-color': brandColor } as React.CSSProperties}
+                            data-overdue={overdue > 0 || undefined}
+                            data-blocked={blocked > 0 && overdue === 0 || undefined}
+                          >
+                            <div className="pw-name" style={{ minWidth: 0 }}>
+                              <Link href={`${base}/proyectos/${p.id}`} style={{ fontWeight: 650, fontSize: 15 }}>{p.nombre}</Link>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 5, flexWrap: 'wrap' }}>
+                                {p.tipo && TIPO_CFG[p.tipo] && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 6, background: TIPO_CFG[p.tipo].bg, color: TIPO_CFG[p.tipo].color, whiteSpace: 'nowrap' }}>{TIPO_CFG[p.tipo].label}</span>}
+                                {overdue > 0 && <span className="pw-chip pw-chip-red" style={{ gap: 3, padding: '1px 6px', fontSize: 10 }}><AlertTriangle size={9} />{overdue} vencida{overdue !== 1 ? 's' : ''}</span>}
+                                {blocked > 0 && <span className="pw-chip pw-chip-amber" style={{ gap: 3, padding: '1px 6px', fontSize: 10 }}><ShieldAlert size={9} />{blocked} bloqueada{blocked !== 1 ? 's' : ''}</span>}
+                                {nearDeadline && <span className="pw-chip pw-chip-violet" style={{ gap: 3, padding: '1px 6px', fontSize: 10 }}><Clock size={9} />{d === 0 ? 'vence hoy' : `${d}d`}</span>}
+                                {leaves.length > 0 && <span className="pw-chip pw-chip-muted" style={{ gap: 3, padding: '1px 6px', fontSize: 10 }}><CheckCircle2 size={9} />{completedCount}/{leaves.length}</span>}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
+                                <div style={{ flex: 1, height: 5, background: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)', borderRadius: 3, overflow: 'hidden' }}>
+                                  <div style={{ height: '100%', borderRadius: 3, width: `${progress}%`, background: isDark ? `linear-gradient(90deg, ${brandColor}, color-mix(in srgb, ${brandColor} 40%, #1e2335))` : `linear-gradient(90deg, ${brandColor}, color-mix(in srgb, ${brandColor} 60%, white))`, transition: 'width 0.5s cubic-bezier(0.16,1,0.3,1)' }} />
+                                </div>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: brandColor, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{progress}%</span>
+                              </div>
+                            </div>
+
+                            <AvatarGroup team={team} ids={p.ownerIds} names={p.responsables ?? [p.responsable]} />
+
+                            <div className="pw-delivery" style={{ minWidth: 130 }}>
+                              {next ? (() => {
+                                const rel = formatRelDate(next.fechaFin)
+                                return (<><span className="pw-delivery-next">{next.nombre}</span><p style={{ fontSize: 11, margin: '3px 0 0', color: rel.color, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{rel.label}</p></>)
+                              })() : <p className="pw-muted" style={{ fontSize: 12 }}>Sin entregas</p>}
+                            </div>
+
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', borderRadius: 20, flexShrink: 0, fontSize: 11, fontWeight: 600, background: health.bg, color: health.color }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: health.color, flexShrink: 0 }} />
+                              {health.label}
+                            </span>
+
+                            {admin && <button className="pw-button pw-icon" aria-label={`Opciones de ${p.nombre}`} onClick={e => openCtx(e, p.id)}><MoreHorizontal size={16} /></button>}
+                            <Link className="pw-button pw-icon" aria-label={`Abrir ${p.nombre}`} href={`${base}/proyectos/${p.id}`}><ArrowRight size={16} /></Link>
+                          </article>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
+        )}
+      </main>
 
-          <form onSubmit={guardar} className="flex-1 overflow-y-auto p-5 flex flex-col gap-3">
-            <div>
-              <label className="text-[11px] font-semibold mb-1 block" style={{ color: T.sub }}>NOMBRE *</label>
-              <input required placeholder="Nombre del proyecto"
-                value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })}
-                className={inputCls}
-                style={{ background: T.input, color: T.text, borderColor: T.inputBorder }} />
-            </div>
-
-            <div>
-              <label className="text-[11px] font-semibold mb-1 block" style={{ color: T.sub }}>CLIENTE *</label>
-              <div className="relative">
-                <select required value={form.brandId} onChange={e => setForm({ ...form, brandId: e.target.value })}
-                  className={inputCls + ' appearance-none pr-8'}
-                  style={{ background: T.input, color: T.text, borderColor: T.inputBorder }}>
-                  <option value="">Seleccionar cliente…</option>
+      {/* ── New project modal ─────────────────────────── */}
+      {show && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, background: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(15,33,60,0.25)', zIndex: 60 }} onClick={dismissForm} />
+          <div style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: 61, width: 520, maxWidth: 'calc(100vw - 32px)', maxHeight: '90vh', overflowY: 'auto',
+            borderRadius: 20, padding: 28,
+            background: isDark ? 'rgba(25,29,43,0.96)' : 'rgba(255,255,255,0.97)',
+            backdropFilter: 'blur(32px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(32px) saturate(180%)',
+            boxShadow: '0 20px 64px rgba(16,21,43,.22), 0 0 0 1px rgba(0,0,0,0.08)',
+          }}>
+            <form className="pw-form" onSubmit={create}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, paddingBottom: 16, borderBottom: '1px solid var(--pw-line)' }}>
+                <h2 style={{ fontWeight: 700, fontSize: 18, margin: 0 }}>Nuevo proyecto</h2>
+                <button type="button" onClick={dismissForm} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 8, border: '1px solid var(--pw-line)', background: 'transparent', cursor: 'pointer', color: 'var(--pw-muted)' }}>
+                  <X size={15} />
+                </button>
+              </div>
+              {error && <p className="pw-error" role="alert">{error}</p>}
+              <label>
+                Nombre
+                <input required autoFocus value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} />
+              </label>
+              <label>
+                Cliente
+                <select required value={form.brandId} onChange={e => setForm({ ...form, brandId: e.target.value })}>
+                  <option value="">Selecciona un cliente</option>
                   {brands.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
-                <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: T.sub }} />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-semibold mb-1 block" style={{ color: T.sub }}>DESCRIPCIÓN</label>
-              <textarea placeholder="Descripción opcional…" rows={3}
-                value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })}
-                className={inputCls + ' resize-none'}
-                style={{ background: T.input, color: T.text, borderColor: T.inputBorder }} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[11px] font-semibold mb-1 block" style={{ color: T.sub }}>ESTADO</label>
-                <div className="relative">
-                  <select value={form.estado} onChange={e => setForm({ ...form, estado: e.target.value as EstadoP })}
-                    className={inputCls + ' appearance-none pr-8'}
-                    style={{ background: T.input, color: T.text, borderColor: T.inputBorder }}>
-                    <option value="activo">Activo</option>
-                    <option value="pausado">Pausado</option>
-                    <option value="completado">Completado</option>
+              </label>
+              <label>
+                Resultado esperado
+                <textarea rows={2} value={form.descripcion} onChange={e => setForm({ ...form, descripcion: e.target.value })} />
+              </label>
+              <div className="pw-two">
+                <label>
+                  Tipo de proyecto
+                  <select value={form.tipo} onChange={e => setForm({ ...form, tipo: e.target.value })}>
+                    <option value="">Sin definir</option>
+                    <option value="campaña">Campaña</option>
+                    <option value="lanzamiento">Lanzamiento</option>
+                    <option value="estrategia">Estrategia</option>
+                    <option value="web">Web</option>
+                    <option value="contenido_especial">Contenido especial</option>
+                    <option value="interno">Interno</option>
+                    <option value="propuesta">Propuesta</option>
                   </select>
-                  <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: T.sub }} />
+                </label>
+                <label>
+                  Criterio de éxito
+                  <input value={form.criterioExito} onChange={e => setForm({ ...form, criterioExito: e.target.value })} placeholder="¿Cómo saben que está bien?" />
+                </label>
+              </div>
+              <div className="pw-two">
+                <label>
+                  Inicio
+                  <input type="date" required value={form.fechaInicio} onChange={e => setForm({ ...form, fechaInicio: e.target.value })} />
+                </label>
+                <label>
+                  Entrega
+                  <input type="date" min={form.fechaInicio} value={form.fechaFin} onChange={e => setForm({ ...form, fechaFin: e.target.value })} />
+                </label>
+              </div>
+              <fieldset>
+                <legend>Responsables de planificación</legend>
+                <div className="pw-toolbar">
+                  {team.map(m => (
+                    <label className="pw-check" key={m.id}>
+                      <input type="checkbox" checked={form.ownerIds.includes(m.id)}
+                        onChange={e => setForm({ ...form, ownerIds: e.target.checked ? [...form.ownerIds, m.id] : form.ownerIds.filter(id => id !== m.id) })} />
+                      {m.name}
+                    </label>
+                  ))}
                 </div>
+              </fieldset>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+                <button className="pw-button" type="button" onClick={dismissForm}>Cancelar</button>
+                <button disabled={busy} style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+                  color: 'white', border: 'none', borderRadius: 10,
+                  padding: '8px 18px', fontSize: 13, fontWeight: 600,
+                  cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1,
+                }}>
+                  {busy ? 'Creando…' : 'Crear proyecto'}
+                </button>
               </div>
-              <div>
-                <label className="text-[11px] font-semibold mb-1 block" style={{ color: T.sub }}>AVANCE % (manual)</label>
-                <div className="flex items-center gap-2 rounded-xl px-3 py-2.5 border"
-                  style={{ background: T.input, borderColor: T.inputBorder }}>
-                  <input type="range" min={0} max={100} value={form.avance}
-                    onChange={e => setForm({ ...form, avance: Number(e.target.value) })}
-                    className="flex-1 accent-[#7c3aed]" />
-                  <span className="text-[12px] font-bold w-8 text-right" style={{ color: '#7c3aed' }}>{form.avance}%</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[11px] font-semibold mb-1 block" style={{ color: T.sub }}>INICIO</label>
-                <input type="date" value={form.fechaInicio}
-                  onChange={e => setForm({ ...form, fechaInicio: e.target.value })}
-                  className={inputCls}
-                  style={{ background: T.input, color: T.text, borderColor: T.inputBorder }} />
-              </div>
-              <div>
-                <label className="text-[11px] font-semibold mb-1 block" style={{ color: T.sub }}>FIN</label>
-                <input type="date" value={form.fechaFin}
-                  onChange={e => setForm({ ...form, fechaFin: e.target.value })}
-                  className={inputCls}
-                  style={{ background: T.input, color: T.text, borderColor: T.inputBorder }} />
-              </div>
-            </div>
-
-            <div>
-              <label className="text-[11px] font-semibold mb-1 block" style={{ color: T.sub }}>RESPONSABLE</label>
-              <div className="relative">
-                <select value={form.responsable} onChange={e => setForm({ ...form, responsable: e.target.value })}
-                  className={inputCls + ' appearance-none pr-8'}
-                  style={{ background: T.input, color: T.text, borderColor: T.inputBorder }}>
-                  <option value="">Sin asignar</option>
-                  {['Estrategia', 'Diseño', 'Audiovisual', 'Otro'].map(cat => {
-                    const members = team.filter(m => (m.category ?? 'Otro') === cat)
-                    if (!members.length) return null
-                    return (
-                      <optgroup key={cat} label={cat}>
-                        {members.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
-                      </optgroup>
-                    )
-                  })}
-                </select>
-                <ChevronDown size={12} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: T.sub }} />
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button type="button" onClick={() => setShowForm(false)}
-                className="flex-1 py-2.5 text-[13px] font-medium rounded-xl border transition-colors"
-                style={{ borderColor: T.border, color: T.sub }}>
-                Cancelar
-              </button>
-              <button type="submit"
-                className="flex-1 py-2.5 text-[13px] font-semibold text-white bg-[#7c3aed] hover:bg-[#6d28d9] rounded-xl transition-colors">
-                {editId ? 'Guardar' : 'Crear'}
-              </button>
-            </div>
-          </form>
-        </div>
+            </form>
+          </div>
+        </>
       )}
+
+      {/* ── Context menu ─────────────────────────────── */}
+      {ctx && ctxProject && (
+        <>
+          <div className="pw-ctx-backdrop" onClick={() => closeMenu(setCtx)} />
+          <div className="pw-ctx-menu" style={{ left: ctx.x, top: ctx.y + 4, transform: 'translateX(-100%)' }}>
+            <button onClick={() => { closeMenu(setCtx); router.push(`${base}/proyectos/${ctxProject.id}`) }}>
+              <ArrowRight size={15} /> Abrir proyecto
+            </button>
+            <div className="pw-ctx-sep" />
+            <div className="pw-ctx-sub">
+              <button onClick={e => { e.stopPropagation(); setCtx(c => c ? { ...c, subOpen: !c.subOpen } : c) }}>
+                <span>Cambiar estado</span><ChevronRight size={14} />
+              </button>
+              {ctx.subOpen && (
+                <div className="pw-ctx-submenu">
+                  {ESTADOS.map(([v, l]) => (
+                    <button key={v} onClick={() => handleStatus(ctxProject, v)} style={ctxProject.estado === v ? { fontWeight: 700 } : {}}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button onClick={() => handleArchive(ctxProject)}>
+              {ctxProject.archived ? <><RotateCcw size={15} /> Restaurar proyecto</> : <><Archive size={15} /> Archivar proyecto</>}
+            </button>
+            <div className="pw-ctx-sep" />
+            <button className="pw-ctx-danger" onClick={() => { closeMenu(setCtx); setDeleteConfirm(ctxProject.id) }}>
+              <Trash2 size={15} /> Eliminar proyecto
+            </button>
+          </div>
+        </>
+      )}
+
+      {deleteConfirm && (() => {
+        const p = [...proyectos, ...archivedProyectos].find(x => x.id === deleteConfirm)
+        return (
+          <>
+            <div className="pw-ctx-backdrop" onClick={() => setDeleteConfirm(null)} />
+            <div className="pw-ctx-menu" style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', minWidth: 280, padding: '18px 16px', zIndex: 10001 }}>
+              <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>Eliminar proyecto</p>
+              <p style={{ fontSize: 13, color: 'var(--pw-muted)', marginBottom: 16 }}>
+                ¿Eliminar <strong>{p?.nombre}</strong>? Esta acción no se puede deshacer.
+              </p>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="pw-button" onClick={() => setDeleteConfirm(null)}>Cancelar</button>
+                <button className="pw-button pw-ctx-danger" style={{ padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer' }} onClick={() => handleDelete(deleteConfirm)}>Eliminar</button>
+              </div>
+            </div>
+          </>
+        )
+      })()}
     </div>
   )
 }

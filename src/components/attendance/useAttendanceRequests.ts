@@ -52,6 +52,13 @@ export function useAttendanceRequests(user: AttendanceUserRef) {
   const [extraDraft, setExtraDraft] = useState({
     date: formatISODate(new Date()),
     minutes: 60,
+    inputMode: "hhmm" as "hhmm" | "schedule",
+    hh: 1,
+    mm: 0,
+    startTime: "",
+    breakStart: "",
+    breakEnd: "",
+    endTime: "",
     type: "Reunión",
     project: "",
     note: "",
@@ -110,7 +117,9 @@ export function useAttendanceRequests(user: AttendanceUserRef) {
             return {
               id: docSnap.id,
               userId: user.uid,
-              type: (data.type as Request["type"]) ?? "DIA_LIBRE",
+              type: (["DIA_LIBRE", "PERMISO_HORAS", "MEDICO", "VACACIONES"].includes(data.type ?? "")
+                ? data.type as Request["type"]
+                : "DIA_LIBRE"),
               date: data.date ?? "",
               endDate: data.endDate ?? undefined,
               hours: typeof data.hours === "number" ? data.hours : undefined,
@@ -245,6 +254,15 @@ export function useAttendanceRequests(user: AttendanceUserRef) {
 
   const handleSubmitExtra = async () => {
     if (!user) return;
+    let minutes = extraDraft.minutes;
+    if (extraDraft.inputMode === "hhmm") {
+      minutes = extraDraft.hh * 60 + extraDraft.mm;
+    } else if (extraDraft.inputMode === "schedule" && extraDraft.startTime && extraDraft.endTime) {
+      const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+      let net = toMin(extraDraft.endTime) - toMin(extraDraft.startTime);
+      if (extraDraft.breakStart && extraDraft.breakEnd) net -= toMin(extraDraft.breakEnd) - toMin(extraDraft.breakStart);
+      minutes = Math.max(0, net);
+    }
     const payload = {
       uid: user.uid,
       weekKey: getWeekKey(extraDraft.date),
@@ -252,8 +270,8 @@ export function useAttendanceRequests(user: AttendanceUserRef) {
       createdAt: serverTimestamp(),
       type: extraDraft.type,
       date: extraDraft.date,
-      minutes: extraDraft.minutes,
-      hours: Math.round((extraDraft.minutes / 60) * 10) / 10,
+      minutes,
+      hours: Math.round((minutes / 60) * 10) / 10,
       project: extraDraft.project || null,
       note: extraDraft.note || null,
       reason: extraDraft.note || null,

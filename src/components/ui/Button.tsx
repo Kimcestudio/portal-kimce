@@ -9,8 +9,8 @@ const variantStyles = {
   primary:
     "bg-primary text-white shadow-[0_12px_32px_rgba(79,70,229,0.3)] hover:-translate-y-0.5 hover:shadow-[0_16px_32px_rgba(79,70,229,0.35)]",
   secondary:
-    "bg-white text-slate-900 border border-slate-200/70 shadow-[0_8px_24px_rgba(17,24,39,0.06)] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(17,24,39,0.1)]",
-  ghost: "bg-transparent text-slate-600 hover:text-slate-900",
+    "bg-white text-ink border border-line shadow-soft hover:-translate-y-0.5 hover:shadow-card",
+  ghost: "bg-transparent text-muted hover:text-ink",
 };
 
 export default function Button({ variant = "secondary", icon, className = "", children, ...rest }: ButtonProps) {

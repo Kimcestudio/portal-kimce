@@ -358,6 +358,80 @@ exports.adminDeleteUserData = onCall({ region: "us-central1", timeoutSeconds: 54
   }
 });
 
+// ─── Gestión de usuarios cliente ─────────────────────────────────────────────
+exports.adminCreateClientUser = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Se requiere autenticación.");
+
+  const callerSnap = await admin.firestore().collection("users").doc(request.auth.uid).get();
+  if (!callerSnap.exists || callerSnap.data()?.role !== "admin") {
+    throw new HttpsError("permission-denied", "Solo los admins pueden crear usuarios cliente.");
+  }
+
+  const { email, displayName, brandId } = request.data ?? {};
+  if (!email || !displayName || !brandId) {
+    throw new HttpsError("invalid-argument", "email, displayName y brandId son requeridos.");
+  }
+
+  let uid;
+  try {
+    const record = await admin.auth().createUser({ email, displayName, emailVerified: false });
+    uid = record.uid;
+  } catch (err) {
+    if (err.code === "auth/email-already-exists") {
+      const existing = await admin.auth().getUserByEmail(email);
+      uid = existing.uid;
+    } else {
+      throw new HttpsError("internal", err.message);
+    }
+  }
+
+  const userRef = admin.firestore().collection("users").doc(uid);
+  const snap = await userRef.get();
+  if (snap.exists) {
+    const prev = snap.data();
+    const brandIds = [...new Set([...(prev.brandIds ?? []), brandId])];
+    await userRef.update({ brandIds, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+  } else {
+    await userRef.set({
+      uid, email, displayName,
+      photoURL: "",
+      role: "client",
+      brandIds: [brandId],
+      position: "Cliente",
+      area: null,
+      active: true,
+      approved: true,
+      isActive: true,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  const resetLink = await admin.auth().generatePasswordResetLink(email);
+  return { uid, email, resetLink };
+});
+
+exports.adminRemoveClientBrand = onCall({ region: "us-central1" }, async (request) => {
+  if (!request.auth) throw new HttpsError("unauthenticated", "Se requiere autenticación.");
+
+  const callerSnap = await admin.firestore().collection("users").doc(request.auth.uid).get();
+  if (!callerSnap.exists || callerSnap.data()?.role !== "admin") {
+    throw new HttpsError("permission-denied", "Solo los admins pueden gestionar accesos cliente.");
+  }
+
+  const { uid, brandId } = request.data ?? {};
+  if (!uid || !brandId) throw new HttpsError("invalid-argument", "uid y brandId son requeridos.");
+
+  const userRef = admin.firestore().collection("users").doc(uid);
+  const snap = await userRef.get();
+  if (!snap.exists) throw new HttpsError("not-found", "Usuario no encontrado.");
+
+  const brandIds = (snap.data().brandIds ?? []).filter((b) => b !== brandId);
+  await userRef.update({ brandIds, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
+
+  return { uid, brandIds };
+});
+
 // Notion + Drive API handlers (replaces Next.js /api/* routes for static hosting)
 const notionApi = require('./notionApi')
 Object.assign(exports, notionApi)
@@ -369,3 +443,23 @@ Object.assign(exports, aiApi)
 // Notificaciones por usuario (CM Hub)
 const notifications = require('./notifications')
 Object.assign(exports, notifications)
+
+// Sync bidireccional Google Sheets ↔ Firestore (solicitudes de contenido)
+const sheetsSync = require('./sheetsSync')
+Object.assign(exports, sheetsSync)
+
+// Proyección mínima del cronograma; nunca expone el documento interno.
+exports.publicProjectGantt = require('./projectGantt').publicProjectGantt;
+exports.onProjectTaskCompleted = require('./projectCompletion').onProjectTaskCompleted;
+
+// Google Calendar CRUD (lectura + escritura sobre el calendario de KIMCE)
+const googleCalendar = require('./googleCalendar');
+Object.assign(exports, googleCalendar);
+
+// Google Calendar OAuth por usuario (calendario personal de cada colaborador)
+const googleCalendarOAuth = require('./googleCalendarOAuth');
+Object.assign(exports, googleCalendarOAuth);
+
+// Reuniones: webhook Fathom + funciones callables + digest semanal
+const meetings = require('./meetings');
+Object.assign(exports, meetings);

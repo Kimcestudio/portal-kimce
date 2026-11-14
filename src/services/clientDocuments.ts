@@ -2,6 +2,7 @@
 
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -129,6 +130,10 @@ export async function updateClientDocumentFile(input: {
     },
     { merge: true }
   );
+}
+
+export async function deleteClientDocument(id: string) {
+  await deleteDoc(doc(db, COLLECTION, id));
 }
 
 export function getClientDocumentUrl(id: string) {

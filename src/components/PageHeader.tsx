@@ -39,7 +39,7 @@ export default function PageHeader({ userName, rightSlot }: PageHeaderProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-semibold text-ink">Hola, {resolvedName} 👋</h1>
+        <h1 className="text-2xl font-semibold text-ink">Hola, {resolvedName}</h1>
         <p className="text-sm text-muted">Este es tu portal de {section}.</p>
       </div>
       {rightSlot ?? null}

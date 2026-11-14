@@ -7,6 +7,7 @@ import {
 import { useHub } from '@/cmhub/context'
 import { useAuth } from '@/components/auth/AuthProvider'
 import { useHubMeta, useHubTheme } from '@/cmhub/theme'
+import { useAutoSave, SaveBadge } from '@/cmhub/useAutoSave'
 import { NETWORK_META, STATUS_META, PRIORITY_META, ALL_NETWORKS, ALL_STATUSES, PRODUCTION_STATUSES } from '@/cmhub/data'
 import NetworkIcon from '@/components/cmhub/NetworkIcon'
 import EditableTitle from '@/components/cmhub/EditableTitle'
@@ -394,7 +395,7 @@ function ProdLinkRow({
   step, icon: Icon, label, sublabel, value, onChange, placeholder, accent = '#7c3aed',
   action, actionLabel,
 }: {
-  step: number; icon: React.ElementType; label: string; sublabel: string
+  step: number; icon: import("lucide-react").LucideIcon; label: string; sublabel: string
   value: string; onChange: (v: string) => void; placeholder: string; accent?: string
   action?: () => void; actionLabel?: string
 }) {
@@ -450,7 +451,7 @@ function ProdLinkRow({
 export default function ContentModal({ initial, defaultBrandId, onClose, onSaved, mode = 'modal' }: Props) {
   const { STATUS_META, PRIORITY_META, NETWORK_META } = useHubMeta()
   const { isDark } = useHubTheme()
-  const { brands, team, contents, tareasD, addTareaD, toggleTareaD, deleteTareaD, addContent, updateContent, deleteContent, duplicateContent } = useHub()
+  const { brands, team, contents, tareasD, addTareaD, toggleTareaD, deleteTareaD, addContent, updateContent, deleteContent, duplicateContent, getCommentsByContent, addComment, resolveComment, deleteComment } = useHub()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const activeTeam = team.filter(m => m.status === 'active')
@@ -465,6 +466,24 @@ export default function ContentModal({ initial, defaultBrandId, onClose, onSaved
   const [titleError, setTitleError] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+
+  // ── Autosave (solo en edición) ───────────────────────────────────────────
+  const [saveTick, setSaveTick]     = useState(0)
+  const isFirstFormRender           = useRef(true)
+  useEffect(() => {
+    if (isFirstFormRender.current) { isFirstFormRender.current = false; return }
+    if (!isEdit) return
+    setSaveTick(t => t + 1)
+  }, [JSON.stringify(form)]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const autoSaveState = useAutoSave(saveTick, async () => {
+    if (!form.title.trim() || !form.brandId || !initial?.id) return
+    updateContent(initial.id, buildPayload())
+  })
+  // ── Hilo de comentarios (equipo + cliente) ──
+  const [newComment, setNewComment] = useState('')
+  const [postingComment, setPostingComment] = useState(false)
+
   // ── Tareas vinculadas ──
   const [newTaskText,   setNewTaskText]   = useState('')
   const [newTaskEditor, setNewTaskEditor] = useState(team[0]?.name ?? '')
@@ -581,6 +600,15 @@ export default function ContentModal({ initial, defaultBrandId, onClose, onSaved
     setForm(p => ({ ...p, status: 'publicado' }))
   }
 
+  // El cliente es quien fija approvalStatus desde su vista (aprobar / solicitar cambios).
+  // El equipo solo lo resetea automaticamente cuando reenvia a revision una pieza que el
+  // cliente habia rechazado — asi sabe que ya hay algo nuevo que revisar.
+  function computeApprovalStatus(): Content['approvalStatus'] {
+    const prevApproval = initial?.approvalStatus ?? 'pending'
+    if (form.status === 'revision' && prevApproval === 'changes_requested') return 'pending'
+    return prevApproval
+  }
+
   function buildPayload(): Omit<Content, 'id' | 'createdAt' | 'updatedAt'> {
     return {
       brandId:    form.brandId,
@@ -611,7 +639,8 @@ export default function ContentModal({ initial, defaultBrandId, onClose, onSaved
       internalComments: form.internalComments || undefined,
       clientComments:   form.clientComments   || undefined,
       metrics:    formToMetrics(form.metrics),
-      approvalStatus: ['aprobado','programado','publicado'].includes(form.status) ? 'approved' : 'pending',
+      approvalStatus: computeApprovalStatus(),
+      updatedBy:  user?.displayName ?? user?.email ?? null,
     }
   }
 
@@ -1200,10 +1229,79 @@ export default function ContentModal({ initial, defaultBrandId, onClose, onSaved
                 <span className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide">Comentarios internos (equipo)</span>
                 <FieldTextarea value={form.internalComments} onChange={v => set('internalComments', v)} rows={4} placeholder="Notas del equipo sobre esta publicación…" />
               </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide">Comentarios del cliente</span>
-                <FieldTextarea value={form.clientComments} onChange={v => set('clientComments', v)} rows={4} placeholder="Feedback del cliente…" />
-              </div>
+              {isEdit && initial?.id && (
+                <div className="flex flex-col gap-2 pt-2 border-t border-[#f3f4f6]">
+                  <span className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide">
+                    Hilo de comentarios {form.brandId ? '(visible para el cliente si el calendario está compartido)' : ''}
+                  </span>
+                  <div className="flex flex-col gap-2 max-h-64 overflow-y-auto">
+                    {getCommentsByContent(initial.id).map(c => (
+                      <div key={c.id} className={`group rounded-xl border p-2.5 text-[12px] ${c.resolved ? 'border-[#bbf7d0] bg-[#f0fdf4]' : 'border-[#e5e7eb] bg-white'}`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-semibold text-[#111827]">{c.author}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-[#9ca3af]">{new Date(c.createdAt).toLocaleString('es-PE')}</span>
+                            {c.resolved ? (
+                              <span className="flex items-center gap-1.5 text-[12px] font-bold text-white bg-[#16a34a] px-2.5 py-1 rounded-full">
+                                <CheckCircle2 size={16} /> Resuelto
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => resolveComment(c.id, initial.id)}
+                                className="flex items-center gap-1 text-[10px] font-semibold text-[#7c3aed] hover:underline"
+                              >
+                                <CheckCircle2 size={12} /> Marcar resuelto
+                              </button>
+                            )}
+                            <button
+                              onClick={() => deleteComment(c.id)}
+                              title="Eliminar comentario"
+                              className="opacity-0 group-hover:opacity-100 text-[#9ca3af] hover:text-red-500 cursor-pointer transition-opacity"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </div>
+                        </div>
+                        <p className="mt-1 text-[#374151] whitespace-pre-wrap">{c.message}</p>
+                      </div>
+                    ))}
+                    {getCommentsByContent(initial.id).length === 0 && (
+                      <p className="text-[11px] text-[#9ca3af] italic">Aún no hay comentarios.</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <textarea
+                      value={newComment}
+                      onChange={e => setNewComment(e.target.value)}
+                      placeholder="Escribe un comentario para el equipo o el cliente…"
+                      rows={2}
+                      className="flex-1 text-[12px] rounded-xl border border-[#e5e7eb] px-3 py-2 outline-none focus:border-[#7c3aed] resize-none"
+                    />
+                    <button
+                      disabled={!newComment.trim() || postingComment}
+                      onClick={async () => {
+                        if (!initial?.id || !newComment.trim()) return
+                        setPostingComment(true)
+                        try {
+                          await addComment({
+                            contentId: initial.id,
+                            brandId: form.brandId,
+                            author: user?.displayName ?? user?.email ?? 'Equipo',
+                            message: newComment.trim(),
+                            resolved: false,
+                          })
+                          setNewComment('')
+                        } finally {
+                          setPostingComment(false)
+                        }
+                      }}
+                      className="self-end text-[12px] font-semibold text-white bg-[#7c3aed] px-3 py-2 rounded-xl hover:bg-[#6d28d9] disabled:opacity-40 transition-colors"
+                    >
+                      Comentar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1258,12 +1356,13 @@ export default function ContentModal({ initial, defaultBrandId, onClose, onSaved
               </button>
             )}
 
+            {isEdit && <SaveBadge state={autoSaveState} />}
             <button
               onClick={handleSave}
               disabled={saveStatus === 'saving'}
               className="flex items-center gap-1.5 bg-[#7c3aed] hover:bg-[#6d28d9] disabled:opacity-60 text-white text-[13px] font-semibold px-5 py-2.5 rounded-xl transition-colors"
             >
-              {isEdit ? 'Guardar cambios' : 'Crear publicación'}
+              {isEdit ? 'Cerrar' : 'Crear publicación'}
             </button>
           </div>
         </div>

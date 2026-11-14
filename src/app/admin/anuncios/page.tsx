@@ -347,8 +347,8 @@ export default function AdminAnnouncementsPage() {
                       <td className="px-3 py-3 text-xs text-slate-600">{item.type}</td>
                       <td className="px-3 py-3 text-xs font-semibold text-slate-700">{item.priority}</td>
                       <td className="px-3 py-3 text-xs text-slate-500">
-                        <p>{item.startAt ? new Date(item.startAt).toLocaleString() : "Inmediato"}</p>
-                        <p>{item.endAt ? `→ ${new Date(item.endAt).toLocaleString()}` : "Sin fin"}</p>
+                        <p>{item.startAt ? new Date(item.startAt).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' }) : "Inmediato"}</p>
+                        <p>{item.endAt ? `→ ${new Date(item.endAt).toLocaleString('es-PE', { dateStyle: 'medium', timeStyle: 'short' })}` : "Sin fin"}</p>
                       </td>
                       <td className="px-3 py-3">
                         <span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${statusBadge[runtimeStatus]}`}>

@@ -126,7 +126,7 @@ export default function SidebarCategories() {
               accept="image/*"
               onChange={handleAvatarChange}
             />
-            <img src={user.photoURL} alt={user.displayName} className="h-full w-full object-cover" />
+            <img src={user.photoURL} alt={user.displayName} loading="lazy" className="h-full w-full object-cover" />
           </label>
           <div className="flex-1">
             <p className="text-sm font-semibold text-white">{user.displayName}</p>

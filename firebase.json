@@ -1,6 +1,10 @@
 {
   "firestore": {
-    "rules": "firestore.rules"
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
   },
   "hosting": {
     "public": "out",
@@ -11,16 +15,82 @@
       "**/node_modules/**"
     ],
     "rewrites": [
-      { "source": "/api/notion/content", "function": "notionContent", "region": "us-central1" },
-      { "source": "/api/notion/blocks",  "function": "notionBlocks",  "region": "us-central1" },
-      { "source": "/api/notion/pull",    "function": "notionPull",    "region": "us-central1" },
-      { "source": "/api/notion/migrate", "function": "notionMigrate", "region": "us-central1" },
-      { "source": "/api/proxy-image",    "function": "proxyImage",    "region": "us-central1" },
-      { "source": "/api/drive-folder",   "function": "driveFolder",   "region": "us-central1" },
-      { "source": "/api/ai/quick-add",   "function": "aiQuickAdd",    "region": "us-central1" },
-      { "source": "/admin/contenidos/clientes/**", "destination": "/admin/contenidos/clientes/_.html" },
-      { "source": "/app/contenidos/clientes/**",   "destination": "/app/contenidos/clientes/_.html" },
-      { "source": "/clientes/calendario/**",        "destination": "/clientes/calendario/_.html" }
+      {
+        "source": "/api/projects/gantt",
+        "function": "publicProjectGantt",
+        "region": "us-central1"
+      },
+      {
+        "source": "/admin/contenidos/proyectos/**",
+        "destination": "/admin/contenidos/proyectos/_.html"
+      },
+      {
+        "source": "/app/contenidos/proyectos/**",
+        "destination": "/app/contenidos/proyectos/_.html"
+      },
+      {
+        "source": "/clientes/gantt/**",
+        "destination": "/clientes/gantt/_.html"
+      },
+      {
+        "source": "/api/notion/content",
+        "function": "notionContent",
+        "region": "us-central1"
+      },
+      {
+        "source": "/api/notion/blocks",
+        "function": "notionBlocks",
+        "region": "us-central1"
+      },
+      {
+        "source": "/api/notion/pull",
+        "function": "notionPull",
+        "region": "us-central1"
+      },
+      {
+        "source": "/api/notion/migrate",
+        "function": "notionMigrate",
+        "region": "us-central1"
+      },
+      {
+        "source": "/api/proxy-image",
+        "function": "proxyImage",
+        "region": "us-central1"
+      },
+      {
+        "source": "/api/drive-folder",
+        "function": "driveFolder",
+        "region": "us-central1"
+      },
+      {
+        "source": "/api/ai/quick-add",
+        "function": "aiQuickAdd",
+        "region": "us-central1"
+      },
+      {
+        "source": "/admin/contenidos/reuniones/**",
+        "destination": "/admin/contenidos/reuniones/_.html"
+      },
+      {
+        "source": "/app/contenidos/reuniones/**",
+        "destination": "/app/contenidos/reuniones/_.html"
+      },
+      {
+        "source": "/admin/contenidos/clientes/**",
+        "destination": "/admin/contenidos/clientes/_.html"
+      },
+      {
+        "source": "/app/contenidos/clientes/**",
+        "destination": "/app/contenidos/clientes/_.html"
+      },
+      {
+        "source": "/clientes/calendario/**",
+        "destination": "/clientes/calendario/_.html"
+      },
+      {
+        "source": "/clientes/*",
+        "destination": "/clientes/_.html"
+      }
     ]
   },
   "functions": {

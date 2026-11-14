@@ -7,7 +7,7 @@ export default function AdminRedirectPage() {
   const router = useRouter();
 
   useEffect(() => {
-    router.replace("/admin/dashboard");
+    router.replace("/admin/manage");
   }, [router]);
 
   return (

@@ -1,11 +1,13 @@
 "use client";
 
+import { useState } from "react";
 import PageHeader from "@/components/PageHeader";
 import Modal from "@/components/attendance/Modal";
 import ExtrasPermitsTab from "@/components/attendance/ExtrasPermitsTab";
 import TodayAttendanceCard from "@/components/attendance/TodayAttendanceCard";
 import WeekStatusSummary from "@/components/attendance/WeekStatusSummary";
-import WeeklyProgressChart from "@/components/attendance/WeeklyProgressChart";
+import dynamic from "next/dynamic";
+const WeeklyProgressChart = dynamic(() => import("@/components/attendance/WeeklyProgressChart"), { ssr: false })
 import WeeklySummaryMiniCards from "@/components/attendance/WeeklySummaryMiniCards";
 import WeeklyTable from "@/components/attendance/WeeklyTable";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -20,6 +22,8 @@ const formatGoalHours = (minutes: number) => {
 
 export default function AttendancePageContent() {
   const { user } = useAuth();
+  const [lunchStart, setLunchStart] = useState("");
+  const [lunchEnd, setLunchEnd] = useState("");
 
   const requestsState = useAttendanceRequests(user);
   const attendance = useAttendanceSession({
@@ -43,8 +47,15 @@ export default function AttendancePageContent() {
         }
       />
 
+      {attendance.firestoreError ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+          Sin conexión con el servidor. Tus acciones se guardarán localmente y sincronizarán al recuperar la conexión.
+        </div>
+      ) : null}
+
       <TodayAttendanceCard
         status={attendance.status}
+        isLoading={!attendance.hasLoadedToday}
         record={attendance.todayRecord}
         breakMinutes={attendance.breakMinutes}
         totalMinutes={attendance.totalMinutes}
@@ -63,6 +74,7 @@ export default function AttendancePageContent() {
         expectedMinutes={attendance.expectedMinutesWeek}
         diffMinutes={attendance.diffMinutes}
         completedDays={attendance.completedDays}
+        expectedWorkDays={attendance.expectedWorkDays}
         totalBalanceMinutes={attendance.totalBalanceMinutes}
       />
 
@@ -156,21 +168,106 @@ export default function AttendancePageContent() {
               }
             />
           </label>
-          <label className="block text-xs font-semibold text-slate-500">
-            Duración (minutos)
-            <input
-              className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              type="number"
-              min={15}
-              value={requestsState.extraDraft.minutes}
-              onChange={(event) =>
-                requestsState.setExtraDraft((prev) => ({
-                  ...prev,
-                  minutes: Number(event.target.value),
-                }))
-              }
-            />
-          </label>
+          {/* Selector de modo */}
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden text-xs font-semibold">
+            <button
+              type="button"
+              className={`flex-1 py-2 transition-colors ${requestsState.extraDraft.inputMode === "hhmm" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              onClick={() => requestsState.setExtraDraft((prev) => ({ ...prev, inputMode: "hhmm" }))}
+            >
+              Horas y minutos
+            </button>
+            <button
+              type="button"
+              className={`flex-1 py-2 border-l border-slate-200 transition-colors ${requestsState.extraDraft.inputMode === "schedule" ? "bg-indigo-600 text-white" : "bg-white text-slate-500 hover:bg-slate-50"}`}
+              onClick={() => requestsState.setExtraDraft((prev) => ({ ...prev, inputMode: "schedule" }))}
+            >
+              Horario completo
+            </button>
+          </div>
+
+          {requestsState.extraDraft.inputMode === "hhmm" ? (
+            <div className="flex gap-3">
+              <label className="flex-1 block text-xs font-semibold text-slate-500">
+                Horas
+                <input
+                  className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={requestsState.extraDraft.hh}
+                  onChange={(e) => requestsState.setExtraDraft((prev) => ({ ...prev, hh: Math.max(0, Number(e.target.value)) }))}
+                />
+              </label>
+              <label className="flex-1 block text-xs font-semibold text-slate-500">
+                Minutos
+                <input
+                  className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                  type="number"
+                  min={0}
+                  max={59}
+                  step={5}
+                  value={requestsState.extraDraft.mm}
+                  onChange={(e) => requestsState.setExtraDraft((prev) => ({ ...prev, mm: Math.min(59, Math.max(0, Number(e.target.value))) }))}
+                />
+              </label>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex gap-3">
+                <label className="flex-1 block text-xs font-semibold text-slate-500">
+                  Entrada
+                  <input
+                    className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    type="time"
+                    value={requestsState.extraDraft.startTime}
+                    onChange={(e) => requestsState.setExtraDraft((prev) => ({ ...prev, startTime: e.target.value }))}
+                  />
+                </label>
+                <label className="flex-1 block text-xs font-semibold text-slate-500">
+                  Salida
+                  <input
+                    className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    type="time"
+                    value={requestsState.extraDraft.endTime}
+                    onChange={(e) => requestsState.setExtraDraft((prev) => ({ ...prev, endTime: e.target.value }))}
+                  />
+                </label>
+              </div>
+              <div className="flex gap-3">
+                <label className="flex-1 block text-xs font-semibold text-slate-500">
+                  Inicio descanso
+                  <input
+                    className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    type="time"
+                    value={requestsState.extraDraft.breakStart}
+                    onChange={(e) => requestsState.setExtraDraft((prev) => ({ ...prev, breakStart: e.target.value }))}
+                  />
+                </label>
+                <label className="flex-1 block text-xs font-semibold text-slate-500">
+                  Fin descanso
+                  <input
+                    className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    type="time"
+                    value={requestsState.extraDraft.breakEnd}
+                    onChange={(e) => requestsState.setExtraDraft((prev) => ({ ...prev, breakEnd: e.target.value }))}
+                  />
+                </label>
+              </div>
+              {requestsState.extraDraft.startTime && requestsState.extraDraft.endTime && (() => {
+                const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+                let net = toMin(requestsState.extraDraft.endTime) - toMin(requestsState.extraDraft.startTime);
+                if (requestsState.extraDraft.breakStart && requestsState.extraDraft.breakEnd) net -= toMin(requestsState.extraDraft.breakEnd) - toMin(requestsState.extraDraft.breakStart);
+                net = Math.max(0, net);
+                const h = Math.floor(net / 60), m = net % 60;
+                return (
+                  <p className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">
+                    Duración calculada: {h}h {m > 0 ? `${m}min` : ""}
+                  </p>
+                );
+              })()}
+            </div>
+          )}
           <p className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
             Nota: las actividades extra aprobadas sí se suman a tus horas trabajadas y al balance general.
           </p>
@@ -222,7 +319,17 @@ export default function AttendancePageContent() {
             onClick={requestsState.handleSubmitExtra}
             type="button"
           >
-            Guardar actividad ({minutesToHHMM(requestsState.extraDraft.minutes)})
+            Guardar actividad ({(() => {
+              if (requestsState.extraDraft.inputMode === "hhmm") {
+                return minutesToHHMM(requestsState.extraDraft.hh * 60 + requestsState.extraDraft.mm);
+              }
+              const { startTime, endTime, breakStart, breakEnd } = requestsState.extraDraft;
+              if (!startTime || !endTime) return "—";
+              const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+              let net = toMin(endTime) - toMin(startTime);
+              if (breakStart && breakEnd) net -= toMin(breakEnd) - toMin(breakStart);
+              return minutesToHHMM(Math.max(0, net));
+            })()})
           </button>
         </div>
       </Modal>
@@ -246,6 +353,7 @@ export default function AttendancePageContent() {
               }
             >
               <option value="DIA_LIBRE">Día libre</option>
+              <option value="VACACIONES">Vacaciones</option>
               <option value="PERMISO_HORAS">Permiso por horas</option>
               <option value="MEDICO">Permiso médico</option>
             </select>
@@ -262,6 +370,7 @@ export default function AttendancePageContent() {
             />
           </label>
           {requestsState.requestDraft.type === "DIA_LIBRE" ||
+          requestsState.requestDraft.type === "VACACIONES" ||
           requestsState.requestDraft.type === "MEDICO" ? (
             <label className="block text-xs font-semibold text-slate-500">
               Fecha fin (opcional)
@@ -318,6 +427,75 @@ export default function AttendancePageContent() {
             type="button"
           >
             Enviar solicitud
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        title="Registra tu almuerzo"
+        open={attendance.lunchConfirmPending}
+        onClose={attendance.cancelLunchConfirm}
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            Llevas más de 4 h trabajando sin registrar almuerzo. Ingresa la hora en que saliste y regresaste.
+          </p>
+          <div className="flex gap-3">
+            <label className="flex-1 block text-xs font-semibold text-slate-500">
+              Inicio almuerzo
+              <input
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="time"
+                value={lunchStart}
+                onChange={(e) => setLunchStart(e.target.value)}
+              />
+            </label>
+            <label className="flex-1 block text-xs font-semibold text-slate-500">
+              Fin almuerzo
+              <input
+                className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                type="time"
+                value={lunchEnd}
+                onChange={(e) => setLunchEnd(e.target.value)}
+              />
+            </label>
+          </div>
+          {lunchStart && lunchEnd && (() => {
+            const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+            const dur = toMin(lunchEnd) - toMin(lunchStart);
+            if (dur <= 0) return <p className="text-xs font-semibold text-rose-600">El fin debe ser posterior al inicio.</p>;
+            const h = Math.floor(dur / 60), m = dur % 60;
+            return <p className="text-xs font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-lg px-3 py-2">Duración: {h > 0 ? `${h}h ` : ""}{m > 0 ? `${m}min` : ""}</p>;
+          })()}
+          <button
+            className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
+            disabled={!lunchStart || !lunchEnd || (() => {
+              const toMin = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + m; };
+              return toMin(lunchEnd) <= toMin(lunchStart);
+            })()}
+            onClick={() => {
+              const today = new Date().toISOString().slice(0, 10);
+              attendance.confirmCheckOutWithCustomLunch(
+                `${today}T${lunchStart}:00`,
+                `${today}T${lunchEnd}:00`,
+              );
+              setLunchStart("");
+              setLunchEnd("");
+            }}
+            type="button"
+          >
+            Guardar y salir
+          </button>
+          <button
+            className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-50"
+            onClick={() => {
+              attendance.confirmCheckOutAutoLunch();
+              setLunchStart("");
+              setLunchEnd("");
+            }}
+            type="button"
+          >
+            Salir sin registrar — asignar 1:15 h automático
           </button>
         </div>
       </Modal>

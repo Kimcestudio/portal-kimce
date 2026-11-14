@@ -7,8 +7,8 @@ interface CardProps {
 }
 
 const variantStyles = {
-  default: "bg-white border border-slate-200/60 shadow-[0_8px_24px_rgba(17,24,39,0.06)]",
-  elevated: "bg-white border border-slate-200/40 shadow-[0_12px_32px_rgba(17,24,39,0.12)]",
+  default: "bg-white border border-line shadow-soft",
+  elevated: "bg-white border border-line shadow-card",
   accent: "bg-gradient-to-br from-[#eef0ff] via-[#f7f7ff] to-white shadow-[0_12px_32px_rgba(79,70,229,0.18)]",
 };
 

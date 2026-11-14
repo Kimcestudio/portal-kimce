@@ -36,7 +36,7 @@ export interface ExtraActivity {
 export interface Request {
   id: string;
   userId: string;
-  type: "DIA_LIBRE" | "PERMISO_HORAS" | "MEDICO";
+  type: "DIA_LIBRE" | "PERMISO_HORAS" | "MEDICO" | "VACACIONES";
   date: string;
   endDate?: string;
   hours?: number;
@@ -156,12 +156,13 @@ export function checkOut(userId: string, now: Date) {
   const dateISO = formatISODate(now);
   const record = getTodayRecord(userId, dateISO);
   if (!record || record.checkOutAt) return record;
+  if (!record.checkInAt) return null;
+  // Auto-close any open break at checkout time so the record always closes.
   const openBreak = record.breaks.find((item) => !item.endAt);
-  if (openBreak) return record;
+  if (openBreak) openBreak.endAt = now.toISOString();
   record.checkOutAt = now.toISOString();
   const workedMinutes = Math.round(
-    (new Date(record.checkOutAt).getTime() - new Date(record.checkInAt ?? record.checkOutAt).getTime()) /
-      60000
+    (new Date(record.checkOutAt).getTime() - new Date(record.checkInAt).getTime()) / 60000
   );
   const breakMinutes = computeBreakMinutes(record);
   record.totalMinutes = Math.max(0, workedMinutes - breakMinutes);
@@ -177,8 +178,13 @@ export function saveNote(userId: string, dateISO: string, note: string) {
 }
 
 export function listRecordsForWeek(userId: string, weekStartISO: string) {
+  const weekEnd = new Date(`${weekStartISO}T00:00:00`);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+  const weekEndISO = weekEnd.toISOString().slice(0, 10);
   const records = getStore<AttendanceRecord[]>(STORAGE_KEYS.records, []);
-  return records.filter((record) => record.userId === userId && record.date >= weekStartISO);
+  return records.filter(
+    (record) => record.userId === userId && record.date >= weekStartISO && record.date < weekEndISO,
+  );
 }
 
 export function listAllRecords(userId: string) {

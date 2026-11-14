@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { ExternalLink, FileText, Loader2 } from "lucide-react";
+import { Download, ExternalLink, FileText, Loader2 } from "lucide-react";
 import {
   getClientDocument,
   getClientDocumentOpenUrl,
@@ -84,6 +84,19 @@ export default function PublicClientDocumentView({ documentId, showDirectory = f
       mounted = false;
     };
   }, [documentId]);
+
+  function handleDownload() {
+    if (!activeDocument) return;
+    const source = activeDocument.publicPath ?? activeDocument.dataUrl;
+    if (!source) return;
+    const a = window.document.createElement("a");
+    a.href = source;
+    a.download = activeDocument.fileName;
+    a.style.display = "none";
+    window.document.body.appendChild(a);
+    a.click();
+    window.document.body.removeChild(a);
+  }
 
   const openUrl = useMemo(() => {
     if (!activeDocument) return "#";
@@ -167,15 +180,26 @@ export default function PublicClientDocumentView({ documentId, showDirectory = f
                     {activeDocument.fileName} · {formatSize(activeDocument.size)}
                   </p>
                 </div>
-                <a
-                  href={openUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                  Abrir aparte
-                </a>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownload}
+                    disabled={!(activeDocument.publicPath ?? activeDocument.dataUrl)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Download className="h-4 w-4" />
+                    Descargar
+                  </button>
+                  <a
+                    href={openUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Abrir aparte
+                  </a>
+                </div>
               </div>
               <DocumentFrame document={activeDocument} />
             </div>

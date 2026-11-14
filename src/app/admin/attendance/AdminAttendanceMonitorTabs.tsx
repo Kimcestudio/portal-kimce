@@ -43,44 +43,34 @@ export default function AdminAttendanceMonitorTabs({
   ];
 
   return (
-    <div className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900">Centro de supervisión semanal</h2>
-          <p className="text-xs text-slate-500">
-            Monitorea asistencia y solicitudes con el mismo corte semanal y el mismo colaborador filtrado.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-600">
-            Semana {week}
-          </span>
-          {selectedUserId && selectedUserId !== "all" ? (
-            <span className="rounded-full bg-indigo-100 px-3 py-1 font-semibold text-indigo-700">
-              Colaborador filtrado
-            </span>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-4 flex flex-wrap gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/60 bg-white px-4 py-3 shadow-[0_2px_8px_rgba(17,24,39,0.05)]">
+      <div className="flex flex-wrap gap-2">
         {tabs.map((tab) => {
           const active = tab.key === current;
           return (
             <Link
               key={tab.key}
               href={tab.href}
-              className={`min-w-[220px] rounded-2xl border px-4 py-3 transition ${
+              className={`rounded-xl px-4 py-2 text-sm font-semibold transition duration-200 ${
                 active
-                  ? "border-indigo-200 bg-indigo-50 shadow-[0_12px_24px_rgba(79,70,229,0.14)]"
-                  : "border-slate-200 bg-slate-50/70 hover:-translate-y-0.5 hover:bg-white"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`}
             >
-              <p className={`text-sm font-semibold ${active ? "text-indigo-700" : "text-slate-900"}`}>{tab.label}</p>
-              <p className="mt-1 text-xs text-slate-500">{tab.description}</p>
+              {tab.label}
             </Link>
           );
         })}
+      </div>
+      <div className="flex flex-wrap gap-2 text-xs">
+        <span className="rounded-full bg-slate-100 px-3 py-1 font-semibold text-slate-500">
+          Semana {week}
+        </span>
+        {selectedUserId && selectedUserId !== "all" ? (
+          <span className="rounded-full bg-indigo-100 px-3 py-1 font-semibold text-indigo-600">
+            Colaborador filtrado
+          </span>
+        ) : null}
       </div>
     </div>
   );

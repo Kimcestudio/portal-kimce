@@ -1,4 +1,4 @@
-export type UserRole = "collab" | "admin";
+export type UserRole = "collab" | "admin" | "client";
 
 export interface UserProfile {
   uid: string;
@@ -6,6 +6,8 @@ export interface UserProfile {
   displayName: string;
   photoURL: string;
   role: UserRole;
+  /** Solo para role="client": IDs de marcas a las que tiene acceso */
+  brandIds?: string[];
   position: string;
   area?: string | null;
   workScheduleId?: string;
@@ -26,6 +28,7 @@ export interface UserProfile {
   cci?: string;
   onlineStatus?: "online" | "offline";
   lastSeenAt?: string;
+  isAreaLead?: boolean;
 }
 
 export type WorkScheduleDays = {

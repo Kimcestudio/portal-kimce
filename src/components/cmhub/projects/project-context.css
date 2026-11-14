@@ -1,0 +1,30 @@
+/* Scoped to contextual panels; does not alter the Gantt. */
+.pw-agenda { background:var(--pw-glass); border-radius:22px; padding:22px; margin:18px 0; display:grid; grid-template-columns:minmax(240px,340px) minmax(0,1fr); column-gap:32px; }
+.pw-agenda>header { display:flex; align-items:center; gap:8px; grid-column:1; }
+.pw-agenda h2 { flex:1; font-weight:650; text-transform:capitalize; }
+.pw-calendar-grid { grid-column:1; display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:4px; text-align:center; align-items:center; }
+.pw-calendar-day { min-height:44px; border-radius:14px; position:relative; font-size:13px; }
+.pw-calendar-day[data-range=true] { background:#ede5fc; color:#542b83; }
+.pw-calendar-day[aria-current=date] { box-shadow:inset 0 0 0 2px var(--pw-accent); }
+.pw-calendar-day[data-selected=true] { background:#7c3aed; color:white; }
+.pw-calendar-day i { position:absolute; bottom:4px; left:calc(50% - 2px); width:4px; height:4px; border-radius:50%; background:currentColor; }
+.pw-agenda-heading { grid-column:2; grid-row:1; display:flex; align-items:center; justify-content:space-between; font-weight:650; }
+.pw-agenda-item { grid-column:2; display:flex; gap:12px; align-items:center; background:#f0eafb; color:#472968; padding:14px; border-radius:14px; margin-bottom:8px; }
+.pw-agenda-item strong { font-size:13px; font-weight:600; }
+.pw-agenda-item[data-state=en_curso] { background:#e1f1fc; color:#194e71; }
+.pw-agenda-item[data-state=completado] { background:#def4ec; color:#185440; }
+.pw-agenda>.pw-muted { grid-column:2; }
+.pw-calendar-grid { grid-row:2 / span 8; align-self:start; }
+.pw-agenda-item .pw-muted { color:inherit; margin-top:3px; }
+.pw-note-expand summary { cursor:pointer; font-size:13px; line-height:1.6; }
+.pw-note-expand p { white-space:pre-wrap; padding-top:12px; line-height:1.7; }
+.pw-note-expand[open] summary span { display:none; }
+.pw-note-expand[open] summary::after { content:'Cerrar nota'; }
+.pw-person-tasks { margin-top:12px; font-size:12px; }
+.pw-person-tasks summary { cursor:pointer; min-height:32px; color:var(--pw-accent); }
+.pw-person-task { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 0; border-top:1px solid var(--pw-line); }
+[data-dark=true] .pw-agenda-item { background:#332d4b; color:#e5dafc; }
+[data-dark=true] .pw-agenda-item[data-state=en_curso] { background:#223d50; color:#cdeafb; }
+[data-dark=true] .pw-agenda-item[data-state=completado] { background:#24463c; color:#cdf4e6; }
+@media(max-width:767px) { .pw-agenda { display:block; padding:16px; } .pw-calendar-grid { margin:14px 0 24px; } .pw-agenda-heading { margin-bottom:12px; } }
+.pw-resource-kind { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:11px; background:#dcf0fa; color:#205470; flex-shrink:0; }

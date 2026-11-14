@@ -3,3 +3,15 @@ node_modules
 out
 .DS_Store
 .env*
+
+.next-project-audit
+firestore-debug.log
+ui-debug.log
+
+.next-project-review
+
+.next-color-build
+
+.firebase/
+tsconfig.tsbuildinfo
+.claude/settings.local.json

@@ -1,14 +1,15 @@
 'use client'
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, ChevronDown, Maximize2, Minimize2, Check, Users, X, ExternalLink, ClipboardList } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Maximize2, Minimize2, Check, Users, X, ExternalLink } from 'lucide-react'
 import ContentViewSwitcher from '@/components/cmhub/ContentViewSwitcher'
 import { useHub } from '@/cmhub/context'
 import { useHubMeta } from '@/cmhub/theme'
+import { useOptionalAuth } from '@/components/auth/AuthProvider'
 import { ALL_STATUSES, ALL_NETWORKS } from '@/cmhub/data'
-import { getActividadAssignees } from '@/cmhub/activities'
-import ContentModal from '@/components/cmhub/ContentModal'
+import dynamic from 'next/dynamic'
+const ContentModal = dynamic(() => import('@/components/cmhub/ContentModal'), { ssr: false })
 import NetworkIcon from '@/components/cmhub/NetworkIcon'
-import type { Content, ContentStatus, Network, HubActividad } from '@/cmhub/types'
+import type { Content, ContentStatus, Network } from '@/cmhub/types'
 
 const DIAS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 
@@ -223,7 +224,6 @@ function BrandDropdown({
 
 type Selected =
   | { kind: 'content'; data: Content }
-  | { kind: 'activity'; data: HubActividad }
 
 function getDrivePreviewUrl(url: string): string | null {
   const fileMatch = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/)
@@ -234,8 +234,10 @@ function getDrivePreviewUrl(url: string): string | null {
 }
 
 export default function SemanaPage() {
-  const { contents, brands, getBrandById, updateContent, actividades, team } = useHub()
+  const { contents, brands, getBrandById, updateContent, team } = useHub()
   const { NETWORK_META, STATUS_META } = useHubMeta()
+  const auth = useOptionalAuth()
+  const currentUserName = (auth?.profile as { displayName?: string } | null)?.displayName ?? null
   const [offset, setOffset] = useState(0)
 
   // Filtros tabla
@@ -324,7 +326,8 @@ export default function SemanaPage() {
 
   function handleDrop(dateISO: string) {
     if (!dragging) return
-    updateContent(dragging, { date: dateISO })
+    const byWho = currentUserName ? { updatedBy: currentUserName } : {}
+    updateContent(dragging, { date: dateISO, ...byWho })
     setDragging(null)
     setOverDay(null)
   }
@@ -337,16 +340,6 @@ export default function SemanaPage() {
   function openPanel(c: Content) {
     setSelected({ kind: 'content', data: c })
   }
-
-  function openActivityPanel(a: HubActividad) {
-    setSelected({ kind: 'activity', data: a })
-  }
-
-  const actividadesDelDia = (d: Date) =>
-    actividades.filter(a => {
-      if (!a.dueDate) return false
-      return new Date(a.dueDate + 'T00:00:00').toDateString() === d.toDateString()
-    })
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-[#f8fafc] rounded-2xl">
@@ -421,7 +414,7 @@ export default function SemanaPage() {
 
                 {/* Cards */}
                 <div className={`flex flex-col gap-1.5 min-h-[140px] rounded-xl p-1 transition-colors ${isOver ? 'bg-[#f5f3ff]/50' : ''}`}>
-                  {items.length === 0 && actividadesDelDia(fecha).length === 0 && (
+                  {items.length === 0 && (
                     <div className={`flex-1 rounded-xl border border-dashed flex items-center justify-center min-h-[60px] transition-colors ${
                       isOver ? 'border-[#7c3aed]/40' : 'border-[#e5e7eb]'
                     }`}>
@@ -472,27 +465,6 @@ export default function SemanaPage() {
                       </div>
                     )
                   })}
-                  {/* Actividades del día */}
-                  {actividadesDelDia(fecha).map(a => (
-                    <div
-                      key={a.id}
-                      onClick={() => openActivityPanel(a)}
-                      className={`rounded-xl border p-2 cursor-pointer transition-all select-none ${
-                        selected?.kind === 'activity' && selected.data.id === a.id
-                          ? 'border-[#7c3aed] bg-[#f5f3ff]'
-                          : 'border-[#e5e7eb] bg-[#fafafa] hover:border-[#c4b5fd] hover:bg-[#f5f3ff]'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1 mb-1">
-                        <ClipboardList size={9} className="text-[#7c3aed] shrink-0" />
-                        <span className="text-[9px] font-bold text-[#7c3aed] uppercase tracking-wide">Actividad</span>
-                      </div>
-                      <p className="text-[10px] font-semibold text-[#374151] leading-tight line-clamp-2">{a.title}</p>
-                      {a.category && (
-                        <p className="text-[9px] text-[#9ca3af] mt-0.5">{a.category}</p>
-                      )}
-                    </div>
-                  ))}
                 </div>
               </div>
             )
@@ -648,178 +620,25 @@ export default function SemanaPage() {
 
       {/* ── Panel lateral derecho ─────────────────────────────────────── */}
       {selected && (() => {
-        if (selected.kind === 'content') {
-          const c = selected.data
-          const brand = getBrandById(c.brandId)
-          const channels = (c.channels?.length ? c.channels : [c.channel]) as Network[]
-          const st = smeta[c.status]
-          const drivePreview = c.driveUrl ? getDrivePreviewUrl(c.driveUrl) : null
-
-          return (
-            <div className="w-80 border-l border-[#e5e7eb] bg-white flex flex-col shrink-0 overflow-hidden">
-              {/* Panel header */}
-              <div className="px-4 py-3.5 border-b border-[#f3f4f6] flex items-center gap-2 shrink-0">
-                <div className="flex-1 min-w-0">
-                  <p className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wide">Publicación</p>
-                </div>
-                <button
-                  onClick={() => { setEditing(c); setShowModal(true) }}
-                  className="text-[11px] font-semibold text-[#7c3aed] bg-[#f5f3ff] hover:bg-[#ede9fe] px-2.5 py-1 rounded-lg transition-colors shrink-0"
-                >
-                  Editar
-                </button>
-                <button
-                  onClick={() => setSelected(null)}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg text-[#9ca3af] hover:text-[#374151] hover:bg-[#f3f4f6] transition-colors shrink-0"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-
-              {/* Panel body */}
-              <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-                {/* Brand + title */}
-                <div>
-                  {brand && (
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="w-5 h-5 rounded-md flex items-center justify-center text-[8px] font-bold text-white shrink-0"
-                        style={{ background: brand.color }}>{brand.initials}</div>
-                      <span className="text-[11px] font-semibold text-[#9ca3af]">{brand.name}</span>
-                    </div>
-                  )}
-                  <p className="text-[15px] font-bold text-[#111827] leading-snug">{c.title}</p>
-                </div>
-
-                {/* Channels + status */}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="flex items-center gap-1">
-                    {channels.map(ch => {
-                      const nm = NETWORK_META[ch]
-                      return (
-                        <span key={ch} title={nm?.label ?? ch}
-                          className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
-                          style={{ background: nm?.bg, color: nm?.dot }}>
-                          <NetworkIcon network={ch} size={12} />
-                        </span>
-                      )
-                    })}
-                  </div>
-                  {st && (
-                    <span className="text-[11px] font-bold px-2.5 py-1 rounded-full"
-                      style={{ background: st.bg, color: st.text }}>{st.label}</span>
-                  )}
-                </div>
-
-                {/* Fechas */}
-                <div className="flex flex-col gap-1.5">
-                  {c.date && (
-                    <div className="flex items-center justify-between text-[12px]">
-                      <span className="text-[#9ca3af]">Publicación</span>
-                      <span className="font-semibold text-[#374151]">{c.date}</span>
-                    </div>
-                  )}
-                  {c.dueDate && (
-                    <div className="flex items-center justify-between text-[12px]">
-                      <span className="text-[#9ca3af]">Entrega</span>
-                      <span className="font-semibold text-[#d97706]">{c.dueDate}</span>
-                    </div>
-                  )}
-                  {(() => {
-                    const assignees = getAssignees(c)
-                    const names = assignees.length > 0
-                      ? assignees.map(m => m.name)
-                      : c.responsables?.length ? c.responsables : c.responsible ? [c.responsible] : []
-                    if (!names.length) return null
-                    return (
-                      <div className="flex items-start justify-between text-[12px] gap-2">
-                        <span className="text-[#9ca3af] shrink-0">
-                          {names.length > 1 ? 'Responsables' : 'Responsable'}
-                        </span>
-                        {assignees.length > 0 ? (
-                          <div className="flex items-center gap-1 flex-wrap justify-end">
-                            {assignees.map(m => (
-                              <div key={m.id} title={m.name} className="flex items-center gap-1">
-                                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0"
-                                  style={{ background: m.color }}>{m.initials}</div>
-                                <span className="font-semibold text-[#374151] text-[11px]">{m.name}</span>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="font-semibold text-[#374151] text-right">{names.join(', ')}</span>
-                        )}
-                      </div>
-                    )
-                  })()}
-                </div>
-
-                {/* Copy snippet */}
-                <div className="bg-[#f9fafb] rounded-xl p-3">
-                  <p className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide mb-1.5">Copy</p>
-                  <p className={`text-[12px] leading-relaxed line-clamp-4 ${c.copy ? 'text-[#374151]' : 'text-[#9ca3af] italic'}`}>
-                    {c.copy || 'Sin copy redactado.'}
-                  </p>
-                </div>
-
-                {/* Drive link + preview */}
-                <div className="flex flex-col gap-2">
-                  <p className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wide">Drive</p>
-                  {c.driveUrl ? (
-                    <>
-                      <div className="flex items-center justify-end">
-                        <a href={c.driveUrl} target="_blank" rel="noopener noreferrer"
-                          className="flex items-center gap-1 text-[11px] font-semibold text-[#7c3aed] hover:underline">
-                          Abrir <ExternalLink size={10} />
-                        </a>
-                      </div>
-                      {drivePreview ? (
-                        <iframe
-                          src={drivePreview}
-                          className="w-full rounded-xl border border-[#e5e7eb]"
-                          style={{ height: '200px' }}
-                          allow="autoplay"
-                          title="Drive preview"
-                        />
-                      ) : (
-                        <a href={c.driveUrl} target="_blank" rel="noopener noreferrer"
-                          className="flex items-center gap-2 bg-[#f9fafb] rounded-xl p-3 hover:bg-[#f3f4f6] transition-colors group">
-                          <div className="w-8 h-8 rounded-lg bg-[#4285f4]/10 flex items-center justify-center shrink-0">
-                            <ExternalLink size={14} className="text-[#4285f4]" />
-                          </div>
-                          <span className="text-[11px] font-medium text-[#374151] truncate group-hover:text-[#7c3aed]">
-                            {c.driveUrl}
-                          </span>
-                        </a>
-                      )}
-                    </>
-                  ) : (
-                    <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-[#9ca3af] border border-dashed border-[#e5e7eb] rounded-xl p-3">
-                      Sin diseño cargado
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )
-        }
-
-        // Activity panel
-        const a = selected.data
-        const actStatusMeta: Record<string, { label: string; bg: string; color: string }> = {
-          pendiente:  { label: 'Pendiente',  bg: '#fef3c7', color: '#d97706' },
-          en_curso:   { label: 'En curso',   bg: '#eff6ff', color: '#3b82f6' },
-          completado: { label: 'Completado', bg: '#dcfce7', color: '#16a34a' },
-        }
-        const ast = actStatusMeta[a.status]
-        const linkPreview = a.linkEntrega ? getDrivePreviewUrl(a.linkEntrega) : null
+        const c = selected.data
+        const brand = getBrandById(c.brandId)
+        const channels = (c.channels?.length ? c.channels : [c.channel]) as Network[]
+        const st = smeta[c.status]
+        const drivePreview = c.driveUrl ? getDrivePreviewUrl(c.driveUrl) : null
 
         return (
           <div className="w-80 border-l border-[#e5e7eb] bg-white flex flex-col shrink-0 overflow-hidden">
             {/* Panel header */}
             <div className="px-4 py-3.5 border-b border-[#f3f4f6] flex items-center gap-2 shrink-0">
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wide">Actividad</p>
+                <p className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wide">Publicación</p>
               </div>
+              <button
+                onClick={() => { setEditing(c); setShowModal(true) }}
+                className="text-[11px] font-semibold text-[#7c3aed] bg-[#f5f3ff] hover:bg-[#ede9fe] px-2.5 py-1 rounded-lg transition-colors shrink-0"
+              >
+                Editar
+              </button>
               <button
                 onClick={() => setSelected(null)}
                 className="w-7 h-7 flex items-center justify-center rounded-lg text-[#9ca3af] hover:text-[#374151] hover:bg-[#f3f4f6] transition-colors shrink-0"
@@ -830,81 +649,126 @@ export default function SemanaPage() {
 
             {/* Panel body */}
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-              {/* Title + category */}
+              {/* Brand + title */}
               <div>
-                {a.category && (
-                  <span className="text-[10px] font-bold text-[#7c3aed] bg-[#f5f3ff] px-2 py-0.5 rounded-full mb-2 inline-block">
-                    {a.category}
-                  </span>
+                {brand && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="w-5 h-5 rounded-md flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                      style={{ background: brand.color }}>{brand.initials}</div>
+                    <span className="text-[11px] font-semibold text-[#9ca3af]">{brand.name}</span>
+                  </div>
                 )}
-                <p className="text-[15px] font-bold text-[#111827] leading-snug mt-1">{a.title}</p>
+                <p className="text-[15px] font-bold text-[#111827] leading-snug">{c.title}</p>
               </div>
 
-              {/* Status */}
-              {ast && (
-                <span className="self-start text-[11px] font-bold px-2.5 py-1 rounded-full"
-                  style={{ background: ast.bg, color: ast.color }}>{ast.label}</span>
-              )}
+              {/* Channels + status */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1">
+                  {channels.map(ch => {
+                    const nm = NETWORK_META[ch]
+                    return (
+                      <span key={ch} title={nm?.label ?? ch}
+                        className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                        style={{ background: nm?.bg, color: nm?.dot }}>
+                        <NetworkIcon network={ch} size={12} />
+                      </span>
+                    )
+                  })}
+                </div>
+                {st && (
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-full"
+                    style={{ background: st.bg, color: st.text }}>{st.label}</span>
+                )}
+              </div>
 
-              {/* Meta */}
+              {/* Fechas */}
               <div className="flex flex-col gap-1.5">
-                {a.dueDate && (
+                {c.date && (
                   <div className="flex items-center justify-between text-[12px]">
-                    <span className="text-[#9ca3af]">Vencimiento</span>
-                    <span className="font-semibold text-[#d97706]">{a.dueDate}</span>
+                    <span className="text-[#9ca3af]">Publicación</span>
+                    <span className="font-semibold text-[#374151]">{c.date}</span>
+                  </div>
+                )}
+                {c.dueDate && (
+                  <div className="flex items-center justify-between text-[12px]">
+                    <span className="text-[#9ca3af]">Entrega</span>
+                    <span className="font-semibold text-[#d97706]">{c.dueDate}</span>
                   </div>
                 )}
                 {(() => {
-                  const names = getActividadAssignees(a)
-                  if (names.length === 0) return null
+                  const assignees = getAssignees(c)
+                  const names = assignees.length > 0
+                    ? assignees.map(m => m.name)
+                    : c.responsables?.length ? c.responsables : c.responsible ? [c.responsible] : []
+                  if (!names.length) return null
                   return (
                     <div className="flex items-start justify-between text-[12px] gap-2">
-                      <span className="text-[#9ca3af] shrink-0">{names.length > 1 ? 'Asignados a' : 'Asignado a'}</span>
-                      <span className="font-semibold text-[#374151] text-right">{names.join(', ')}</span>
+                      <span className="text-[#9ca3af] shrink-0">
+                        {names.length > 1 ? 'Responsables' : 'Responsable'}
+                      </span>
+                      {assignees.length > 0 ? (
+                        <div className="flex items-center gap-1 flex-wrap justify-end">
+                          {assignees.map(m => (
+                            <div key={m.id} title={m.name} className="flex items-center gap-1">
+                              <div className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                                style={{ background: m.color }}>{m.initials}</div>
+                              <span className="font-semibold text-[#374151] text-[11px]">{m.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="font-semibold text-[#374151] text-right">{names.join(', ')}</span>
+                      )}
                     </div>
                   )
                 })()}
               </div>
 
-              {/* Description */}
-              {a.description && (
-                <div className="bg-[#f9fafb] rounded-xl p-3">
-                  <p className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide mb-1.5">Descripción</p>
-                  <p className="text-[12px] text-[#374151] leading-relaxed">{a.description}</p>
-                </div>
-              )}
+              {/* Copy snippet */}
+              <div className="bg-[#f9fafb] rounded-xl p-3">
+                <p className="text-[10px] font-bold text-[#9ca3af] uppercase tracking-wide mb-1.5">Copy</p>
+                <p className={`text-[12px] leading-relaxed line-clamp-4 ${c.copy ? 'text-[#374151]' : 'text-[#9ca3af] italic'}`}>
+                  {c.copy || 'Sin copy redactado.'}
+                </p>
+              </div>
 
-              {/* Link entrega + preview */}
-              {a.linkEntrega && (
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wide flex-1">Link entrega</p>
-                    <a href={a.linkEntrega} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-[11px] font-semibold text-[#7c3aed] hover:underline">
-                      Abrir <ExternalLink size={10} />
-                    </a>
+              {/* Drive link + preview */}
+              <div className="flex flex-col gap-2">
+                <p className="text-[11px] font-bold text-[#9ca3af] uppercase tracking-wide">Drive</p>
+                {c.driveUrl ? (
+                  <>
+                    <div className="flex items-center justify-end">
+                      <a href={c.driveUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1 text-[11px] font-semibold text-[#7c3aed] hover:underline">
+                        Abrir <ExternalLink size={10} />
+                      </a>
+                    </div>
+                    {drivePreview ? (
+                      <iframe
+                        src={drivePreview}
+                        className="w-full rounded-xl border border-[#e5e7eb]"
+                        style={{ height: '200px' }}
+                        allow="autoplay"
+                        title="Drive preview"
+                      />
+                    ) : (
+                      <a href={c.driveUrl} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-2 bg-[#f9fafb] rounded-xl p-3 hover:bg-[#f3f4f6] transition-colors group">
+                        <div className="w-8 h-8 rounded-lg bg-[#4285f4]/10 flex items-center justify-center shrink-0">
+                          <ExternalLink size={14} className="text-[#4285f4]" />
+                        </div>
+                        <span className="text-[11px] font-medium text-[#374151] truncate group-hover:text-[#7c3aed]">
+                          {c.driveUrl}
+                        </span>
+                      </a>
+                    )}
+                  </>
+                ) : (
+                  <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-[#9ca3af] border border-dashed border-[#e5e7eb] rounded-xl p-3">
+                    Sin diseño cargado
                   </div>
-                  {linkPreview ? (
-                    <iframe
-                      src={linkPreview}
-                      className="w-full rounded-xl border border-[#e5e7eb]"
-                      style={{ height: '200px' }}
-                      allow="autoplay"
-                      title="Link preview"
-                    />
-                  ) : (
-                    <a href={a.linkEntrega} target="_blank" rel="noopener noreferrer"
-                      className="flex items-center gap-2 bg-[#f9fafb] rounded-xl p-3 hover:bg-[#f3f4f6] transition-colors group">
-                      <div className="w-8 h-8 rounded-lg bg-[#4285f4]/10 flex items-center justify-center shrink-0">
-                        <ExternalLink size={14} className="text-[#4285f4]" />
-                      </div>
-                      <span className="text-[11px] font-medium text-[#374151] truncate group-hover:text-[#7c3aed]">
-                        {a.linkEntrega}
-                      </span>
-                    </a>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         )

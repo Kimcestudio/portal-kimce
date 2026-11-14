@@ -3,6 +3,8 @@ const isDev = process.env.NODE_ENV === 'development'
 
 const nextConfig = {
   reactStrictMode: true,
+  distDir: process.env.KIMCE_BUILD_DIR || '.next',
+  ...(isDev ? { async rewrites() { return [{ source: '/api/projects/gantt', destination: `https://us-central1-${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'kimce-app'}.cloudfunctions.net/publicProjectGantt` }] } } : {}),
   // In dev, skip static-export so dynamic routes work freely.
   // In production, 'export' generates the static files for Firebase Hosting.
   output: isDev ? undefined : 'export',

@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
-import { AlertTriangle, CheckCircle2, Clock, ChevronRight, Users, Activity } from 'lucide-react'
+import Link from 'next/link'
+import { AlertTriangle, CheckCircle2, Clock, ChevronRight, Users, Activity, XCircle, CheckSquare, BarChart2, TrendingUp, User } from 'lucide-react'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { db } from '@/services/firebase/client'
 import { useHub } from '@/cmhub/context'
@@ -10,7 +11,7 @@ import { useHubBase } from '@/cmhub/useHubBase'
 import { useOptionalAuth } from '@/components/auth/AuthProvider'
 import { actividadHasAssignee } from '@/cmhub/activities'
 import { getContentRelevantDate } from '@/cmhub/contentDates'
-import type { TeamMember, Content, HubActividad } from '@/cmhub/types'
+import type { TeamMember, Content, HubActividad, TareaD } from '@/cmhub/types'
 
 // ── Utils ─────────────────────────────────────────────────────────────────────
 function todayISO() { return new Date().toISOString().split('T')[0] }
@@ -48,6 +49,161 @@ function memberAssigned(c: Content, name: string) {
 
 const ACTIVE_STATUSES   = ['idea', 'produccion', 'revision', 'cambios', 'redaccion', 'diseno', 'audiovisual', 'enviado']
 const DONE_STATUSES     = ['aprobado', 'programado', 'publicado', 'finalizado', 'reportado']
+
+function daysOverdue(iso: string): number {
+  const today = new Date(todayISO()).getTime()
+  return Math.floor((today - new Date(iso).getTime()) / 86_400_000)
+}
+
+// ── Panel de alertas de vencidos ──────────────────────────────────────────────
+interface OverdueItem {
+  id: string
+  tipo: 'tarea' | 'actividad'
+  titulo: string
+  responsable: string
+  fechaVencimiento: string
+  dias: number
+}
+
+function AlertasVencidos({
+  tareasD, actividades, team, T, hubBase,
+}: {
+  tareasD: TareaD[]
+  actividades: HubActividad[]
+  team: TeamMember[]
+  T: ReturnType<typeof useTokens>
+  hubBase: string
+}) {
+  const today = todayISO()
+  const [expanded, setExpanded] = useState(true)
+
+  const items = useMemo<OverdueItem[]>(() => {
+    const list: OverdueItem[] = []
+
+    tareasD.forEach(t => {
+      if (!t.hecha && t.fechaLimite && t.fechaLimite < today) {
+        list.push({
+          id: `t-${t.id}`,
+          tipo: 'tarea',
+          titulo: t.texto,
+          responsable: t.editor,
+          fechaVencimiento: t.fechaLimite,
+          dias: daysOverdue(t.fechaLimite),
+        })
+      }
+    })
+
+    actividades.forEach(a => {
+      if (a.status !== 'completado' && a.dueDate && a.dueDate < today) {
+        const resp = a.assignee ?? a.assignees?.[0] ?? '—'
+        list.push({
+          id: `a-${a.id}`,
+          tipo: 'actividad',
+          titulo: a.title,
+          responsable: resp,
+          fechaVencimiento: a.dueDate,
+          dias: daysOverdue(a.dueDate),
+        })
+      }
+    })
+
+    return list.sort((a, b) => b.dias - a.dias)
+  }, [tareasD, actividades, today])
+
+  if (items.length === 0) return null
+
+  // Agrupar por responsable
+  const byPerson = useMemo(() => {
+    const map: Record<string, OverdueItem[]> = {}
+    items.forEach(it => {
+      if (!map[it.responsable]) map[it.responsable] = []
+      map[it.responsable].push(it)
+    })
+    return map
+  }, [items])
+
+  return (
+    <div className="px-6 pt-2 pb-3 shrink-0">
+      <div
+        className="rounded-2xl border overflow-hidden"
+        style={{ borderColor: 'rgba(239,68,68,0.25)', background: 'rgba(239,68,68,0.04)' }}
+      >
+        {/* Header colapsable */}
+        <button
+          type="button"
+          onClick={() => setExpanded(e => !e)}
+          className="w-full flex items-center gap-2.5 px-4 py-3 cursor-pointer transition-colors"
+          style={{ background: 'transparent' }}
+        >
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: 'rgba(239,68,68,0.12)' }}>
+            <XCircle size={14} style={{ color: '#ef4444' }} />
+          </div>
+          <span className="text-[13px] font-bold flex-1 text-left" style={{ color: '#ef4444' }}>
+            {items.length} pendiente{items.length !== 1 ? 's' : ''} vencido{items.length !== 1 ? 's' : ''}
+          </span>
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+            style={{ background: 'rgba(239,68,68,0.15)', color: '#ef4444' }}>
+            {expanded ? 'Ocultar' : 'Ver todos'}
+          </span>
+        </button>
+
+        {expanded && (
+          <div className="px-4 pb-3 flex flex-col gap-2">
+            {Object.entries(byPerson).map(([persona, suyos]) => {
+              const member = team.find(m => m.name.toLowerCase() === persona.toLowerCase())
+              return (
+                <div key={persona}>
+                  {/* Nombre responsable */}
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <div
+                      className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                      style={{ background: member?.color ?? '#94a3b8' }}
+                    >
+                      {member?.initials ?? persona.slice(0, 2).toUpperCase()}
+                    </div>
+                    <span className="text-[11px] font-bold" style={{ color: T.text }}>
+                      {persona}
+                    </span>
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold"
+                      style={{ background: 'rgba(239,68,68,0.12)', color: '#ef4444' }}>
+                      {suyos.length} vencida{suyos.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  {/* Items */}
+                  <div className="flex flex-col gap-1 pl-6">
+                    {suyos.map(it => (
+                      <div key={it.id} className="flex items-center gap-2">
+                        {it.tipo === 'tarea'
+                          ? <CheckSquare size={11} style={{ color: '#f87171', flexShrink: 0 }} />
+                          : <Clock size={11} style={{ color: '#fb923c', flexShrink: 0 }} />
+                        }
+                        <span className="text-[11px] flex-1 truncate" style={{ color: T.sub }}
+                          title={it.titulo}>
+                          {it.titulo}
+                        </span>
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md shrink-0"
+                          style={{
+                            background: it.dias >= 7 ? 'rgba(239,68,68,0.15)' : 'rgba(251,146,60,0.15)',
+                            color: it.dias >= 7 ? '#ef4444' : '#f97316',
+                          }}>
+                          {it.dias === 1 ? '1 día' : `${it.dias} días`}
+                        </span>
+                        <span className="text-[9px] shrink-0" style={{ color: T.muted }}>
+                          {fmtDate(it.fechaVencimiento)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 const CATEGORY_COLOR: Record<string, string> = {
   Diseño:      '#ec4899',
@@ -149,7 +305,7 @@ function StatusBadge({ status }: { status: string }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function VistaGeneral({
   members, contents, actividades, activeToday, T,
-  onSelect,
+  onSelect, tareasD, hubBase,
 }: {
   members: TeamMember[]
   contents: Content[]
@@ -157,6 +313,8 @@ function VistaGeneral({
   activeToday: Record<string, ActiveEntry>
   T: ReturnType<typeof useTokens>
   onSelect: (m: TeamMember) => void
+  tareasD: TareaD[]
+  hubBase: string
 }) {
   const today = todayISO()
   const week  = weekBounds()
@@ -192,10 +350,31 @@ function VistaGeneral({
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="px-6 pt-5 pb-4 shrink-0 border-b" style={{ borderColor: T.border }}>
-        <h1 className="text-[20px] font-extrabold" style={{ color: T.text }}>Supervisión del equipo</h1>
-        <p className="text-[12px] mt-0.5" style={{ color: T.muted }}>
-          Carga de trabajo, pendientes y actividad de todos los colaboradores
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-[20px] font-extrabold" style={{ color: T.text }}>Supervisión del equipo</h1>
+            <p className="text-[12px] mt-0.5" style={{ color: T.muted }}>
+              Carga de trabajo, pendientes y actividad de todos los colaboradores
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href={`${hubBase}/supervision/mis-entregas`}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-semibold shrink-0 transition-colors hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg,#0ea5e9,#6366f1)', color: '#fff' }}>
+              <User size={13} /> Mis Entregas
+            </Link>
+            <Link href={`${hubBase}/supervision/reporte-entregas`}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-semibold shrink-0 transition-colors hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg,#059669,#0d9488)', color: '#fff' }}>
+              <TrendingUp size={13} /> Ranking
+            </Link>
+            <Link href={`${hubBase}/supervision/reporte-mensual`}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12px] font-semibold shrink-0 transition-colors hover:opacity-90"
+              style={{ background: 'linear-gradient(135deg,#7c3aed,#4f46e5)', color: '#fff' }}>
+              <BarChart2 size={13} /> Reporte mensual
+            </Link>
+          </div>
+        </div>
       </div>
 
       {/* KPIs globales */}
@@ -222,6 +401,15 @@ function VistaGeneral({
           )
         })}
       </div>
+
+      {/* Alertas de vencidos */}
+      <AlertasVencidos
+        tareasD={tareasD}
+        actividades={actividades}
+        team={members}
+        T={T}
+        hubBase={hubBase}
+      />
 
       {/* Tabla */}
       <div className="flex-1 overflow-y-auto px-6 pb-6">
@@ -352,7 +540,7 @@ function VistaGeneral({
 // PÁGINA PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
 export default function SupervisionPage() {
-  const { team, contents, actividades } = useHub()
+  const { team, contents, actividades, tareasD } = useHub()
   const { isDark } = useHubTheme()
   const T = useTokens(isDark)
   const BASE = useHubBase()
@@ -364,7 +552,7 @@ export default function SupervisionPage() {
 
   function handleSelect(m: TeamMember) {
     if (!isAdmin) return
-    router.push(`${BASE}/vista-colaborador?member=${encodeURIComponent(m.id)}&from=supervision`)
+    // "Ver como" vía modal del sidebar (Eye icon), esta ruta fue eliminada
   }
 
   return (
@@ -377,6 +565,8 @@ export default function SupervisionPage() {
         activeToday={activeToday}
         T={T}
         onSelect={handleSelect}
+        tareasD={tareasD}
+        hubBase={BASE}
       />
     </div>
   )

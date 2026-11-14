@@ -1,12 +1,12 @@
 'use client'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import {
   ChevronLeft, ChevronRight, ChevronDown, UserPlus, X,
   LayoutDashboard, CalendarDays, Columns3,
   Clock, AlertTriangle, Trash2, GripVertical,
   ExternalLink, Calendar,
-  Palette, Film, BarChart2, Users2, Check, CheckCircle2, Zap, CircleDot,
+  Palette, Film, BarChart2, Users2, Check, CheckCircle2, Zap, CircleDot, MessageSquare,
 } from 'lucide-react'
 import { collection, query, where, onSnapshot, updateDoc, doc as fsDoc } from 'firebase/firestore'
 import { db } from '@/services/firebase/client'
@@ -16,16 +16,22 @@ import { useOptionalAuth } from '@/components/auth/AuthProvider'
 import { getActividadAssignees, actividadHasAssignee } from '@/cmhub/activities'
 import { getContentRelevantDate } from '@/cmhub/contentDates'
 import type { TeamCategory, TeamMember, Content, ContentStatus, HubActividad } from '@/cmhub/types'
-import ContentModal from '@/components/cmhub/ContentModal'
+import { getWorkflow } from '@/cmhub/workflow'
+import type { Workflow } from '@/cmhub/workflow'
+import dynamic from 'next/dynamic'
+const ContentModal = dynamic(() => import('@/components/cmhub/ContentModal'), { ssr: false })
 import ActividadModal from '@/components/cmhub/ActividadModal'
+import NetworkIcon from '@/components/cmhub/NetworkIcon'
 
 // ── Categorías ────────────────────────────────────────────────────────────────
-const ALL_CATEGORIES: TeamCategory[] = ['Diseño', 'Audiovisual', 'Estrategia', 'Otro']
+const ALL_CATEGORIES: TeamCategory[] = ['Diseño', 'Audiovisual', 'Estrategia', 'CM', 'Agencia', 'Otro']
 
 const CATEGORY_META: Record<TeamCategory, { color: string; accent: string }> = {
-  Diseño:      { color: '#ec4899', accent: 'rgba(236,72,153,0.15)' },
-  Audiovisual: { color: '#f97316', accent: 'rgba(249,115,22,0.15)' },
-  Estrategia:  { color: '#6366f1', accent: 'rgba(99,102,241,0.15)' },
+  Diseño:      { color: '#ec4899', accent: 'rgba(236,72,153,0.15)'  },
+  Audiovisual: { color: '#f97316', accent: 'rgba(249,115,22,0.15)'  },
+  Estrategia:  { color: '#6366f1', accent: 'rgba(99,102,241,0.15)'  },
+  CM:          { color: '#10b981', accent: 'rgba(16,185,129,0.15)'  },
+  Agencia:     { color: '#0844ef', accent: 'rgba(8,68,239,0.12)'    },
   Otro:        { color: '#64748b', accent: 'rgba(100,116,139,0.15)' },
 }
 
@@ -34,6 +40,8 @@ function CategoryIcon({ cat, size = 14 }: { cat: TeamCategory; size?: number }) 
   if (cat === 'Diseño')      return <Palette {...props} />
   if (cat === 'Audiovisual') return <Film {...props} />
   if (cat === 'Estrategia')  return <BarChart2 {...props} />
+  if (cat === 'CM')          return <MessageSquare {...props} />
+  if (cat === 'Agencia')     return <CircleDot {...props} />
   return <Users2 {...props} />
 }
 
@@ -54,30 +62,6 @@ const FORMAT_TIPO: Record<string, string> = {
 // ── Workflow por área ─────────────────────────────────────────────────────────
 // Diseño/Audiovisual: su trabajo va de produccion → revision → aprobado (done)
 // Estrategia/CM:      su trabajo va de idea → ... → publicado (done)
-interface Workflow {
-  pendientes: string[]
-  enRevision: string[]
-  listos:     string[]
-  active:     string[]  // todos los estados "en juego" para esta área
-}
-
-function getWorkflow(category: TeamCategory): Workflow {
-  if (category === 'Diseño' || category === 'Audiovisual') {
-    return {
-      pendientes: ['produccion'],
-      enRevision: ['revision'],
-      listos:     ['aprobado', 'programado', 'publicado', 'finalizado'],
-      active:     ['produccion', 'revision'],
-    }
-  }
-  // Estrategia / CM / Otro
-  return {
-    pendientes: ['idea', 'produccion'],
-    enRevision: ['revision', 'cambios'],
-    listos:     ['publicado', 'finalizado'],
-    active:     ['idea', 'produccion', 'revision', 'cambios', 'aprobado', 'programado'],
-  }
-}
 
 // ── Drive preview helper ──────────────────────────────────────────────────────
 function getDrivePreviewUrl(url: string): string | null {
@@ -109,6 +93,8 @@ function weekRange(offset = 0) {
 }
 
 function todayISO() { return new Date().toISOString().split('T')[0] }
+
+const WEEK_DAY_NAMES = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 
 function dueDiff(d: string | null | undefined) {
   if (!d) return null
@@ -205,7 +191,7 @@ const TIPO_META: Record<string, { color: string; bg: string; symbol: string }> =
   Video:       { color: '#60a5fa', bg: 'rgba(96,165,250,0.15)',   symbol: '▶'  },
   RRSS:        { color: '#f472b6', bg: 'rgba(244,114,182,0.15)',  symbol: '◈'  },
   Contenido:   { color: '#a78bfa', bg: 'rgba(167,139,250,0.15)',  symbol: '≡'  },
-  Actividades: { color: '#16a34a', bg: 'rgba(22,163,74,0.12)',    symbol: '◎'  },
+  Actividades: { color: '#0d9488', bg: 'rgba(13,148,136,0.13)',   symbol: '◎'  },
 }
 
 function TipoBadge({ formato }: { formato: string }) {
@@ -325,7 +311,7 @@ const ACTIV_STATUS_META: Record<HubActividad['status'], { label: string; color: 
 
 function ActividadStatusSelect({ value, onChange }: { value: HubActividad['status']; onChange: (s: HubActividad['status']) => void }) {
   const { open, setOpen, pos, btnRef, toggle } = usePortalDropdown()
-  const m = ACTIV_STATUS_META[value]
+  const m = ACTIV_STATUS_META[value] ?? ACTIV_STATUS_META.pendiente
 
   return (
     <div data-dropdown-root className="shrink-0">
@@ -614,7 +600,7 @@ function PanelView({
               style={{ background: 'rgba(99,102,241,0.15)', color: '#818cf8' }}>◎ Act</span>
           </div>
           {/* Tarea */}
-          <p className="flex-1 min-w-0 text-[12px] font-semibold truncate" style={{ color: T.text }}>{a.title}</p>
+          <p className="flex-1 min-w-0 text-[12px] font-semibold truncate" style={{ color: T.text }}>{a.flujoId && a.flujoNombre ? a.flujoNombre : a.title}</p>
           {/* Categoría */}
           <span className="w-[110px] shrink-0 text-[11px] truncate" style={{ color: T.muted }}>{a.category ?? '—'}</span>
           {/* Responsable */}
@@ -625,7 +611,10 @@ function PanelView({
           {/* Estado */}
           <div className="w-[110px] shrink-0 flex justify-start" onClick={e => e.stopPropagation()}>
             <ActividadStatusSelect value={a.status}
-              onChange={s => updateDoc(fsDoc(db, 'hubActividades', a.id), { status: s }).catch(console.error)} />
+              onChange={s => updateDoc(fsDoc(db, 'hubActividades', a.id), {
+                status: s,
+                completedAt: s === 'completado' ? (a.completedAt ?? new Date().toISOString()) : null,
+              }).catch(console.error)} />
           </div>
           {/* Fecha */}
           <div className="w-[52px] shrink-0 flex justify-end" onClick={e => e.stopPropagation()}>
@@ -685,7 +674,7 @@ function PanelView({
 
         {/* ── Alertas ─────────────────────────────────────────── */}
         <div className="rounded-2xl border overflow-hidden" style={{ background: T.card, borderColor: T.border }}>
-          <button className="w-full px-5 py-3.5 flex items-center gap-2 border-b"
+          <button className="w-full px-5 py-3.5 flex items-center gap-2 border-b transition-opacity hover:opacity-70"
             style={{ borderColor: alertasOpen && alertasItems.length > 0 ? T.border : 'transparent' }}
             onClick={() => setAlertasOpen(o => !o)}>
             <AlertTriangle size={14} className="text-amber-400" />
@@ -712,7 +701,7 @@ function PanelView({
 
         {/* ── Agenda de Hoy ───────────────────────────────────── */}
         <div className="rounded-2xl border overflow-hidden" style={{ background: T.card, borderColor: T.border }}>
-          <button className="w-full px-5 py-3.5 flex items-center gap-2 border-b"
+          <button className="w-full px-5 py-3.5 flex items-center gap-2 border-b transition-opacity hover:opacity-70"
             style={{ borderColor: agendaOpen && agendaItems.length > 0 ? T.border : 'transparent' }}
             onClick={() => setAgendaOpen(o => !o)}>
             <Zap size={14} style={{ color: T.sub }} />
@@ -739,7 +728,7 @@ function PanelView({
 
         {/* ── Próximas tareas (content + actividades) ─────────── */}
         <div className="rounded-2xl border overflow-hidden" style={{ background: T.card, borderColor: T.border }}>
-          <button className="w-full px-5 py-3.5 flex items-center gap-2 border-b"
+          <button className="w-full px-5 py-3.5 flex items-center gap-2 border-b transition-opacity hover:opacity-70"
             style={{ borderColor: proximasOpen && proximasItems.length > 0 ? T.border : 'transparent' }}
             onClick={() => setProximasOpen(o => !o)}>
             <Clock size={14} style={{ color: T.sub }} />
@@ -1038,7 +1027,7 @@ function SemanaView({
                               className="hover:opacity-80 transition-opacity cursor-pointer"
                               onClick={() => setSelectedItem(item)}>
                               <td className="px-4 py-3"><ActividadBadge /></td>
-                              <td className="px-4 py-3 font-semibold truncate overflow-hidden" style={{ color: T.text, maxWidth: 0 }}>{a.title}</td>
+                              <td className="px-4 py-3 font-semibold truncate overflow-hidden" style={{ color: T.text, maxWidth: 0 }}>{a.flujoId && a.flujoNombre ? a.flujoNombre : a.title}</td>
                               <td className="px-4 py-3"><span style={{ color: T.muted }}>—</span></td>
                               <td className="px-4 py-3">
                                 {assignees.length > 0 ? (
@@ -1130,6 +1119,324 @@ function SemanaView({
         />
       )}
 
+      {selectedItem?.kind === 'actividad' && (
+        <ActividadModal
+          initial={selectedItem.data}
+          onClose={() => setSelectedItem(null)}
+          mode="drawer"
+        />
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VISTA: CALENDARIO SEMANAL (tarjetas por día, content + actividades unificados)
+// Mismo estilo visual que RRSS > Semana, acentuado con el color del área.
+// ─────────────────────────────────────────────────────────────────────────────
+function CalendarioView({
+  members, contents, T, category, defaultResponsable,
+}: {
+  members: TeamMember[]
+  contents: Content[]
+  T: ReturnType<typeof useTokens>
+  category: TeamCategory
+  defaultResponsable?: string | null
+}) {
+  const { brands, actividades } = useHub()
+  const { NETWORK_META } = useHubMeta()
+  const meta = CATEGORY_META[category]
+  const isCreativo = category === 'Diseño' || category === 'Audiovisual'
+  const [weekOffset, setWeekOffset] = useState(0)
+  const [tipoFilter, setTipoFilter] = useState<TipoFilter>('Todo')
+  const [responsableFilter, setResponsableFilter] = useState<string | null>(defaultResponsable ?? null)
+  const [selectedItem, setSelectedItem] = useState<WeekItem | null>(null)
+  const week  = weekRange(weekOffset)
+  const today = todayISO()
+  const allNames    = members.map(m => m.name)
+  const filterNames = responsableFilter ? [responsableFilter] : allNames
+
+  const byDay = week.days.map(d => {
+    const iso = d.toISOString().split('T')[0]
+
+    const contentItems: WeekItem[] = contents
+      .filter(c => {
+        const relevant = getContentRelevantDate(c, isCreativo)
+        if (!relevant || relevant !== iso) return false
+        if (!filterNames.some(n => memberAssigned(c, n))) return false
+        if (tipoFilter === 'Actividades') return false
+        if (tipoFilter !== 'Todo' && (FORMAT_TIPO[c.format] ?? 'Contenido') !== tipoFilter) return false
+        return true
+      })
+      .map(c => ({ kind: 'content' as const, data: c }))
+
+    const actItems: WeekItem[] = actividades
+      .filter(a => {
+        if (!a.dueDate || a.dueDate !== iso) return false
+        if (!filterNames.some(n => actividadHasAssignee(a, n))) return false
+        if (tipoFilter !== 'Todo' && tipoFilter !== 'Actividades') return false
+        return true
+      })
+      .map(a => ({ kind: 'actividad' as const, data: a }))
+
+    return { date: d, iso, items: [...contentItems, ...actItems] }
+  })
+
+  const weekItems = byDay.flatMap(({ iso, items }) => items.map(item => ({ item, iso })))
+    .sort((a, b) => a.iso.localeCompare(b.iso))
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Sub-header: filtros + navegación de semana */}
+      <div className="px-5 py-3 flex items-center gap-3 shrink-0 border-b" style={{ borderColor: T.border }}>
+        <div className="flex gap-1.5">
+          {TIPOS.map(t => (
+            <button key={t} onClick={() => setTipoFilter(t)}
+              className="text-[11px] font-semibold px-3 py-1.5 rounded-full transition-all cursor-pointer"
+              style={tipoFilter === t
+                ? { background: meta.color, color: '#fff' }
+                : { background: T.card2, color: T.sub }}>
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {/* Filtro de responsable */}
+        <div className="flex items-center gap-1.5 border-l pl-3" style={{ borderColor: T.border }}>
+          <button
+            onClick={() => setResponsableFilter(null)}
+            className="text-[10px] font-semibold px-2.5 py-1 rounded-full transition-all cursor-pointer"
+            style={responsableFilter === null
+              ? { background: meta.color, color: '#fff' }
+              : { background: T.card2, color: T.sub }}>
+            Todos
+          </button>
+          {members.map(m => (
+            <button
+              key={m.id}
+              onClick={() => setResponsableFilter(responsableFilter === m.name ? null : m.name)}
+              title={m.name}
+              className="transition-all cursor-pointer shrink-0"
+              style={{ opacity: responsableFilter && responsableFilter !== m.name ? 0.35 : 1 }}
+            >
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white transition-all"
+                style={{
+                  background: m.color,
+                  boxShadow: responsableFilter === m.name ? `0 0 0 2px ${T.card}, 0 0 0 4px ${meta.color}` : 'none',
+                }}>
+                {m.initials}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-1.5 ml-auto">
+          <button onClick={() => setWeekOffset(o => o - 1)}
+            className="w-7 h-7 rounded-lg border flex items-center justify-center hover:opacity-80 cursor-pointer"
+            style={{ borderColor: T.border, background: T.card }}>
+            <ChevronLeft size={13} style={{ color: T.sub }} />
+          </button>
+          <span className="text-[11px] font-semibold px-3 py-1 rounded-lg"
+            style={{ background: T.card2, color: T.sub }}>{week.label}</span>
+          <button onClick={() => setWeekOffset(o => o + 1)}
+            className="w-7 h-7 rounded-lg border flex items-center justify-center hover:opacity-80 cursor-pointer"
+            style={{ borderColor: T.border, background: T.card }}>
+            <ChevronRight size={13} style={{ color: T.sub }} />
+          </button>
+          {weekOffset !== 0 && (
+            <button onClick={() => setWeekOffset(0)}
+              className="text-[11px] font-semibold px-2.5 py-1 rounded-lg cursor-pointer"
+              style={{ background: meta.accent, color: meta.color }}>
+              Hoy
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-5">
+        {/* ── Grid semanal: 7 columnas con tarjetas ─────────────────────── */}
+        <div className="grid grid-cols-7 gap-2">
+          {byDay.map(({ date, iso, items }, i) => {
+            const isToday = iso === today
+            return (
+              <div key={iso}>
+                {/* Cabecera del día */}
+                <div className="text-center mb-2 py-2 rounded-xl transition-colors"
+                  style={{ background: isToday ? meta.color : 'transparent' }}>
+                  <p className="text-[9px] font-bold uppercase tracking-wider"
+                    style={{ color: isToday ? 'rgba(255,255,255,0.8)' : T.muted }}>{WEEK_DAY_NAMES[i]}</p>
+                  <p className="text-[15px] font-bold" style={{ color: isToday ? '#fff' : T.text }}>{date.getDate()}</p>
+                  {items.length > 0 && (
+                    <p className="text-[9px] font-semibold" style={{ color: isToday ? 'rgba(255,255,255,0.7)' : T.muted }}>
+                      {items.length} tarea{items.length > 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+
+                {/* Tarjetas */}
+                <div className="flex flex-col gap-1.5 min-h-[140px]">
+                  {items.length === 0 && (
+                    <div className="flex-1 rounded-xl border border-dashed flex items-center justify-center min-h-[60px]"
+                      style={{ borderColor: T.border }}>
+                      <span className="text-[10px]" style={{ color: T.muted }}>—</span>
+                    </div>
+                  )}
+                  {items.map(item => {
+                    if (item.kind === 'actividad') {
+                      const a = item.data
+                      return (
+                        <div key={`a-${a.id}`} onClick={() => setSelectedItem(item)}
+                          className="rounded-xl border p-2 cursor-pointer transition-all hover:shadow-sm"
+                          style={{ background: T.card, borderColor: T.border, opacity: a.status === 'completado' ? 0.55 : 1 }}>
+                          <div className="flex items-center gap-1 mb-1">
+                            <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: TIPO_META.Actividades.color }}>◎ Actividad</span>
+                          </div>
+                          <p className="text-[11px] font-semibold leading-tight line-clamp-2" style={{ color: T.text }}>{a.flujoId && a.flujoNombre ? a.flujoNombre : a.title}</p>
+                          {(a.flujoId && a.totalPasos != null) ? (
+                            <p className="text-[9px] mt-0.5" style={{ color: T.muted }}>Paso {(a.pasoIndex ?? 0) + 1}/{a.totalPasos}</p>
+                          ) : a.category && (
+                            <p className="text-[9px] mt-0.5" style={{ color: T.muted }}>{a.category}</p>
+                          )}
+                        </div>
+                      )
+                    }
+                    const c = item.data
+                    const brand = brands.find(b => b.id === c.brandId)
+                    const channels = c.channels?.length ? c.channels : [c.channel]
+                    return (
+                      <div key={`c-${c.id}`} onClick={() => setSelectedItem(item)}
+                        className="rounded-xl border p-2 cursor-pointer transition-all hover:shadow-sm"
+                        style={{ background: T.card, borderColor: T.border }}>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <div className="w-4 h-4 rounded-md flex items-center justify-center text-[8px] font-bold text-white shrink-0"
+                            style={{ background: brand?.color ?? meta.color }}>
+                            {brand?.initials ?? '?'}
+                          </div>
+                          <span className="text-[10px] truncate flex-1" style={{ color: T.muted }}>{brand?.name}</span>
+                        </div>
+                        <p className="text-[11px] font-semibold leading-tight line-clamp-2 mb-1.5" style={{ color: T.text }}>{c.title}</p>
+                        <div className="flex items-center justify-between gap-1">
+                          <div className="flex items-center gap-0.5 flex-wrap">
+                            {channels.map(ch => {
+                              const nm = NETWORK_META[ch]
+                              return (
+                                <span key={ch} title={nm?.label ?? ch}
+                                  className="w-5 h-5 rounded-md flex items-center justify-center shrink-0"
+                                  style={{ background: nm?.bg, color: nm?.dot }}>
+                                  <NetworkIcon network={ch} size={10} />
+                                </span>
+                              )
+                            })}
+                          </div>
+                          <StatusBadge status={c.status} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+
+        {/* ── Tabla: tareas de la semana ─────────────────────────────────── */}
+        <div className="rounded-2xl border overflow-hidden shrink-0" style={{ background: T.card, borderColor: T.border }}>
+          <div className="px-5 py-4 border-b flex items-center justify-between" style={{ borderColor: T.border }}>
+            <span className="text-[15px] font-bold" style={{ color: T.text }}>Tareas de la semana</span>
+            <span className="text-[12px] px-2.5 py-1 rounded-full font-medium" style={{ background: T.card2, color: T.sub }}>
+              {weekItems.length} {weekItems.length === 1 ? 'tarea' : 'tareas'}
+            </span>
+          </div>
+          <table className="w-full text-[13px]" style={{ tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: 90 }} />
+              <col style={{ width: 110 }} />
+              <col />
+              <col style={{ width: 150 }} />
+              <col style={{ width: 120 }} />
+              <col style={{ width: 110 }} />
+            </colgroup>
+            <thead>
+              <tr style={{ background: T.card2 }}>
+                {['Fecha', 'Tipo', 'Tarea', 'Cliente', 'Responsable', 'Estado'].map(h => (
+                  <th key={h} className="px-4 py-2.5 text-left font-bold uppercase tracking-wider text-[9px]" style={{ color: T.muted }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {weekItems.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="text-center py-8 text-[13px]" style={{ color: T.muted }}>Sin tareas esta semana</td>
+                </tr>
+              )}
+              {weekItems.map(({ item, iso }, idx) => {
+                const sep = idx > 0 ? `1px solid ${T.border}` : undefined
+
+                if (item.kind === 'actividad') {
+                  const a = item.data
+                  const assigneeNames = getActividadAssignees(a)
+                  const assignees = assigneeNames
+                    .map(n => members.find(m => sameName(n, m.name)))
+                    .filter(Boolean) as TeamMember[]
+                  return (
+                    <tr key={`a-${a.id}`} style={{ borderTop: sep }}
+                      className="hover:opacity-80 transition-opacity cursor-pointer"
+                      onClick={() => setSelectedItem(item)}>
+                      <td className="px-4 py-3 font-mono text-[10px]" style={{ color: T.muted }}>{fmtDayMonth(iso)}</td>
+                      <td className="px-4 py-3"><ActividadBadge /></td>
+                      <td className="px-4 py-3 font-semibold truncate overflow-hidden" style={{ color: T.text, maxWidth: 0 }}>{a.flujoId && a.flujoNombre ? a.flujoNombre : a.title}</td>
+                      <td className="px-4 py-3"><span style={{ color: T.muted }}>{a.flujoId && a.totalPasos != null ? `Paso ${(a.pasoIndex ?? 0) + 1}/${a.totalPasos}` : (a.category ?? '—')}</span></td>
+                      <td className="px-4 py-3">
+                        {assignees.length > 0 ? (
+                          <div className="flex -space-x-1">
+                            {assignees.slice(0, 3).map(m => <MemberAvatar key={m.id} member={m} size="xs" />)}
+                          </div>
+                        ) : <span style={{ color: T.muted }}>—</span>}
+                      </td>
+                      <td className="px-4 py-3"><ActStatusBadge status={a.status} /></td>
+                    </tr>
+                  )
+                }
+
+                const c = item.data
+                const brand = brands.find(b => b.id === c.brandId)
+                const assignees = members.filter(m =>
+                  sameName(c.dueAssignee, m.name) ||
+                  sameName(c.responsible, m.name) ||
+                  c.responsables?.some(r => sameName(r, m.name))
+                )
+                return (
+                  <tr key={`c-${c.id}`} style={{ borderTop: sep }}
+                    className="hover:opacity-80 transition-opacity cursor-pointer"
+                    onClick={() => setSelectedItem(item)}>
+                    <td className="px-4 py-3 font-mono text-[10px]" style={{ color: T.muted }}>{fmtDayMonth(iso)}</td>
+                    <td className="px-4 py-3"><TipoBadge formato={c.format} /></td>
+                    <td className="px-4 py-3 font-semibold truncate overflow-hidden" style={{ color: T.text, maxWidth: 0 }}>{c.title}</td>
+                    <td className="px-4 py-3">{brand ? <span style={{ color: T.sub }}>{brand.name}</span> : <span style={{ color: T.muted }}>—</span>}</td>
+                    <td className="px-4 py-3">
+                      {assignees.length > 0 ? (
+                        <div className="flex -space-x-1">
+                          {assignees.slice(0, 3).map(m => <MemberAvatar key={m.id} member={m} size="xs" />)}
+                        </div>
+                      ) : <span style={{ color: T.muted }}>—</span>}
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge status={c.status} /></td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Panel de detalle: contenido usa ContentModal drawer, actividad usa ActividadModal drawer */}
+      {selectedItem?.kind === 'content' && (
+        <ContentModal
+          initial={selectedItem.data}
+          onClose={() => setSelectedItem(null)}
+          mode="drawer"
+        />
+      )}
       {selectedItem?.kind === 'actividad' && (
         <ActividadModal
           initial={selectedItem.data}
@@ -1305,12 +1612,13 @@ function PipelineView({
 // ─────────────────────────────────────────────────────────────────────────────
 // COMPONENTE PRINCIPAL
 // ─────────────────────────────────────────────────────────────────────────────
-type TabKey = 'panel' | 'semana' | 'pipeline'
+type TabKey = 'panel' | 'semana' | 'calendario' | 'pipeline'
 
 const TABS: { key: TabKey; label: string; Icon: typeof LayoutDashboard }[] = [
-  { key: 'panel',    label: 'Dashboard', Icon: LayoutDashboard },
-  { key: 'semana',   label: 'Semana',    Icon: CalendarDays    },
-  { key: 'pipeline', label: 'Pipeline',  Icon: Columns3        },
+  { key: 'panel',      label: 'Dashboard',  Icon: LayoutDashboard },
+  { key: 'semana',     label: 'Semana',     Icon: CalendarDays    },
+  { key: 'calendario', label: 'Calendario', Icon: Calendar        },
+  { key: 'pipeline',   label: 'Pipeline',   Icon: Columns3        },
 ]
 
 export default function EquipoCategoryPage({ category }: { category: TeamCategory }) {
@@ -1320,8 +1628,8 @@ export default function EquipoCategoryPage({ category }: { category: TeamCategor
   const authUser = auth?.authUser ?? null
   const T = useTokens(isDark)
   const meta     = CATEGORY_META[category]
-  const members  = team.filter(m => (m.category ?? 'Otro') === category)
-  const others   = team.filter(m => (m.category ?? 'Otro') !== category)
+  const members  = useMemo(() => team.filter(m => (m.category ?? 'Otro') === category), [team, category])
+  const others   = useMemo(() => team.filter(m => (m.category ?? 'Otro') !== category), [team, category])
   const [tab, setTab] = useState<TabKey>('panel')
   const [showAssign, setShowAssign] = useState(false)
   const [pendingItem, setPendingItem] = useState<WeekItem | null>(null)
@@ -1450,6 +1758,15 @@ export default function EquipoCategoryPage({ category }: { category: TeamCategor
               T={T}
               category={category}
               initialItem={pendingItem}
+              defaultResponsable={myMember?.name ?? null}
+            />
+          )}
+          {tab === 'calendario' && (
+            <CalendarioView
+              members={members}
+              contents={contents}
+              T={T}
+              category={category}
               defaultResponsable={myMember?.name ?? null}
             />
           )}

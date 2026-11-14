@@ -1,4 +1,5 @@
-import WeeklyProgressChart from "@/components/attendance/WeeklyProgressChart";
+import dynamic from "next/dynamic";
+const WeeklyProgressChart = dynamic(() => import("@/components/attendance/WeeklyProgressChart"), { ssr: false })
 import WeeklySummaryMiniCards from "@/components/attendance/WeeklySummaryMiniCards";
 
 interface CollaboratorDashboardProps {

@@ -1,11 +1,14 @@
 'use client'
 import React, { useState, useEffect, useRef } from 'react'
-import { X, Check, ExternalLink, ChevronDown, Trash2, Calendar } from 'lucide-react'
-import { doc, updateDoc, deleteDoc } from 'firebase/firestore'
-import { db } from '@/services/firebase/client'
+import { X, Check, ExternalLink, ChevronDown, Trash2, Calendar, ImagePlus, Loader2 } from 'lucide-react'
+import { doc, updateDoc, deleteDoc, arrayUnion, arrayRemove } from 'firebase/firestore'
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
+import { db, storage } from '@/services/firebase/client'
+import { compressImage } from '@/services/firebase/imageCompress'
 import { useHub } from '@/cmhub/context'
-import { getActividadAssignees } from '@/cmhub/activities'
-import type { HubActividad } from '@/cmhub/types'
+import { getActividadAssignees, ACTIV_CATEGORIES } from '@/cmhub/activities'
+import { useAutoSave, SaveBadge } from '@/cmhub/useAutoSave'
+import type { HubActividad, ActividadAdjunto } from '@/cmhub/types'
 
 interface Props {
   initial: HubActividad
@@ -18,11 +21,6 @@ const STATUS_META: Record<HubActividad['status'], { label: string; color: string
   en_curso:   { label: 'En curso',   color: '#1d4ed8', bg: '#dbeafe' },
   completado: { label: 'Completado', color: '#065f46', bg: '#d1fae5' },
 }
-
-const ACTIV_CATEGORIES = [
-  'Reunión', 'Llamada', 'Entrega', 'Revisión', 'Diseño',
-  'Edición', 'Estrategia', 'Investigación', 'Otro',
-]
 
 function useDropdown() {
   const [open, setOpen] = useState(false)
@@ -52,13 +50,35 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
 
   const [title, setTitle]           = useState(initial.title)
   const [status, setStatus]         = useState(initial.status)
+  const [completedAt, setCompletedAt] = useState<string | null>(initial.completedAt ?? null)
   const [assignees, setAssignees]   = useState<string[]>(getActividadAssignees(initial))
   const [category, setCategory]     = useState(initial.category ?? '')
   const [dueDate, setDueDate]       = useState(initial.dueDate ?? '')
   const [description, setDescription] = useState(initial.description ?? '')
   const [linkEntrega, setLinkEntrega] = useState(initial.linkEntrega ?? '')
-  const [saving, setSaving]         = useState(false)
+  const [adjuntos, setAdjuntos]     = useState<ActividadAdjunto[]>(initial.adjuntos ?? [])
+  const [uploading, setUploading]   = useState(false)
+  const [lightbox, setLightbox]     = useState<string | null>(null)
+  const fileInputRef                = useRef<HTMLInputElement>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // ── Autosave ──────────────────────────────────────────────────────────────
+  const [saveTick, setSaveTick]     = useState(0)
+  const tick = () => setSaveTick(t => t + 1)
+  const saveState = useAutoSave(saveTick, async () => {
+    if (!title.trim()) return
+    await updateDoc(doc(db, 'hubActividades', initial.id), {
+      title:       title.trim(),
+      status,
+      completedAt,
+      assignee:    assignees[0] || null,
+      assignees,
+      category:    category || null,
+      dueDate:     dueDate   || null,
+      description: description || null,
+      linkEntrega: linkEntrega || null,
+    })
+  })
 
   const statusDd   = useDropdown()
   const assigneeDd = useDropdown()
@@ -68,34 +88,55 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
 
   function addAssignee(name: string) {
     if (!assignees.some(a => a.trim().toLowerCase() === name.trim().toLowerCase())) {
-      setAssignees(prev => [...prev, name])
+      setAssignees(prev => [...prev, name]); tick()
     }
   }
   function removeAssignee(name: string) {
-    setAssignees(prev => prev.filter(a => a.trim().toLowerCase() !== name.trim().toLowerCase()))
+    setAssignees(prev => prev.filter(a => a.trim().toLowerCase() !== name.trim().toLowerCase())); tick()
   }
 
-  async function handleSave() {
-    if (!title.trim()) return
-    setSaving(true)
+  async function handleUpload(files: FileList | null) {
+    if (!files || files.length === 0) return
+    setUploading(true)
     try {
-      await updateDoc(doc(db, 'hubActividades', initial.id), {
-        title:       title.trim(),
-        status,
-        assignee:    assignees[0] || null,
-        assignees,
-        category:    category || null,
-        dueDate:     dueDate || null,
-        description: description || null,
-        linkEntrega: linkEntrega || null,
-      })
-      onClose()
+      for (const file of Array.from(files)) {
+        const isImage    = file.type.startsWith('image/')
+        const compressed = isImage ? await compressImage(file) : file
+        const ext     = compressed.name.split('.').pop() ?? 'bin'
+        const path    = `hubActividades/${initial.id}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`
+        const storRef = ref(storage, path)
+        await uploadBytes(storRef, compressed)
+        const url     = await getDownloadURL(storRef)
+        const adjunto: ActividadAdjunto = {
+          url, nombre: file.name,
+          tipo: isImage ? 'imagen' : 'archivo',
+          storagePath: path,
+        }
+        await updateDoc(doc(db, 'hubActividades', initial.id), { adjuntos: arrayUnion(adjunto) })
+        setAdjuntos(prev => [...prev, adjunto])
+      }
     } catch (e) {
-      console.error(e)
+      console.error('Error subiendo adjunto:', e)
     } finally {
-      setSaving(false)
+      setUploading(false)
     }
   }
+
+  async function handleRemoveAdjunto(adjunto: ActividadAdjunto) {
+    try {
+      await deleteObject(ref(storage, adjunto.storagePath))
+    } catch {
+      // si ya no existe en Storage, seguimos
+    }
+    await updateDoc(doc(db, 'hubActividades', initial.id), { adjuntos: arrayRemove(adjunto) })
+    setAdjuntos(prev => prev.filter(a => a.storagePath !== adjunto.storagePath))
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    handleUpload(e.dataTransfer.files)
+  }
+
 
   async function handleDelete() {
     await deleteDoc(doc(db, 'hubActividades', initial.id))
@@ -118,7 +159,12 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
             {statusDd.open && (
               <div className="absolute top-full left-0 mt-1 bg-white border border-[#e5e7eb] rounded-xl shadow-lg z-50 py-1 min-w-[150px]">
                 {(Object.keys(STATUS_META) as HubActividad['status'][]).map(s => (
-                  <button key={s} onClick={() => { setStatus(s); statusDd.setOpen(false) }}
+                  <button key={s} onClick={() => {
+                    setStatus(s)
+                    setCompletedAt(s === 'completado' ? (completedAt ?? new Date().toISOString()) : null)
+                    statusDd.setOpen(false)
+                    tick()
+                  }}
                     className="w-full flex items-center gap-2 px-3 py-2 hover:bg-[#f9fafb] cursor-pointer transition-colors">
                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-full flex-1 text-left"
                       style={{ background: STATUS_META[s].bg, color: STATUS_META[s].color }}>
@@ -135,7 +181,7 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
           <div className="flex-1 min-w-0">
             <textarea
               value={title}
-              onChange={e => setTitle(e.target.value)}
+              onChange={e => { setTitle(e.target.value); tick() }}
               rows={1}
               className="w-full text-[18px] font-bold text-[#111827] resize-none outline-none bg-transparent leading-snug"
               style={{ field_sizing: 'content' } as React.CSSProperties}
@@ -149,6 +195,7 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
 
           {/* Acciones */}
           <div className="flex items-center gap-1 shrink-0">
+            <SaveBadge state={saveState} />
             <button onClick={() => setConfirmDelete(true)}
               className="p-2 text-[#9ca3af] hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors cursor-pointer">
               <Trash2 size={15} />
@@ -222,12 +269,12 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
             </button>
             {categoryDd.open && (
               <div className="absolute top-full left-0 mt-1 bg-white border border-[#e5e7eb] rounded-xl shadow-lg z-50 py-1 min-w-full">
-                <button onClick={() => { setCategory(''); categoryDd.setOpen(false) }}
+                <button onClick={() => { setCategory(''); categoryDd.setOpen(false); tick() }}
                   className="w-full flex items-center px-3 py-2 hover:bg-[#f9fafb] text-[12px] text-[#9ca3af] cursor-pointer transition-colors">
                   Sin categoría
                 </button>
                 {ACTIV_CATEGORIES.map(c => (
-                  <button key={c} onClick={() => { setCategory(c); categoryDd.setOpen(false) }}
+                  <button key={c} onClick={() => { setCategory(c); categoryDd.setOpen(false); tick() }}
                     className="w-full flex items-center gap-2 px-3 py-2 hover:bg-[#f9fafb] cursor-pointer transition-colors">
                     <span className="text-[12px] text-[#111827] flex-1 text-left">{c}</span>
                     {c === category && <Check size={11} className="text-[#7c3aed] shrink-0" />}
@@ -243,7 +290,7 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
           <span className="text-[10px] font-bold text-[#b0b7c3] uppercase tracking-widest w-28 shrink-0">Fecha límite</span>
           <div className="flex items-center gap-2 flex-1">
             <Calendar size={13} className="text-[#9ca3af] shrink-0" />
-            <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)}
+            <input type="date" value={dueDate} onChange={e => { setDueDate(e.target.value); tick() }}
               className="flex-1 bg-[#f9fafb] border border-[#e5e7eb] rounded-xl px-3 py-2 text-[12px] text-[#111827] focus:outline-none focus:border-[#7c3aed] cursor-pointer" />
           </div>
         </div>
@@ -251,7 +298,7 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
         {/* Descripción */}
         <div className="py-3 flex flex-col gap-1.5">
           <span className="text-[10px] font-bold text-[#b0b7c3] uppercase tracking-widest">Descripción</span>
-          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+          <textarea value={description} onChange={e => { setDescription(e.target.value); tick() }} rows={3}
             placeholder="Agrega una descripción…"
             className="w-full bg-[#f9fafb] border border-[#e5e7eb] rounded-xl px-3 py-2 text-[13px] text-[#111827] placeholder-[#c8cdd6] resize-none focus:outline-none focus:border-[#7c3aed] transition-colors" />
         </div>
@@ -260,7 +307,7 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
         <div className="py-3 flex flex-col gap-1.5">
           <span className="text-[10px] font-bold text-[#b0b7c3] uppercase tracking-widest">Link de entrega</span>
           <div className="relative">
-            <input type="url" value={linkEntrega} onChange={e => setLinkEntrega(e.target.value)}
+            <input type="url" value={linkEntrega} onChange={e => { setLinkEntrega(e.target.value); tick() }}
               placeholder="https://drive.google.com/…"
               className="w-full bg-[#f9fafb] border border-[#e5e7eb] rounded-xl px-3 py-2 pr-9 text-[12px] text-[#111827] placeholder-[#c8cdd6] focus:outline-none focus:border-[#7c3aed] transition-colors" />
             {linkEntrega && (
@@ -279,17 +326,130 @@ export default function ActividadModal({ initial, onClose, mode = 'modal' }: Pro
           })()}
         </div>
 
+        {/* Capturas / Adjuntos */}
+        <div className="py-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-[#b0b7c3] uppercase tracking-widest">
+              Capturas y adjuntos
+            </span>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1 text-[11px] font-semibold text-[#7c3aed] hover:opacity-70 transition-opacity disabled:opacity-40 cursor-pointer">
+              {uploading
+                ? <><Loader2 size={11} className="animate-spin" /> Subiendo…</>
+                : <><ImagePlus size={11} /> Adjuntar</>}
+            </button>
+          </div>
+
+          {/* Zona drag & drop */}
+          <div
+            onDragOver={e => e.preventDefault()}
+            onDrop={handleDrop}
+            onClick={() => !uploading && fileInputRef.current?.click()}
+            className="border-2 border-dashed border-[#e5e7eb] rounded-xl px-4 py-3 flex flex-col items-center gap-1 cursor-pointer hover:border-[#7c3aed] hover:bg-[#faf8ff] transition-all"
+            style={{ display: adjuntos.length > 0 ? 'none' : 'flex' }}>
+            <ImagePlus size={18} className="text-[#d1d5db]" />
+            <span className="text-[11px] text-[#9ca3af]">Arrastra capturas aquí o haz clic</span>
+            <span className="text-[10px] text-[#c8cdd6]">PNG, JPG, GIF, PDF…</span>
+          </div>
+
+          {/* Grid de adjuntos */}
+          {adjuntos.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {/* Imágenes en grid */}
+              {adjuntos.filter(a => a.tipo === 'imagen').length > 0 && (
+                <div className="grid grid-cols-3 gap-1.5">
+                  {adjuntos.filter(a => a.tipo === 'imagen').map((adj, i) => (
+                    <div key={i} className="relative group rounded-xl overflow-hidden border border-[#e5e7eb]"
+                      style={{ aspectRatio: '4/3' }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={adj.url} alt={adj.nombre}
+                        className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                        onClick={() => setLightbox(adj.url)} />
+                      <button
+                        onClick={e => { e.stopPropagation(); handleRemoveAdjunto(adj) }}
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:bg-red-500">
+                        <X size={9} />
+                      </button>
+                    </div>
+                  ))}
+                  {/* Botón + más dentro del grid */}
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="rounded-xl border-2 border-dashed border-[#e5e7eb] flex items-center justify-center hover:border-[#7c3aed] hover:bg-[#faf8ff] transition-all cursor-pointer disabled:opacity-40"
+                    style={{ aspectRatio: '4/3' }}>
+                    <ImagePlus size={16} className="text-[#d1d5db]" />
+                  </button>
+                </div>
+              )}
+              {/* Archivos no-imagen */}
+              {adjuntos.filter(a => a.tipo === 'archivo').map((adj, i) => (
+                <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#f9fafb] border border-[#e5e7eb] group">
+                  <span className="text-[10px] font-bold text-[#9ca3af] uppercase bg-[#e5e7eb] px-1.5 py-0.5 rounded">
+                    {adj.nombre.split('.').pop()?.toUpperCase()}
+                  </span>
+                  <a href={adj.url} target="_blank" rel="noreferrer"
+                    className="flex-1 text-[11px] text-[#374151] truncate hover:text-[#7c3aed] transition-colors">
+                    {adj.nombre}
+                  </a>
+                  <button
+                    onClick={() => handleRemoveAdjunto(adj)}
+                    className="text-[#d1d5db] hover:text-red-500 transition-colors cursor-pointer opacity-0 group-hover:opacity-100">
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              ))}
+              {/* Botón añadir más si hay imágenes */}
+              {adjuntos.filter(a => a.tipo === 'imagen').length === 0 && (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="text-[11px] text-[#7c3aed] font-semibold hover:opacity-70 transition-opacity disabled:opacity-40 text-left cursor-pointer">
+                  + Añadir más
+                </button>
+              )}
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+            className="hidden"
+            onChange={e => handleUpload(e.target.files)}
+          />
+        </div>
+
       </div>
 
+      {/* Lightbox */}
+      {lightbox && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[70] p-4 cursor-zoom-out"
+          onClick={() => setLightbox(null)}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={lightbox} alt="Vista completa"
+            className="max-w-full max-h-full rounded-2xl shadow-2xl object-contain"
+            onClick={e => e.stopPropagation()} />
+          <button
+            onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Footer */}
-      <div className="px-6 py-4 border-t border-[#f3f4f6] flex items-center justify-between shrink-0">
+      <div className="px-6 py-4 border-t border-[#f3f4f6] flex items-center justify-end shrink-0">
         <button onClick={onClose}
           className="text-[13px] text-[#6b7280] hover:text-[#111827] transition-colors cursor-pointer">
-          Cancelar
-        </button>
-        <button onClick={handleSave} disabled={saving || !title.trim()}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#7c3aed] text-white text-[13px] font-semibold disabled:opacity-40 cursor-pointer hover:bg-[#5b21b6] transition-colors">
-          {saving ? 'Guardando…' : 'Guardar cambios'}
+          Cerrar
         </button>
       </div>
 

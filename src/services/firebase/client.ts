@@ -1,6 +1,7 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { getFirestore, initializeFirestore, persistentLocalCache, memoryLocalCache } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? "AIzaSyD-PLACEHOLDERKEY1234567890abcd",
@@ -13,5 +14,17 @@ const firebaseConfig = {
 
 const app = getApps().length > 0 ? getApps()[0] : initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+export { app };
+export const auth    = getAuth(app);
+export const storage = getStorage(app);
+
+// En dev usamos memoryLocalCache para evitar conflictos de IndexedDB con HMR.
+// En producción usamos persistentLocalCache para escribir offline y sincronizar al reconectar.
+export const db = (() => {
+  const cache = process.env.NODE_ENV === 'development' ? memoryLocalCache() : persistentLocalCache();
+  try {
+    return initializeFirestore(app, { localCache: cache });
+  } catch {
+    return getFirestore(app);
+  }
+})();

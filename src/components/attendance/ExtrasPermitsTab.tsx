@@ -1,6 +1,7 @@
 import { CalendarPlus, ChevronRight, Filter, PlusCircle } from "lucide-react";
 import { minutesToHHMM } from "@/lib/attendanceUtils";
 import type { CorrectionRequest, ExtraActivity, Request } from "@/lib/storage/attendanceStorage";
+import Badge from "@/components/ui/Badge";
 
 interface ExtrasPermitsTabProps {
   extras: ExtraActivity[];
@@ -13,19 +14,22 @@ interface ExtrasPermitsTabProps {
   pendingCount?: number;
 }
 
-function mapStatus(status: "PENDING" | "APPROVED" | "REJECTED") {
-  const colors = {
-    PENDING: "bg-[#fef3c7] text-[#b45309]",
-    APPROVED: "bg-[#dcfce7] text-[#15803d]",
-    REJECTED: "bg-[#fee2e2] text-[#b91c1c]",
-  };
-  return colors[status];
-}
+const STATUS_LABEL: Record<"PENDING" | "APPROVED" | "REJECTED", string> = {
+  PENDING:  "Pendiente",
+  APPROVED: "Aprobado",
+  REJECTED: "Rechazado",
+};
+
+const STATUS_TONE: Record<"PENDING" | "APPROVED" | "REJECTED", "warning" | "success" | "danger"> = {
+  PENDING:  "warning",
+  APPROVED: "success",
+  REJECTED: "danger",
+};
 
 const filterOptions = [
-  { value: "ALL", label: "Todo" },
-  { value: "PENDING", label: "Pendiente" },
-  { value: "APPROVED", label: "Aprobado" },
+  { value: "ALL",      label: "Todo"      },
+  { value: "PENDING",  label: "Pendiente" },
+  { value: "APPROVED", label: "Aprobado"  },
   { value: "REJECTED", label: "Rechazado" },
 ] as const;
 
@@ -51,11 +55,10 @@ export default function ExtrasPermitsTab({
     ...requests.map((item) => ({
       id: item.id,
       type: `Permiso · ${
-        item.type === "DIA_LIBRE"
-          ? "Día libre"
-          : item.type === "MEDICO"
-          ? "Médico"
-          : "Horas"
+        item.type === "DIA_LIBRE"    ? "Día libre"
+        : item.type === "VACACIONES" ? "Vacaciones"
+        : item.type === "MEDICO"     ? "Médico"
+        : "Horas"
       }`,
       date: item.date,
       detail: item.hours ? `${item.hours}h` : item.endDate ? `${item.date} → ${item.endDate}` : item.reason,
@@ -72,8 +75,7 @@ export default function ExtrasPermitsTab({
     })),
   ];
 
-  const filtered =
-    filter === "ALL" ? unified : unified.filter((item) => item.status === filter);
+  const filtered = filter === "ALL" ? unified : unified.filter((item) => item.status === filter);
   const computedPendingCount = unified.filter((item) => item.status === "PENDING").length;
   const totalPendingCount = pendingCount ?? computedPendingCount;
 
@@ -81,47 +83,49 @@ export default function ExtrasPermitsTab({
     <div className="space-y-4">
       <div className="grid gap-3 lg:grid-cols-2">
         <button
-          className="group flex items-center justify-between rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left transition hover:border-indigo-300 hover:bg-indigo-100"
+          className="group flex items-center justify-between rounded-xl border border-line bg-canvas px-4 py-3 text-left transition hover:border-primary/30 hover:bg-white"
           onClick={onOpenExtra}
           type="button"
         >
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-indigo-600 text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-white">
               <PlusCircle size={16} />
             </span>
             <div>
-              <p className="text-sm font-semibold text-slate-900">Registrar actividad extra</p>
-              <p className="text-xs text-slate-400">Agregar horas adicionales o eventos urgentes.</p>
+              <p className="text-sm font-semibold text-ink">Registrar actividad extra</p>
+              <p className="text-xs text-muted">Agregar horas adicionales o eventos urgentes.</p>
             </div>
           </div>
-          <ChevronRight className="text-indigo-500 transition group-hover:translate-x-0.5" size={16} />
+          <ChevronRight className="text-muted transition group-hover:translate-x-0.5" size={16} />
         </button>
         <button
-          className="group flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:bg-slate-50"
+          className="group flex items-center justify-between rounded-xl border border-line bg-white px-4 py-3 text-left transition hover:bg-canvas"
           onClick={onOpenRequest}
           type="button"
         >
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-600">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-line text-muted">
               <CalendarPlus size={16} />
             </span>
             <div>
-              <p className="text-sm font-semibold text-slate-900">Pedir libre / permiso</p>
-              <p className="text-xs text-slate-400">Vacaciones, permisos por horas o médico.</p>
+              <p className="text-sm font-semibold text-ink">Pedir libre / permiso</p>
+              <p className="text-xs text-muted">Vacaciones, permisos por horas o médico.</p>
             </div>
           </div>
-          <ChevronRight className="text-slate-400 transition group-hover:translate-x-0.5" size={16} />
+          <ChevronRight className="text-muted transition group-hover:translate-x-0.5" size={16} />
         </button>
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-canvas px-4 py-2 text-xs text-muted">
         <span>
           {totalPendingCount > 0
             ? `Tienes ${totalPendingCount} solicitudes pendientes.`
             : "No tienes solicitudes pendientes por revisar."}
         </span>
       </div>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+        <div className="flex items-center gap-2 text-xs font-semibold text-muted">
           <Filter size={14} />
           Filtrar
         </div>
@@ -130,7 +134,9 @@ export default function ExtrasPermitsTab({
             <button
               key={option.value}
               className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-                filter === option.value ? "bg-indigo-600 text-white" : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+                filter === option.value
+                  ? "bg-primary text-white"
+                  : "border border-line bg-white text-muted hover:bg-canvas"
               }`}
               onClick={() => onFilterChange(option.value)}
               type="button"
@@ -140,32 +146,34 @@ export default function ExtrasPermitsTab({
           ))}
         </div>
       </div>
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="divide-y divide-slate-100">
-        {filtered.slice(0, 6).map((item) => (
-          <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition hover:bg-slate-50">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">{item.type}</p>
-              <p className="text-xs text-slate-400">
-                {item.date} · {item.detail}
-              </p>
+
+      <div className="overflow-hidden rounded-xl border border-line bg-white">
+        <div className="divide-y divide-line">
+          {filtered.slice(0, 6).map((item) => (
+            <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition hover:bg-canvas">
+              <div>
+                <p className="text-sm font-semibold text-ink">{item.type}</p>
+                <p className="text-xs text-muted">
+                  {item.date} · {item.detail}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge
+                  tone={STATUS_TONE[item.status]}
+                  label={STATUS_LABEL[item.status]}
+                />
+                <button className="flex items-center gap-1 text-xs font-semibold text-primary hover:underline">
+                  {item.actionLabel}
+                  <ChevronRight size={14} />
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${mapStatus(item.status)}`}>
-                {item.status}
-              </span>
-              <button className="flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:underline">
-                {item.actionLabel}
-                <ChevronRight size={14} />
-              </button>
+          ))}
+          {filtered.length === 0 ? (
+            <div className="px-4 py-8 text-center text-sm text-muted">
+              Aún no tienes solicitudes. Registra una actividad extra o pide un permiso.
             </div>
-          </div>
-        ))}
-        {filtered.length === 0 ? (
-          <div className="px-4 py-8 text-center text-sm text-slate-400">
-            Aún no tienes solicitudes. Registra una actividad extra o pide un permiso.
-          </div>
-        ) : null}
+          ) : null}
         </div>
       </div>
     </div>

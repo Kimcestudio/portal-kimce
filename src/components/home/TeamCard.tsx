@@ -22,8 +22,8 @@ export default function TeamCard({ members, visibleCount = 8 }: TeamCardProps) {
 
   return (
     <DashboardCard
-      title={`Equipo (${members.length})`}
-      subtitle="Colaboradores activos"
+      title={`Equipo activo (${onlineMembers.length})`}
+      subtitle={`${members.length} colaboradores en total`}
       rightSlot={hiddenCount > 0 ? <button className="text-xs font-semibold text-indigo-600 hover:text-indigo-700">Ver más</button> : null}
       className="lg:col-span-2"
     >

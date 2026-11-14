@@ -15,6 +15,7 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { atomicUserWrite } from "@/lib/user/syncProfile";
 import {
   Building2,
   CalendarDays,
@@ -654,14 +655,7 @@ export default function AdminUsersPage() {
       if (!currentUser) {
         throw new Error("No se encontró el usuario seleccionado.");
       }
-      const userRef = doc(db, "users", uid);
-      await updateDoc(userRef, {
-        ...payload,
-        updatedAt: serverTimestamp(),
-      });
-      await setDoc(doc(db, "userDirectory", uid), buildDirectoryPayload(currentUser, payload), {
-        merge: true,
-      });
+      await atomicUserWrite(uid, payload, buildDirectoryPayload(currentUser, payload));
       setToast({ message: "Cambios guardados.", tone: "success" });
       setError(null);
     } catch (err) {
@@ -700,13 +694,13 @@ export default function AdminUsersPage() {
       }
 
       setToast({
-        message: `Directorio publico sincronizado para ${users.length} usuario(s).`,
+        message: `Directorio público sincronizado para ${users.length} usuario(s).`,
         tone: "success",
       });
     } catch (err) {
       console.error("[admin/users] Error syncing userDirectory", err);
       const message =
-        err instanceof Error ? err.message : "No se pudo sincronizar el directorio publico.";
+        err instanceof Error ? err.message : "No se pudo sincronizar el directorio público.";
       setToast({ message, tone: "error" });
     } finally {
       setSyncingDirectory(false);
@@ -2254,6 +2248,17 @@ export default function AdminUsersPage() {
                           <label className="flex flex-col gap-1">
                             <span className="text-xs font-semibold text-slate-500">Estado</span>
                             <input className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500" value={formatStatusLabel(selectedUser.isActive)} readOnly />
+                          </label>
+                          <label className="flex flex-col gap-1">
+                            <span className="text-xs font-semibold text-slate-500">Responsable de área</span>
+                            <select
+                              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+                              value={selectedUser.isAreaLead ? "yes" : "no"}
+                              onChange={(e) => void updateUserDoc(selectedUser.uid, { isAreaLead: e.target.value === "yes" })}
+                            >
+                              <option value="no">No</option>
+                              <option value="yes">Sí — ve checklist de cierre de mes</option>
+                            </select>
                           </label>
                         </div>
                       </div>

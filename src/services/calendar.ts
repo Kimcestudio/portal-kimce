@@ -6,6 +6,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  updateDoc,
   type DocumentData,
 } from "firebase/firestore";
 import { db } from "@/services/firebase/client";
@@ -133,4 +134,12 @@ export async function deleteCalendarHoliday(id: string) {
 
 export async function deleteCalendarEvent(id: string) {
   await deleteDoc(doc(eventsRef, id));
+}
+
+export async function updateCalendarHoliday(id: string, fields: Partial<Omit<CalendarHolidayRecord, "id">>) {
+  await updateDoc(doc(holidaysRef, id), fields);
+}
+
+export async function updateCalendarEvent(id: string, fields: Partial<Omit<CalendarEventRecord, "id">>) {
+  await updateDoc(doc(eventsRef, id), fields);
 }

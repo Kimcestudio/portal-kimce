@@ -43,3 +43,49 @@ export function isInRange(date: Date, startISO: string, endISO: string) {
 export function formatMonthLabel(date: Date) {
   return date.toLocaleDateString("es-ES", { month: "long", year: "numeric" });
 }
+
+export function getWeekStart(date: Date): Date {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d;
+}
+
+export function formatWeekLabel(weekStart: Date): string {
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const startStr = weekStart.toLocaleDateString("es-PE", { day: "numeric", month: "short" });
+  const endStr = weekEnd.toLocaleDateString("es-PE", { day: "numeric", month: "short", year: "numeric" });
+  return `${startStr} – ${endStr}`;
+}
+
+export function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** Detecta si una descripción de evento tiene links de Teams o Zoom embebidos. */
+export function hasMeetingLinks(description: string): boolean {
+  return /teams\.microsoft\.com|zoom\.us/i.test(description);
+}
+
+/** Detecta si un texto contiene marcado HTML (tags, links, etc.). */
+export function hasHtmlMarkup(text: string): boolean {
+  return /<[a-z][^>]*>/i.test(text);
+}
+
+/**
+ * Sanitiza el HTML de la descripción de un evento para renderizarlo de forma segura.
+ * Fuerza target="_blank" en todos los links y elimina handlers JS.
+ */
+export function safeDescriptionHtml(html: string): string {
+  return html
+    .replace(/\s+on\w+\s*=\s*"[^"]*"/gi, "")
+    .replace(/href\s*=\s*"javascript:[^"]*"/gi, 'href="#"')
+    .replace(/<a(\s[^>]*)>/gi, (_m, attrs: string) => {
+      const stripped = attrs
+        .replace(/\btarget\s*=\s*"[^"]*"/gi, "")
+        .replace(/\brel\s*=\s*"[^"]*"/gi, "");
+      return `<a${stripped} target="_blank" rel="noopener noreferrer">`;
+    });
+}

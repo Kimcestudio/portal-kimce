@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://kimce-app.web.app", "https://kimce-app.firebaseapp.com"],
+    "method": ["GET", "HEAD", "PUT", "POST", "DELETE"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "Authorization", "Content-Length"]
+  }
+]

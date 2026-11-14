@@ -16,21 +16,58 @@ service cloud.firestore {
       );
     }
 
+    // Miembro del equipo KIMCE (admin o collab) — excluye clientes
+    function isTeamMember() {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role in ['admin', 'collab', 'ADMIN'];
+    }
+
+    // Verifica que el usuario logueado es cliente y tiene la marca en su lista
+    function isClientOfBrand(brandId) {
+      return isSignedIn()
+        && userDoc(request.auth.uid).data.role == "client"
+        && brandId in userDoc(request.auth.uid).data.brandIds;
+    }
+
+    function managesProject(id) {
+      return isTeamMember() && (isAdmin()
+        || request.auth.uid in get(/databases/$(database)/documents/cmhub_proyectos/$(id)).data.get('ownerIds', []));
+    }
+    function openProject(id) {
+      return !get(/databases/$(database)/documents/cmhub_proyectos/$(id)).data.get('archived', false);
+    }
+    function validTask(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() <= 1000
+        && data.status in ['pendiente', 'en_curso', 'completado']
+        && data.get('progress', 0) is number && data.get('progress', 0) >= 0 && data.get('progress', 0) <= 100
+        && (data.get('startDate', '') == '' || (data.get('dueDate', '') != '' && data.startDate <= data.dueDate))
+        && data.get('assigneeIds', []) is list && data.get('dependencies', []) is list;
+    }
+    function assignedTask(data) {
+      return isTeamMember() && request.auth.uid in data.get('assigneeIds', []);
+    }
+
     match /users/{uid} {
       allow read: if isSignedIn() && request.auth.uid == uid;
-      allow write: if isSignedIn() && request.auth.uid == uid;
+      // A profile must never grant its owner administrative privileges.
+      allow create: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.role == 'collab'
+        && request.resource.data.get('approved', false) == false
+        && request.resource.data.get('isActive', false) == false;
+      allow update: if isSignedIn() && request.auth.uid == uid
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'approved', 'isActive', 'brandIds', 'active']);
       allow read, list: if isAdmin();
       allow write: if isAdmin();
     }
 
     match /userDirectory/{uid} {
-      allow read, list: if isSignedIn();
+      allow read, list: if isTeamMember();
       allow write: if isSignedIn() && request.auth.uid == uid;
       allow write: if isAdmin();
     }
 
     match /workSchedules/{scheduleId} {
-      allow read, list: if isSignedIn();
+      allow read, list: if isTeamMember();
       allow write: if isAdmin();
     }
 
@@ -60,7 +97,7 @@ service cloud.firestore {
     }
 
     match /announcements/{docId} {
-      allow read, list: if isSignedIn();
+      allow read, list: if isTeamMember();
       allow write: if isAdmin();
     }
 
@@ -70,22 +107,33 @@ service cloud.firestore {
     }
 
     match /calendarHolidays/{docId} {
-      allow read, list: if isSignedIn();
+      allow read, list: if isTeamMember();
       allow write: if isAdmin();
     }
 
     match /calendarEvents/{docId} {
-      allow read, list: if isSignedIn();
+      allow read, list: if isTeamMember();
       allow write: if isAdmin();
     }
 
     match /orgTeams/{docId} {
-      allow read, list: if isSignedIn();
+      allow read, list: if isTeamMember();
       allow write: if isAdmin();
     }
 
+    match /monthEndTasks/{docId} {
+      allow read, list: if isTeamMember();
+      allow write: if isAdmin();
+    }
+
+    match /monthEndChecks/{docId} {
+      allow read, list: if isTeamMember();
+      allow create: if isTeamMember();
+      allow delete: if isTeamMember();
+    }
+
     match /users/{uid}/hours/{hourId} {
-      allow read, write: if isSignedIn() && request.auth.uid == uid;
+      allow read, write: if isTeamMember() && request.auth.uid == uid;
     }
 
     // collectionGroup query coverage for admin (collectionGroup requires /{path=**}/ syntax)
@@ -94,72 +142,212 @@ service cloud.firestore {
     }
 
     match /hourRequests/{requestId} {
-      allow create: if isSignedIn() && request.auth.uid == request.resource.data.uid;
-      allow read, list: if isSignedIn() && request.auth.uid == resource.data.uid;
-      allow update: if isSignedIn() && request.auth.uid == resource.data.uid;
+      allow create: if isTeamMember() && request.auth.uid == request.resource.data.uid;
+      allow read, list: if isTeamMember() && request.auth.uid == resource.data.uid;
+      allow update: if isTeamMember() && request.auth.uid == resource.data.uid;
       allow read, list, update, delete: if isAdmin();
     }
 
     match /extraActivities/{activityId} {
-      allow create: if isSignedIn() && request.auth.uid == request.resource.data.uid;
-      allow read, list: if isSignedIn() && request.auth.uid == resource.data.uid;
-      allow update: if isSignedIn() && request.auth.uid == resource.data.uid;
+      allow create: if isTeamMember() && request.auth.uid == request.resource.data.uid;
+      allow read, list: if isTeamMember() && request.auth.uid == resource.data.uid;
+      allow update: if isTeamMember() && request.auth.uid == resource.data.uid;
       allow read, list, update, delete: if isAdmin();
     }
 
     match /users/{uid}/hourRequests/{requestId} {
-      allow create: if isSignedIn() && request.auth.uid == uid;
-      allow read, list: if isSignedIn() && request.auth.uid == uid;
-      allow update: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isTeamMember() && request.auth.uid == uid;
+      allow read, list: if isTeamMember() && request.auth.uid == uid;
+      allow update: if isTeamMember() && request.auth.uid == uid;
       allow read, list, update, delete: if isAdmin();
     }
 
     match /users/{uid}/extraActivities/{activityId} {
-      allow create: if isSignedIn() && request.auth.uid == uid;
-      allow read, list: if isSignedIn() && request.auth.uid == uid;
-      allow update: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isTeamMember() && request.auth.uid == uid;
+      allow read, list: if isTeamMember() && request.auth.uid == uid;
+      allow update: if isTeamMember() && request.auth.uid == uid;
       allow read, list, update, delete: if isAdmin();
     }
 
     match /correctionRequests/{docId} {
-      allow create: if isSignedIn() && request.auth.uid == request.resource.data.uid;
-      allow read: if isSignedIn() && request.auth.uid == resource.data.uid;
+      allow create: if isTeamMember() && request.auth.uid == request.resource.data.uid;
+      allow read: if isTeamMember() && request.auth.uid == resource.data.uid;
       allow read, list, update, delete: if isAdmin();
     }
 
     match /timeEntries/{docId} {
-      allow read, list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow read, list: if isTeamMember() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isTeamMember() && request.resource.data.uid == request.auth.uid;
+      allow update: if isTeamMember() && resource.data.uid == request.auth.uid;
       allow delete: if isAdmin();
     }
 
-    // CM Hub — Content management tool (internal use, signed-in only)
+    // CM Hub — Content management tool (interno, solo equipo KIMCE)
     match /cmhub_brands/{docId} {
-      allow read, list: if isSignedIn() || resource.data.calendarShareEnabled == true;
-      allow write: if isSignedIn();
+      allow get: if isTeamMember() || resource.data.get('calendarShareEnabled', false) == true || isClientOfBrand(docId);
+      allow list: if isTeamMember() || resource.data.calendarShareEnabled == true;
+      allow write: if isTeamMember();
     }
     match /cmhub_contents/{docId} {
-      allow read, list: if isSignedIn() || get(/databases/$(database)/documents/cmhub_brands/$(resource.data.brandId)).data.calendarShareEnabled == true;
-      allow write: if isSignedIn();
+      allow read, list: if isTeamMember() || get(/databases/$(database)/documents/cmhub_brands/$(resource.data.brandId)).data.calendarShareEnabled == true;
+      allow write: if isTeamMember();
+      // Aprobacion: desde link público (sin login) o cliente logueado con acceso a la marca.
+      // Solo puede tocar 4 campos y la pieza debe estar en revision/aprobado.
+      allow update: if (
+          (!isSignedIn() && get(/databases/$(database)/documents/cmhub_brands/$(resource.data.brandId)).data.calendarShareEnabled == true)
+          || isClientOfBrand(resource.data.brandId)
+        )
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approvalStatus', 'approvedAt', 'approvedBy', 'status'])
+        && resource.data.status in ['revision', 'aprobado']
+        && request.resource.data.status in ['revision', 'aprobado'];
     }
-    match /cmhub_tareas_diarias/{docId} {
-      allow read, list, write: if isSignedIn();
+    match /cmhub_comments/{docId} {
+      allow read, list: if isTeamMember() || get(/databases/$(database)/documents/cmhub_brands/$(resource.data.brandId)).data.calendarShareEnabled == true;
+      allow create: if isTeamMember() || get(/databases/$(database)/documents/cmhub_brands/$(request.resource.data.brandId)).data.calendarShareEnabled == true;
+      allow update, delete: if isTeamMember();
     }
-    match /cmhub_proyectos/{docId} {
-      allow read, list, write: if isSignedIn();
-    }
-    match /cmhub_mensajes_sala/{docId} {
-      allow read, list, write: if isSignedIn();
-    }
-    match /hubActividades/{docId} {
-      allow read, list, write: if isSignedIn();
+    // Solicitudes de contenido enviadas desde el portal público o por clientes logueados
+    match /client_content_requests/{docId} {
+      // Crear: admin, visitante público con marca compartida, o cliente logueado de esa marca
+      allow create: if isAdmin()
+        || get(/databases/$(database)/documents/cmhub_brands/$(request.resource.data.brandId)).data.calendarShareEnabled == true
+        || isClientOfBrand(request.resource.data.brandId);
+      // Leer: admin, colaborador de equipo, marca compartida (link público), o cliente logueado de esa marca
+      allow read, list: if isAdmin()
+        || isTeamMember()
+        || get(/databases/$(database)/documents/cmhub_brands/$(resource.data.brandId)).data.calendarShareEnabled == true
+        || isClientOfBrand(resource.data.brandId);
+      // Actualizar: admin sin restricción; collab puede marcar entrega (status, update, updatedAt);
+      // visitante/cliente puede comentar siempre y editar el contenido de su solicitud mientras siga pendiente.
+      allow update: if isAdmin()
+        || (isTeamMember()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'update', 'updatedAt', 'assignedTo', 'assignedToName']))
+        || ((get(/databases/$(database)/documents/cmhub_brands/$(resource.data.brandId)).data.calendarShareEnabled == true
+              || isClientOfBrand(resource.data.brandId))
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['clientNote', 'clientNoteAt', 'clientNotes']))
+        || ((get(/databases/$(database)/documents/cmhub_brands/$(resource.data.brandId)).data.calendarShareEnabled == true
+              || isClientOfBrand(resource.data.brandId))
+          && resource.data.status == 'pendiente'
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['deadline', 'requerimiento', 'objetivo', 'canal', 'entregables',
+                         'formato', 'pais', 'requestedBy', 'titulo', 'updatedAt']));
+      allow delete: if isAdmin();
     }
 
-    // Notificaciones por usuario — solo las propias; las crea la Cloud Function (Admin SDK).
+    match /cmhub_puntos/{docId} {
+      allow read, list: if isTeamMember();
+      allow write: if isTeamMember();
+    }
+    match /cmhub_puntos_log/{docId} {
+      allow read, list: if isTeamMember();
+      allow create: if isTeamMember();
+    }
+
+    match /cmhub_tareas_diarias/{docId} {
+      allow read, list, write: if isTeamMember();
+    }
+    match /cmhub_proyectos/{docId} {
+      allow read: if isTeamMember();
+      // isAdmin() para proyectos nuevos; ownerIds para conversión de fase a proyecto independiente
+      allow create: if isAdmin() || (isTeamMember() && request.auth.uid in request.resource.data.get('ownerIds', []));
+      allow update: if managesProject(docId) || (
+        isTeamMember()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tasksMigrated', 'taskRevision', 'updatedAt'])
+      );
+      // Projects are archived; permanent deletion is deliberately unavailable to clients.
+      allow delete: if false;
+    }
+    match /projectShares/{token} {
+      allow read: if isTeamMember() && managesProject(resource.data.projectId);
+      allow create: if managesProject(request.resource.data.projectId)
+        && request.resource.data.keys().hasOnly(['projectId', 'createdAt']);
+      allow update: if false;
+      allow delete: if managesProject(resource.data.projectId);
+    }
+    match /cmhub_mensajes_sala/{docId} {
+      allow read, list, write: if isTeamMember();
+    }
+    match /salaCallEvents/{docId} {
+      allow read, list: if isTeamMember();
+      allow create: if isTeamMember();
+    }
+    match /hubActividades/{docId} {
+      allow read: if isTeamMember();
+      allow create: if validTask(request.resource.data) && isTeamMember()
+        && (request.resource.data.get('proyectoId', null) == null
+          || openProject(request.resource.data.proyectoId));
+      allow update: if validTask(request.resource.data) && isTeamMember() && (
+        (resource.data.get('proyectoId', null) == null && request.resource.data.get('proyectoId', null) == null)
+        || (resource.data.get('proyectoId', null) != null
+          && request.resource.data.proyectoId == resource.data.proyectoId
+          && openProject(resource.data.proyectoId)
+          && (managesProject(resource.data.proyectoId)
+            || (assignedTask(resource.data) && !resource.data.get('isGroup', false)
+              && !resource.data.get('archived', false)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status', 'progress', 'blockedReason', 'description', 'linkEntrega', 'adjuntos',
+                'completedAt', 'deliveryTiming', 'updatedAt', 'updatedBy', 'completionSource'
+              ]))))
+        || (resource.data.get('proyectoId', null) == null && request.resource.data.get('proyectoId', null) != null
+          && managesProject(request.resource.data.proyectoId) && openProject(request.resource.data.proyectoId))
+        // Conversión de fase a proyecto independiente: manager del origen puede mover actividades
+        // al destino si este no existe aún (proyecto nuevo en el mismo batch) o si también lo gestiona
+        || (resource.data.get('proyectoId', null) != null
+          && request.resource.data.get('proyectoId', null) != null
+          && request.resource.data.proyectoId != resource.data.proyectoId
+          && managesProject(resource.data.proyectoId)
+          && openProject(resource.data.proyectoId)
+          && (!exists(/databases/$(database)/documents/cmhub_proyectos/$(request.resource.data.proyectoId))
+              || managesProject(request.resource.data.proyectoId)))
+      );
+      allow delete: if isTeamMember() && (
+        resource.data.get('proyectoId', null) == null
+        || managesProject(resource.data.proyectoId)
+      );
+    }
+    match /hubFlujos/{docId} {
+      allow read, list, write: if isTeamMember();
+    }
+    // WorkLogs — registro de actividad diaria por colaborador
+    // El collab solo puede escribir/leer/editar sus propios logs; el admin puede leer todos.
+    match /cmhub_worklogs/{docId} {
+      allow create: if isTeamMember() && request.resource.data.userId == request.auth.uid;
+      allow read, list: if isTeamMember() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow update, delete: if isTeamMember() && resource.data.userId == request.auth.uid;
+      allow read, list: if isAdmin();
+    }
+
+    // Notificaciones por usuario — solo las propias
     match /notifications/{docId} {
-      allow read, list, update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
-      allow create: if false;
+      // list: la query ya filtra por userId == auth.uid en el cliente; Firestore no puede evaluar
+      // resource.data en list con colección vacía → allow list para team members es seguro.
+      allow list: if isTeamMember();
+      allow get, update, delete: if isTeamMember() && resource.data.userId == request.auth.uid;
+      allow create: if isTeamMember();
+    }
+
+    // Reuniones (grabaciones Fathom + manuales) — equipo lee, admin escribe
+    match /hubReuniones/{docId} {
+      allow read, list: if isTeamMember();
+      allow write: if isAdmin();
+    }
+
+    // Configuración de integraciones (Google Calendar, etc.) — solo admin
+    match /config/{docId} {
+      allow read: if isTeamMember();
+      allow write: if isAdmin();
+    }
+
+    // Tokens OAuth personales — solo el propietario puede leer; solo Functions (admin SDK) escribe
+    match /users/{uid}/private/{docId} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Estados temporales del flujo OAuth — solo Functions
+    match /oauthStates/{stateId} {
+      allow read, write: if false;
     }
   }
 }

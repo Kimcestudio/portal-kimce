@@ -22,28 +22,26 @@ import {
   UserX,
   Users,
 } from "lucide-react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import dynamic from "next/dynamic";
+const HoursBarChart = dynamic(() => import("@/components/attendance/HoursBarChart"), { ssr: false })
 import PageHeader from "@/components/PageHeader";
 import UserAvatar from "@/components/common/UserAvatar";
 import CollaboratorDashboard from "@/components/attendance/CollaboratorDashboard";
 import { useAuth } from "@/components/auth/AuthProvider";
-import AdminWeeklyAlerts from "@/app/admin/attendance/AdminWeeklyAlerts";
+import AdminWeeklyAlerts, { type EnrichedAlertItem, type AlertType } from "@/app/admin/attendance/AdminWeeklyAlerts";
 import AdminAttendanceMonitorTabs from "@/app/admin/attendance/AdminAttendanceMonitorTabs";
 import {
+  expectedMinutesForDate,
   formatISODate,
   formatTime,
+  getWeekKey,
   getWeekStartMonday,
   minutesToHHMM,
 } from "@/lib/attendanceUtils";
 import { getUserDisplayName, useAdminHoursMonitor } from "@/app/admin/hours/useAdminHoursMonitor";
+import { addDoc, collection, doc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from "firebase/firestore";
+import { db } from "@/services/firebase/client";
+import { createCalendarHoliday, deleteCalendarHoliday } from "@/services/calendar";
 
 type AdminHoursTab = "dashboard" | "team" | "individual" | "reports";
 
@@ -80,24 +78,6 @@ function barGradient(pct: number) {
       : "linear-gradient(to right, #fb7185, #e11d48)";
 }
 
-const GlobalHoursTooltip = ({
-  active,
-  payload,
-}: {
-  active?: boolean;
-  payload?: { payload: { name: string; workedLabel: string; expectedLabel: string } }[];
-}) => {
-  if (!active || !payload?.length) return null;
-  const row = payload[0]?.payload;
-  if (!row) return null;
-  return (
-    <div className="rounded-xl bg-slate-900 px-3 py-2 text-xs text-white shadow-xl">
-      <p className="font-semibold">{row.name}</p>
-      <p className="text-white/70">Trabajadas: {row.workedLabel}</p>
-      <p className="text-white/70">Objetivo: {row.expectedLabel}</p>
-    </div>
-  );
-};
 
 const TAB_ITEMS: { id: AdminHoursTab; label: string; icon: React.ReactNode }[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard size={14} /> },
@@ -136,6 +116,11 @@ export default function AdminHoursPage() {
     handleCleanOpenShifts,
     handleSelectCollaborator,
     handleDeleteCollaboratorData,
+    applyingLunchFix,
+    handleRetroactiveLunchFix,
+    revertingLunchFix,
+    handleRevertWrongLunchFix,
+    todayNoBreak,
   } = useAdminHoursMonitor(user?.role);
 
   const [activeTab, setActiveTab] = useState<AdminHoursTab>("dashboard");
@@ -143,8 +128,22 @@ export default function AdminHoursPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [selectedDayISO, setSelectedDayISO] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [kpiDetail, setKpiDetail] = useState<null | "horas" | "saldo" | "balance" | "dias">(null);
   const [showTeamChart, setShowTeamChart] = useState(false);
   const [showCollabView, setShowCollabView] = useState(false);
+  const [dayCtx, setDayCtx] = useState<{
+    dateISO: string;
+    x: number;
+    y: number;
+    phase: "menu" | "feriado_name" | "edit_record" | "move_record";
+    feriadoName: string;
+    editCheckIn: string;
+    editCheckOut: string;
+    editBreakStart: string;
+    editBreakEnd: string;
+    moveTargetDate: string;
+  } | null>(null);
+  const [ctxSaving, setCtxSaving] = useState(false);
 
   const toggleSection = (key: string) =>
     setExpandedSection((prev) => (prev === key ? null : key));
@@ -196,6 +195,256 @@ export default function AdminHoursPage() {
     return detail.rows.find((row) => row.dateISO === selectedDayISO) ?? detail.rows[0] ?? null;
   }, [detail, selectedDayISO]);
 
+  useEffect(() => {
+    if (!dayCtx) return;
+    const handler = (e: MouseEvent) => {
+      const el = document.getElementById("day-ctx-menu");
+      if (el && !el.contains(e.target as Node)) setDayCtx(null);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [!!dayCtx]);
+
+  const handleDayContextMenu = (e: React.MouseEvent, dateISO: string) => {
+    e.preventDefault();
+    setDayCtx({ dateISO, x: e.clientX, y: e.clientY, phase: "menu", feriadoName: "", editCheckIn: "", editCheckOut: "", editBreakStart: "", editBreakEnd: "", moveTargetDate: "" });
+  };
+
+  // ── Helpers para obtener el registro del día del colaborador enfocado ─────
+  const getDayRecord = (dateISO: string) =>
+    detail?.rows.find((r) => r.dateISO === dateISO)?.records[0] ?? null;
+
+  const toLocalTime = (iso: string | null | undefined, dateISO: string) => {
+    if (!iso) return "";
+    // Reconstruct the time in local wall clock (the record timestamp is stored in local ISO)
+    const d = new Date(iso);
+    const h = String(d.getHours()).padStart(2, "0");
+    const m = String(d.getMinutes()).padStart(2, "0");
+    return `${h}:${m}`;
+  };
+
+  const openEditPhase = (dateISO: string) => {
+    const record = getDayRecord(dateISO);
+    const firstBreak = (record?.breaks ?? []).find((b) => b.startAt);
+    setDayCtx((prev) =>
+      prev ? {
+        ...prev,
+        phase: "edit_record",
+        editCheckIn: toLocalTime(record?.checkInAt, dateISO),
+        editCheckOut: toLocalTime(record?.checkOutAt, dateISO),
+        editBreakStart: firstBreak ? toLocalTime(firstBreak.startAt, dateISO) : "",
+        editBreakEnd: firstBreak?.endAt ? toLocalTime(firstBreak.endAt, dateISO) : "",
+      } : null,
+    );
+  };
+
+  const handleDeleteDayRecord = async (dateISO: string) => {
+    const uid = focusedSummary?.user?.uid;
+    const name = focusedSummary ? getUserDisplayName(focusedSummary.user).split(" ")[0] : "colaborador";
+    if (!uid) return;
+    if (!window.confirm(`¿Eliminar el registro del ${dateISO} para ${name}? Esta acción es irreversible.`)) return;
+    setCtxSaving(true);
+    try {
+      const batch = writeBatch(db);
+      const hoursSnap = await getDocs(query(collection(db, "users", uid, "hours"), where("date", "==", dateISO)));
+      hoursSnap.docs.forEach((d) => batch.delete(d.ref));
+      const teSnap = await getDocs(query(collection(db, "timeEntries"), where("uid", "==", uid), where("dayKey", "==", dateISO)));
+      teSnap.docs.forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+      setDayCtx(null);
+    } finally {
+      setCtxSaving(false);
+    }
+  };
+
+  const handleSaveEditRecord = async () => {
+    if (!dayCtx || dayCtx.phase !== "edit_record") return;
+    const uid = focusedSummary?.user?.uid;
+    if (!uid || !dayCtx.editCheckIn || !dayCtx.editCheckOut) return;
+    const { dateISO, editCheckIn, editCheckOut, editBreakStart, editBreakEnd } = dayCtx;
+    const checkInAt = new Date(`${dateISO}T${editCheckIn}:00`).toISOString();
+    const checkOutAt = new Date(`${dateISO}T${editCheckOut}:00`).toISOString();
+    if (new Date(checkInAt) >= new Date(checkOutAt)) return;
+    const elapsedMins = Math.round((new Date(checkOutAt).getTime() - new Date(checkInAt).getTime()) / 60000);
+    const breaks = (editBreakStart && editBreakEnd)
+      ? [{ startAt: new Date(`${dateISO}T${editBreakStart}:00`).toISOString(), endAt: new Date(`${dateISO}T${editBreakEnd}:00`).toISOString() }]
+      : [];
+    const breakMinutes = breaks.length > 0
+      ? Math.max(0, Math.round((new Date(breaks[0].endAt).getTime() - new Date(breaks[0].startAt).getTime()) / 60000))
+      : 0;
+    const totalMinutes = Math.max(0, elapsedMins - breakMinutes);
+    setCtxSaving(true);
+    try {
+      // Find the real doc (handles IDs that differ from the ${uid}_${date} convention)
+      const hoursSnap = await getDocs(query(collection(db, "users", uid, "hours"), where("date", "==", dateISO)));
+      const hoursDocRef = hoursSnap.docs[0]?.ref ?? doc(db, "users", uid, "hours", `${uid}_${dateISO}`);
+      await setDoc(hoursDocRef, {
+        uid, date: dateISO, weekKey: getWeekKey(dateISO),
+        checkInAt, checkOutAt, breaks,
+        totalMinutes, hours: Math.round((totalMinutes / 60) * 10) / 10,
+        status: "CLOSED", updatedAt: serverTimestamp(),
+      });
+      // Delete stale timeEntries for this day (admin can delete; can't update other users' entries)
+      for (const field of ["uid", "userId"] as const) {
+        const teSnap = await getDocs(query(collection(db, "timeEntries"), where(field, "==", uid), where("dayKey", "==", dateISO)));
+        if (teSnap.empty) continue;
+        const teBatch = writeBatch(db);
+        teSnap.docs.forEach((d) => teBatch.delete(d.ref));
+        await teBatch.commit();
+      }
+      setDayCtx(null);
+    } catch (err) {
+      console.error("Error guardando horario:", err);
+      window.alert("Error al guardar. Revisa la consola para más detalles.");
+    } finally {
+      setCtxSaving(false);
+    }
+  };
+
+  const handleApplyLunchForDay = async (dateISO: string) => {
+    const uid = focusedSummary?.user?.uid;
+    if (!uid) return;
+    // Sábados no tienen almuerzo de 1:15 h (día laboral corto sin break obligatorio)
+    if (new Date(`${dateISO}T12:00:00`).getDay() === 6) {
+      window.alert("Los sábados no tienen almuerzo de 1:15 h asignado.");
+      return;
+    }
+    const record = getDayRecord(dateISO);
+    if (!record?.checkInAt || !record?.checkOutAt) { window.alert("No hay registro cerrado para ese día."); return; }
+    const existingBreakMins = (record.breaks ?? []).reduce((t, b) => {
+      if (!b.endAt) return t;
+      return t + Math.max(0, Math.round((new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60000));
+    }, 0);
+    if (existingBreakMins >= 30) { window.alert("Este día ya tiene descanso registrado."); return; }
+    setCtxSaving(true);
+    try {
+      const breakEnd = record.checkOutAt;
+      const breakStart = new Date(new Date(record.checkOutAt).getTime() - 75 * 60000).toISOString();
+      const updatedBreaks = [...(record.breaks ?? []), { startAt: breakStart, endAt: breakEnd }];
+      const elapsed = Math.round((new Date(record.checkOutAt).getTime() - new Date(record.checkInAt).getTime()) / 60000);
+      const newTotal = Math.max(0, elapsed - 75 - existingBreakMins);
+      const hoursSnap = await getDocs(query(collection(db, "users", uid, "hours"), where("date", "==", dateISO)));
+      if (hoursSnap.empty) { window.alert("No se encontró el documento en Firestore."); return; }
+      await setDoc(hoursSnap.docs[0].ref, {
+        breaks: updatedBreaks, totalMinutes: newTotal,
+        hours: Math.round((newTotal / 60) * 10) / 10, updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setDayCtx(null);
+    } finally {
+      setCtxSaving(false);
+    }
+  };
+
+  const handleDecreeFeriado = async (dateISO: string, name: string) => {
+    if (!name.trim()) return;
+    setCtxSaving(true);
+    try {
+      await createCalendarHoliday({ date: dateISO, name: name.trim(), kind: "HOLIDAY" });
+    } finally {
+      setCtxSaving(false);
+      setDayCtx(null);
+    }
+  };
+
+  const handleDecreeDayOff = async (dateISO: string) => {
+    setCtxSaving(true);
+    try {
+      await createCalendarHoliday({ date: dateISO, name: "Día libre", kind: "DAY_OFF" });
+    } finally {
+      setCtxSaving(false);
+      setDayCtx(null);
+    }
+  };
+
+  const handleDeleteHoliday = async (dateISO: string) => {
+    const holiday = holidays.find((h) => h.date === dateISO);
+    if (!holiday) return;
+    setCtxSaving(true);
+    try {
+      await deleteCalendarHoliday(holiday.id);
+    } finally {
+      setCtxSaving(false);
+      setDayCtx(null);
+    }
+  };
+
+  const handleMoveRecord = async () => {
+    if (!dayCtx || dayCtx.phase !== "move_record" || !dayCtx.moveTargetDate) return;
+    const uid = focusedSummary?.user?.uid;
+    if (!uid) return;
+    const { dateISO, moveTargetDate } = dayCtx;
+    if (dateISO === moveTargetDate) { setDayCtx(null); return; }
+    const record = getDayRecord(dateISO);
+    if (!record) return;
+    setCtxSaving(true);
+    try {
+      // Find and delete all existing hours docs for the source date (handles non-standard IDs)
+      const oldHoursSnap = await getDocs(query(collection(db, "users", uid, "hours"), where("date", "==", dateISO)));
+      const newHoursRef = doc(db, "users", uid, "hours", `${uid}_${moveTargetDate}`);
+      const batch = writeBatch(db);
+      if (oldHoursSnap.empty) {
+        // Fallback: delete by standard ID in case query missed it
+        batch.delete(doc(db, "users", uid, "hours", `${uid}_${dateISO}`));
+      } else {
+        oldHoursSnap.docs.forEach((d) => batch.delete(d.ref));
+      }
+      batch.set(newHoursRef, {
+        uid,
+        date: moveTargetDate,
+        weekKey: getWeekKey(moveTargetDate),
+        checkInAt: record.checkInAt ?? null,
+        checkOutAt: record.checkOutAt ?? null,
+        breaks: record.breaks ?? [],
+        totalMinutes: record.totalMinutes,
+        hours: Math.round((record.totalMinutes / 60) * 10) / 10,
+        status: record.checkOutAt ? "CLOSED" : "OPEN",
+        notes: record.notes ?? null,
+        updatedAt: serverTimestamp(),
+      });
+      await batch.commit();
+      // Delete stale timeEntries from the old date (admin can delete; can't update other users' entries)
+      for (const field of ["uid", "userId"] as const) {
+        const teSnap = await getDocs(query(collection(db, "timeEntries"), where(field, "==", uid), where("dayKey", "==", dateISO)));
+        if (teSnap.empty) continue;
+        const teBatch = writeBatch(db);
+        teSnap.docs.forEach((d) => teBatch.delete(d.ref));
+        await teBatch.commit();
+      }
+      setDayCtx(null);
+    } catch (err) {
+      console.error("Error moviendo registro:", err);
+      window.alert("Error al mover el registro. Revisa la consola para más detalles.");
+    } finally {
+      setCtxSaving(false);
+    }
+  };
+
+  const handleAssignIndividualDayOff = async (dateISO: string) => {
+    const focusedUid = focusedSummary?.user?.uid;
+    const focusedName = focusedSummary ? getUserDisplayName(focusedSummary.user) : "Colaborador";
+    if (!focusedUid) return;
+    setCtxSaving(true);
+    try {
+      await addDoc(collection(db, "hourRequests"), {
+        uid: focusedUid,
+        userName: focusedName,
+        weekKey: getWeekKey(dateISO),
+        weekKeys: [getWeekKey(dateISO)],
+        status: "approved",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        type: "DIA_LIBRE",
+        date: dateISO,
+        endDate: null,
+        hours: null,
+        reason: `Asignado por administrador`,
+      });
+    } finally {
+      setCtxSaving(false);
+      setDayCtx(null);
+    }
+  };
+
 
   const selectedDetailRecord = selectedDetailRow?.records[0] ?? null;
   const selectedDetailCredits = selectedDetailRow?.credits ?? [];
@@ -205,6 +454,44 @@ export default function AdminHoursPage() {
     .filter((b) => !b.endAt)
     .reduce((total, b) => total + Math.max(0, Math.round((Date.now() - new Date(b.startAt).getTime()) / 60000)), 0);
   const displayBreakMinutes = (selectedDetailRow?.totalBreakMinutes ?? 0) + openBreakElapsedMinutes;
+
+  const summaryByUid = useMemo(
+    () => new Map(summaries.map((s) => [s.user.uid, s])),
+    [summaries],
+  );
+
+  const enrichedWeeklyAlerts = useMemo((): EnrichedAlertItem[] =>
+    weeklyAlerts.map((alert): EnrichedAlertItem => {
+      const summary = summaryByUid.get(alert.uid);
+      const u = summary?.user;
+      const chips: EnrichedAlertItem["chips"] = [];
+      if (summary) {
+        chips.push({ label: "Trabajadas", value: minutesToHHMM(summary.totalMinutes), tone: summary.totalMinutes > 0 ? "emerald" : "slate" });
+        chips.push({ label: "Esperadas", value: minutesToHHMM(summary.expectedMinutes), tone: "slate" });
+        if (summary.diffMinutes < 0) {
+          chips.push({ label: "Déficit", value: minutesToHHMM(Math.abs(summary.diffMinutes)), tone: "rose" });
+        }
+      }
+      return {
+        id: alert.id,
+        uid: alert.uid,
+        level: alert.level,
+        source: "hours" as const,
+        alertType: (alert.id.startsWith("attendance-open-") ? "open-shift" : alert.id.startsWith("attendance-missing-") ? "missing-hours" : "credit-only") as AlertType,
+        title: alert.title,
+        description: alert.description,
+        personName: u ? (u.displayName ?? u.fullName ?? u.name ?? u.email ?? "Colaborador") : undefined,
+        personPhotoURL: u?.photoURL ?? undefined,
+        personAvatarUrl: u?.avatarUrl,
+        personProfilePhoto: u?.profilePhoto,
+        personArea: u?.area ?? undefined,
+        chips,
+        actionLabel: alert.actionLabel ?? "Ver asistencia",
+        actionHref: `/admin/attendance?user=${encodeURIComponent(alert.uid)}&week=${encodeURIComponent(formatISODate(weekStart))}`,
+      };
+    }),
+    [weeklyAlerts, summaryByUid, weekStart],
+  );
 
   const openShiftsCount = summaries.filter((item) =>
     item.weekRecords.some((r) => r.status === "OPEN"),
@@ -401,15 +688,49 @@ export default function AdminHoursPage() {
             ))}
           </div>
 
-          {weeklyAlerts.length > 0 && (
-            <AdminWeeklyAlerts
-              title="Alertas"
-              subtitle=""
-              alerts={weeklyAlerts}
-              buildHref={(uid) =>
-                `/admin/hours?user=${encodeURIComponent(uid)}&week=${encodeURIComponent(formatISODate(weekStart))}`
-              }
-            />
+          {/* Widget: sin almuerzo hoy ≥4h en turno */}
+          {todayNoBreak.length > 0 && (
+            <div className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50 shadow-sm">
+              <div className="flex items-center gap-2.5 border-b border-amber-100 px-5 py-3">
+                <span className="text-base">☕</span>
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">Sin almuerzo registrado hoy</p>
+                  <p className="text-xs text-amber-600">{todayNoBreak.length} colaborador{todayNoBreak.length !== 1 ? "es" : ""} con ≥4h en turno sin descanso</p>
+                </div>
+              </div>
+              <div className="divide-y divide-amber-100">
+                {todayNoBreak.map(({ record, user }) => {
+                  const elapsed = record.checkInAt
+                    ? Math.round((Date.now() - new Date(record.checkInAt).getTime()) / 60000)
+                    : 0;
+                  const name = user ? getUserDisplayName(user) : record.userId;
+                  return (
+                    <div key={record.userId} className="flex items-center justify-between px-5 py-2.5">
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-amber-200 text-[11px] font-bold text-amber-800">
+                          {name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <p className="text-sm font-medium text-slate-800">{name}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-amber-700 font-semibold">{minutesToHHMM(elapsed)} en turno</span>
+                        <button
+                          type="button"
+                          onClick={() => { openIndividual(user?.uid ?? record.userId); }}
+                          className="rounded-lg bg-amber-500 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-amber-600"
+                        >
+                          Ver
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {enrichedWeeklyAlerts.length > 0 && (
+            <AdminWeeklyAlerts alerts={enrichedWeeklyAlerts} />
           )}
 
           {/* Team quick view — compact list */}
@@ -681,40 +1002,7 @@ export default function AdminHoursPage() {
               <p className="text-sm font-semibold text-slate-900">Horas trabajadas vs objetivo</p>
               <p className="mb-4 mt-0.5 text-xs text-slate-400">Por colaborador — semana actual</p>
               <div className="h-72">
-                {globalChartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
-                      data={globalChartData}
-                      margin={{ top: 10, right: 10, left: 0, bottom: 24 }}
-                    >
-                      <defs>
-                        <linearGradient id="blueBarGradTeam" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#818cf8" stopOpacity={0.95} />
-                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0.85} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                      <XAxis
-                        dataKey="name"
-                        tick={{ fontSize: 11 }}
-                        interval={0}
-                        angle={-18}
-                        textAnchor="end"
-                        height={46}
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                      <Tooltip content={<GlobalHoursTooltip />} cursor={{ fill: "rgba(99,102,241,0.06)" }} />
-                      <Bar dataKey="expectedHours" fill="#e0e7ff" radius={[6, 6, 0, 0]} />
-                      <Bar dataKey="workedHours" fill="url(#blueBarGradTeam)" radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 text-sm text-slate-400">
-                    Sin datos suficientes esta semana.
-                  </div>
-                )}
+                <HoursBarChart data={globalChartData} height={288} bottomMargin={24} gradientId="blueBarGradTeam" />
               </div>
             </div>
           )}
@@ -769,7 +1057,7 @@ export default function AdminHoursPage() {
           {focusedSummary && (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               {/* KPI 1 — Horas semana + progress bar */}
-              <div className="flex flex-col gap-2.5 rounded-2xl bg-white p-4 shadow-md">
+              <div className={`flex cursor-pointer flex-col gap-2.5 rounded-2xl bg-white p-4 shadow-md ring-1 transition ${kpiDetail === "horas" ? "ring-indigo-400" : "ring-transparent hover:ring-slate-200"}`} onClick={() => setKpiDetail(p => p === "horas" ? null : "horas")}>
                 <div className="flex items-start justify-between">
                   <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${indivWeekPct >= 100 ? "bg-gradient-to-br from-emerald-400 to-emerald-600" : indivWeekPct >= 70 ? "bg-gradient-to-br from-amber-300 to-amber-500" : "bg-gradient-to-br from-rose-400 to-rose-600"}`}>
                     <TrendingUp size={16} className="text-white" />
@@ -791,7 +1079,7 @@ export default function AdminHoursPage() {
               </div>
 
               {/* KPI 2 — Saldo semanal */}
-              <div className="flex flex-col gap-2.5 rounded-2xl bg-white p-4 shadow-md">
+              <div className={`flex cursor-pointer flex-col gap-2.5 rounded-2xl bg-white p-4 shadow-md ring-1 transition ${kpiDetail === "saldo" ? "ring-indigo-400" : "ring-transparent hover:ring-slate-200"}`} onClick={() => setKpiDetail(p => p === "saldo" ? null : "saldo")}>
                 <div className="flex items-start justify-between">
                   <div className={`flex h-9 w-9 items-center justify-center rounded-xl ${indivWeekDiff >= 0 ? "bg-gradient-to-br from-teal-400 to-emerald-600" : "bg-gradient-to-br from-orange-400 to-rose-500"}`}>
                     <BarChart2 size={16} className="text-white" />
@@ -812,7 +1100,7 @@ export default function AdminHoursPage() {
               </div>
 
               {/* KPI 3 — Balance total */}
-              <div className="flex flex-col gap-2.5 rounded-2xl bg-white p-4 shadow-md">
+              <div className={`flex cursor-pointer flex-col gap-2.5 rounded-2xl bg-white p-4 shadow-md ring-1 transition ${kpiDetail === "balance" ? "ring-indigo-400" : "ring-transparent hover:ring-slate-200"}`} onClick={() => setKpiDetail(p => p === "balance" ? null : "balance")}>
                 <div className="flex items-start justify-between">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-400 to-purple-600">
                     <ChartColumnBig size={16} className="text-white" />
@@ -831,7 +1119,7 @@ export default function AdminHoursPage() {
               </div>
 
               {/* KPI 4 — Días completados */}
-              <div className="flex flex-col gap-2.5 rounded-2xl bg-white p-4 shadow-md">
+              <div className={`flex cursor-pointer flex-col gap-2.5 rounded-2xl bg-white p-4 shadow-md ring-1 transition ${kpiDetail === "dias" ? "ring-indigo-400" : "ring-transparent hover:ring-slate-200"}`} onClick={() => setKpiDetail(p => p === "dias" ? null : "dias")}>
                 <div className="flex items-start justify-between">
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-400 to-indigo-600">
                     <Clock size={16} className="text-white" />
@@ -849,36 +1137,162 @@ export default function AdminHoursPage() {
             </div>
           )}
 
-          {/* ── Vista colaborador ── */}
-          {showCollabView && focusedSummary && (
-            <div className="overflow-hidden rounded-2xl border border-violet-200 bg-violet-50/40 shadow-md">
-              <div className="flex items-center gap-2 border-b border-violet-100 px-5 py-3">
-                <Eye size={14} className="text-violet-500" />
-                <p className="text-sm font-semibold text-violet-700">
-                  Vista colaborador — {getUserDisplayName(focusedSummary.user).split(" ")[0]}
+          {/* ── KPI detail panel ── */}
+          {kpiDetail && focusedSummary && detail && (
+            <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-md">
+              {/* Header */}
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-700">
+                  {kpiDetail === "horas" && "Detalle horas semana"}
+                  {kpiDetail === "saldo" && "Detalle saldo semanal por día"}
+                  {kpiDetail === "balance" && "Balance acumulado por semana"}
+                  {kpiDetail === "dias" && "Estado de días registrados"}
                 </p>
-                <span className="ml-auto text-[10px] font-semibold text-violet-400">
-                  Así ve su propio horario
-                </span>
+                <button onClick={() => setKpiDetail(null)} className="text-xs text-slate-400 hover:text-slate-600">✕ cerrar</button>
               </div>
-              <div className="p-5">
-                <CollaboratorDashboard
-                  collaboratorName={getUserDisplayName(focusedSummary.user)}
-                  workedMinutes={focusedSummary.totalMinutes}
-                  expectedMinutes={focusedSummary.expectedMinutes}
-                  diffMinutes={focusedSummary.diffMinutes}
-                  completedDays={indivCompletedDays}
-                  totalBalanceMinutes={indivBalance}
-                  chartData={collabChartData}
-                />
-              </div>
+
+              {/* KPI 1 + KPI 2: tabla diaria */}
+              {(kpiDetail === "horas" || kpiDetail === "saldo") && (
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-left text-[10px] font-semibold uppercase text-slate-400">
+                      <th className="pb-2 pr-3">Día</th>
+                      <th className="pb-2 pr-3 text-right">Trabajado</th>
+                      {kpiDetail === "horas" && <th className="pb-2 pr-3 text-right">Créditos</th>}
+                      <th className="pb-2 pr-3 text-right">Esperado</th>
+                      <th className="pb-2 text-right">Saldo día</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.rows.map((row) => {
+                      const exp = expectedMinutesForDate(row.date, detail.schedule, holidayDateSet);
+                      const total = row.totalWorkedMinutes + row.totalCreditMinutes;
+                      const diff = total - exp;
+                      const isToday = row.dateISO === formatISODate(new Date());
+                      return (
+                        <tr key={row.dateISO} className={`border-b border-slate-50 ${isToday ? "bg-indigo-50/60" : ""}`}>
+                          <td className="py-1.5 pr-3 font-medium text-slate-600">
+                            {SHORT_DAY.format(row.date).toUpperCase()} {row.date.getDate()}
+                            {isToday && <span className="ml-1 text-[9px] font-bold text-indigo-500">HOY</span>}
+                          </td>
+                          <td className="py-1.5 pr-3 text-right text-slate-700">{row.totalWorkedMinutes > 0 ? minutesToHHMM(row.totalWorkedMinutes) : "—"}</td>
+                          {kpiDetail === "horas" && <td className="py-1.5 pr-3 text-right text-teal-600">{row.totalCreditMinutes > 0 ? `+${minutesToHHMM(row.totalCreditMinutes)}` : "—"}</td>}
+                          <td className="py-1.5 pr-3 text-right text-slate-400">{exp > 0 ? minutesToHHMM(exp) : "—"}</td>
+                          <td className={`py-1.5 text-right font-semibold ${exp === 0 ? "text-slate-300" : diff >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                            {exp === 0 ? "—" : `${diff >= 0 ? "+" : ""}${minutesToHHMM(Math.abs(diff))}`}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-slate-200">
+                      <td className="pt-2 pr-3 text-[10px] font-bold text-slate-500">TOTAL</td>
+                      <td className="pt-2 pr-3 text-right text-xs font-bold text-slate-700">{minutesToHHMM(indivWeekWorkedOnly)}</td>
+                      {kpiDetail === "horas" && <td className="pt-2 pr-3 text-right text-xs font-bold text-teal-600">{indivWeekCreditsOnly > 0 ? `+${minutesToHHMM(indivWeekCreditsOnly)}` : "—"}</td>}
+                      <td className="pt-2 pr-3 text-right text-xs font-bold text-slate-400">{minutesToHHMM(focusedSummary.expectedMinutes)}</td>
+                      <td className={`pt-2 text-right text-xs font-bold ${indivWeekDiff >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                        {indivWeekDiff >= 0 ? "+" : ""}{minutesToHHMM(Math.abs(indivWeekDiff))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+
+              {/* KPI 3: balance por semana */}
+              {kpiDetail === "balance" && (
+                <div className="space-y-1">
+                  <p className="mb-2 text-[10px] text-slate-400">
+                    {"Semanas con diferencia entre horas trabajadas y esperadas. Suma acumulada desde el primer registro."}
+                    {detail.weeklyBalances.length > 0 && ` Desde ${detail.weeklyBalances[detail.weeklyBalances.length - 1].weekStart.toLocaleDateString("es-PE", { day: "2-digit", month: "short", year: "numeric" })} hasta hoy.`}
+                  </p>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-left text-[10px] font-semibold uppercase text-slate-400">
+                        <th className="pb-2 pr-3">Semana</th>
+                        <th className="pb-2 pr-3 text-right">Trabajado</th>
+                        <th className="pb-2 pr-3 text-right">Créditos</th>
+                        <th className="pb-2 pr-3 text-right">Esperado</th>
+                        <th className="pb-2 text-right">Saldo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...detail.weeklyBalances].reverse().map((entry) => {
+                        const label = entry.weekStart.toLocaleDateString("es-PE", { day: "2-digit", month: "short" });
+                        const isCurrentWeek = entry.weekKey === getWeekKey(formatISODate(new Date()));
+                        return (
+                          <tr key={entry.weekKey} className={`border-b border-slate-50 ${isCurrentWeek ? "bg-indigo-50/60" : ""}`}>
+                            <td className="py-1.5 pr-3 font-medium text-slate-600">
+                              {label}
+                              {isCurrentWeek && <span className="ml-1 text-[9px] font-bold text-indigo-500">ACTUAL</span>}
+                            </td>
+                            <td className="py-1.5 pr-3 text-right text-slate-700">{minutesToHHMM(entry.workedMinutes)}</td>
+                            <td className="py-1.5 pr-3 text-right text-teal-600">{entry.creditMinutes > 0 ? `+${minutesToHHMM(entry.creditMinutes)}` : "—"}</td>
+                            <td className="py-1.5 pr-3 text-right text-slate-400">{minutesToHHMM(entry.expectedMinutes)}</td>
+                            <td className={`py-1.5 text-right font-semibold ${entry.balanceMinutes >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                              {entry.balanceMinutes >= 0 ? "+" : ""}{minutesToHHMM(Math.abs(entry.balanceMinutes))}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-slate-200">
+                        <td colSpan={4} className="pt-2 pr-3 text-[10px] font-bold text-slate-500">BALANCE TOTAL</td>
+                        <td className={`pt-2 text-right text-sm font-bold ${indivBalance >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                          {indivBalance >= 0 ? "+" : ""}{minutesToHHMM(Math.abs(indivBalance))}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+
+              {/* KPI 4: días */}
+              {kpiDetail === "dias" && (
+                <>
+                <div className="space-y-1">
+                  {detail.rows.map((row) => {
+                    const exp = expectedMinutesForDate(row.date, detail.schedule, holidayDateSet);
+                    const rec = row.records[0] ?? null;
+                    const total = row.totalWorkedMinutes + row.totalCreditMinutes;
+                    const done = rec?.status === "CLOSED" && total >= exp && exp > 0;
+                    const open = rec?.status === "OPEN";
+                    const free = exp === 0;
+                    const missing = !rec && !free;
+                    return (
+                      <div key={row.dateISO} className="flex items-center gap-2 rounded-lg px-2 py-1.5 even:bg-slate-50">
+                        <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${done ? "bg-emerald-100 text-emerald-700" : open ? "bg-blue-100 text-blue-700" : free ? "bg-slate-100 text-slate-400" : "bg-rose-50 text-rose-400"}`}>
+                          {done ? "✓" : open ? "●" : free ? "—" : "○"}
+                        </span>
+                        <span className="w-20 text-xs font-medium text-slate-600">
+                          {SHORT_DAY.format(row.date).toUpperCase()} {row.date.getDate()}
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          {free ? "Libre / feriado" : done ? `${minutesToHHMM(total)} trabajadas` : open ? `En curso · ${minutesToHHMM(rec?.totalMinutes ?? 0)}` : "Sin registro"}
+                        </span>
+                        {!free && <span className={`ml-auto text-[10px] font-semibold ${done ? "text-emerald-600" : open ? "text-blue-500" : "text-rose-400"}`}>{done ? "Completo" : open ? "Abierto" : "Pendiente"}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                  <span><span className="font-semibold text-indigo-700">{indivRecordedDays}</span> con registro</span>
+                  <span><span className="font-semibold text-emerald-700">{indivCompletedDays}</span> jornadas completas</span>
+                  <span><span className="font-semibold text-slate-700">{(detail?.rows.length ?? 0) - indivRecordedDays}</span> sin registro</span>
+                  {indivAvgDaily !== null && (
+                    <span>Promedio: <span className="font-semibold text-slate-700">{minutesToHHMM(indivAvgDaily)}</span>/día</span>
+                  )}
+                </div>
+                </>
+              )}
             </div>
           )}
 
           {/* ── Person overview card ── */}
           <div className="overflow-hidden rounded-2xl bg-white shadow-md">
-            {/* Top bar: back + link */}
-            <div className="flex items-center justify-between px-5 pt-4 pb-2">
+            {/* Top bar: back */}
+            <div className="flex items-center px-5 pt-4 pb-2">
               <button
                 type="button"
                 onClick={() => setActiveTab("team")}
@@ -886,14 +1300,6 @@ export default function AdminHoursPage() {
               >
                 <ChevronLeft size={13} /> Equipo
               </button>
-              {focusedSummary && (
-                <Link
-                  href={`/admin/requests?user=${encodeURIComponent(focusedSummary.user.uid)}&week=${encodeURIComponent(formatISODate(weekStart))}`}
-                  className="text-xs font-semibold text-indigo-600 hover:underline"
-                >
-                  Ver solicitudes →
-                </Link>
-              )}
             </div>
 
             {focusedSummary ? (
@@ -927,156 +1333,29 @@ export default function AdminHoursPage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-slate-400">
-                      {focusedSummary.user.position || "Sin puesto"}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="border-t border-slate-100 px-5 py-3.5">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                    {indivWeekRemaining > 0 && (
-                      <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-600">
-                        Faltan {minutesToHHMM(indivWeekRemaining)}
-                      </span>
-                    )}
-                    {indivWeekCreditMinutes > 0 && (
-                      <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[11px] font-semibold text-cyan-600">
-                        +{minutesToHHMM(indivWeekCreditMinutes)} ajustes
-                      </span>
-                    )}
-                    <span className="ml-auto flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleSection("saldo")}
-                        className="text-[11px] font-semibold text-indigo-500 hover:underline"
-                      >
-                        {expandedSection === "saldo" ? "Ocultar" : "Ver"} cálculo{" "}
-                        {expandedSection === "saldo" ? "↑" : "↓"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleSection("balance")}
-                        className="text-[11px] font-semibold text-indigo-500 hover:underline"
-                      >
-                        {expandedSection === "balance" ? "Ocultar" : "Ver"} historial{" "}
-                        {expandedSection === "balance" ? "↑" : "↓"}
-                      </button>
-                    </span>
-                  </div>
-                </div>
-
-                {/* Saldo calculation formula */}
-                {expandedSection === "saldo" && (
-                  <div className="border-t border-slate-100 px-5 py-4">
-                    <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                      Cómo se calcula el saldo semanal
-                    </p>
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-                        <p className="text-sm text-slate-600">Tiempo registrado</p>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {minutesToHHMM(indivWeekWorkedOnly)}
-                        </p>
-                      </div>
-                      {indivWeekCreditsOnly > 0 && (
-                        <div className="flex items-center justify-between rounded-xl bg-cyan-50 px-4 py-3">
-                          <p className="text-sm text-cyan-700">Ajustes aprobados</p>
-                          <p className="text-sm font-semibold text-cyan-800">
-                            +{minutesToHHMM(indivWeekCreditsOnly)}
-                          </p>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-                        <p className="text-sm text-slate-600">Objetivo semanal</p>
-                        <p className="text-sm font-semibold text-slate-900">
-                          −{minutesToHHMM(focusedSummary?.expectedMinutes ?? 0)}
-                        </p>
-                      </div>
-                      <div
-                        className={`flex items-center justify-between rounded-xl px-4 py-3 ${indivWeekDiff >= 0 ? "bg-emerald-50" : "bg-rose-50"}`}
-                      >
-                        <p className={`text-sm font-semibold ${indivWeekDiff >= 0 ? "text-emerald-800" : "text-rose-800"}`}>
-                          Saldo
-                        </p>
-                        <p className={`text-lg font-bold ${indivWeekDiff >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
-                          {indivWeekDiff >= 0 ? "+" : ""}{minutesToHHMM(Math.abs(indivWeekDiff))}
-                        </p>
-                      </div>
-                    </div>
-                    <p className="mt-2 text-[11px] text-slate-400">
-                      Fórmula: registrado + ajustes − objetivo = saldo
-                    </p>
-                  </div>
-                )}
-
-                {/* Balance expansion — weekly breakdown */}
-                {expandedSection === "balance" &&
-                  detail?.weeklyBalances &&
-                  detail.weeklyBalances.length > 0 && (
-                    <div className="border-t border-slate-100 px-5 py-4">
-                      <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                        Desglose semanal — (registrado + ajustes) − esperado
+                    <div>
+                      <p className="text-sm text-slate-400">
+                        {focusedSummary.user.position || "Sin puesto"}
                       </p>
-                      <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
-                        {[...detail.weeklyBalances].reverse().map((entry, i) => {
-                          const isCurrentWeek = i === 0;
-                          const weekEnd = new Date(entry.weekStart);
-                          weekEnd.setDate(weekEnd.getDate() + 6);
-                          const weekLabel = `${entry.weekStart.toLocaleDateString("es-PE", {
-                            day: "2-digit",
-                            month: "short",
-                          })} – ${weekEnd.toLocaleDateString("es-PE", {
-                            day: "2-digit",
-                            month: "short",
-                          })}`;
-                          return (
-                            <div
-                              key={entry.weekKey}
-                              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 ${
-                                isCurrentWeek
-                                  ? "bg-indigo-50 ring-1 ring-indigo-200"
-                                  : "bg-slate-50"
-                              }`}
-                            >
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center gap-2">
-                                  <p className="text-xs font-semibold text-slate-700">
-                                    {weekLabel}
-                                  </p>
-                                  {isCurrentWeek && (
-                                    <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-700">
-                                      actual
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="mt-0.5 text-[11px] text-slate-400">
-                                  {minutesToHHMM(entry.workedMinutes + entry.creditMinutes)}{" "}
-                                  trabajadas · {minutesToHHMM(entry.expectedMinutes)} esperadas
-                                  {entry.creditMinutes > 0 && (
-                                    <span className="text-cyan-600">
-                                      {" "}· +{minutesToHHMM(entry.creditMinutes)} ajustes
-                                    </span>
-                                  )}
-                                </p>
-                              </div>
-                              <p
-                                className={`shrink-0 text-sm font-bold ${
-                                  entry.balanceMinutes >= 0
-                                    ? "text-emerald-600"
-                                    : "text-rose-600"
-                                }`}
-                              >
-                                {entry.balanceMinutes >= 0 ? "+" : ""}
-                                {minutesToHHMM(Math.abs(entry.balanceMinutes))}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      {detail?.schedule && (
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          <span className="font-medium text-slate-500">{detail.schedule.name}</span>
+                          {" · "}{minutesToHHMM(Math.round(detail.schedule.weeklyMinutes / 5))}/día
+                        </p>
+                      )}
                     </div>
-                  )}
+                  </div>
+                </div>
+
+                {/* Ver solicitudes */}
+                <div className="border-t border-slate-100 px-5 py-3">
+                  <Link
+                    href={`/admin/requests?user=${encodeURIComponent(focusedSummary.user.uid)}&week=${encodeURIComponent(formatISODate(weekStart))}`}
+                    className="text-xs font-semibold text-indigo-600 hover:underline"
+                  >
+                    Ver solicitudes →
+                  </Link>
+                </div>
               </>
             ) : (
               <div className="px-5 py-8 text-center text-sm text-slate-400">
@@ -1133,6 +1412,7 @@ export default function AdminHoursPage() {
                           key={row.dateISO}
                           type="button"
                           onClick={() => setSelectedDayISO(row.dateISO)}
+                          onContextMenu={(e) => handleDayContextMenu(e, row.dateISO)}
                           className={`flex flex-1 flex-col items-center gap-1.5 rounded-2xl border py-3 transition ${
                             isSelected
                               ? "border-indigo-200 bg-indigo-50"
@@ -1141,6 +1421,9 @@ export default function AdminHoursPage() {
                         >
                           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                             {SHORT_DAY.format(row.date)}
+                          </p>
+                          <p className="text-[9px] font-medium text-slate-300 -mt-1">
+                            {row.date.getDate()}
                           </p>
                           <div
                             className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold ${circleCls} ${isLiveShift ? "animate-pulse" : ""}`}
@@ -1222,9 +1505,11 @@ export default function AdminHoursPage() {
                           <p className={`mt-0.5 text-base font-semibold ${hasOpenBreak ? "text-orange-500" : "text-amber-700"}`}>
                             {minutesToHHMM(displayBreakMinutes)}
                           </p>
-                          {hasOpenBreak && (
-                            <p className="text-[10px] font-semibold text-orange-400">en curso</p>
-                          )}
+                          {selectedDetailBreaks.filter((b) => b.startAt).map((b, i) => (
+                            <p key={`break-time-${i}`} className={`text-[10px] leading-tight ${b.endAt ? "text-slate-400" : "font-semibold text-orange-400"}`}>
+                              {formatTime(b.startAt)} – {b.endAt ? formatTime(b.endAt) : "en curso"}
+                            </p>
+                          ))}
                         </div>
                         <div className="self-stretch border-l border-slate-100" />
                         <div>
@@ -1248,17 +1533,6 @@ export default function AdminHoursPage() {
                           </>
                         )}
                       </div>
-
-                      {/* Breaks */}
-                      {selectedDetailBreaks.length > 0 && (
-                        <div className="mt-3 space-y-1">
-                          {selectedDetailBreaks.map((b, i) => (
-                            <p key={`break-${i}`} className={`text-[11px] ${b.endAt ? "text-slate-500" : "font-semibold text-orange-500"}`}>
-                              Descanso {i + 1}: {formatTime(b.startAt)} – {b.endAt ? formatTime(b.endAt) : "en curso"}
-                            </p>
-                          ))}
-                        </div>
-                      )}
 
                       {/* Credits */}
                       {selectedDetailCredits.length > 0 && (
@@ -1290,87 +1564,6 @@ export default function AdminHoursPage() {
                   )}
 
                   {/* ── Expandable: attendance detail per day ── */}
-                  <div className="border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => toggleSection("asistencia")}
-                      className="flex w-full items-center justify-between px-5 py-3 text-xs font-semibold text-slate-500 hover:text-slate-800"
-                    >
-                      <span>Detalle de asistencia por día</span>
-                      <span>{expandedSection === "asistencia" ? "↑" : "↓"}</span>
-                    </button>
-                    {expandedSection === "asistencia" && detail && (
-                      <div className="px-5 pb-4">
-                        <div className="space-y-1.5">
-                          {detail.rows.map((row) => {
-                            const hasActivity = row.hasRecord || row.hasCredits;
-                            const total = row.totalWorkedMinutes + row.totalCreditMinutes;
-                            const isComplete =
-                              hasActivity && total >= expectedPerDay && expectedPerDay > 0;
-                            return (
-                              <div
-                                key={row.dateISO}
-                                className="flex items-center gap-3 rounded-xl bg-slate-50 px-3 py-2.5"
-                              >
-                                <span
-                                  className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-                                    hasActivity
-                                      ? isComplete
-                                        ? "bg-emerald-100 text-emerald-700"
-                                        : "bg-amber-100 text-amber-700"
-                                      : "bg-slate-200 text-slate-400"
-                                  }`}
-                                >
-                                  {hasActivity ? (isComplete ? "✓" : "~") : "✗"}
-                                </span>
-                                <p className="w-28 shrink-0 text-xs font-semibold capitalize text-slate-600">
-                                  {DAY_LABEL.format(row.date)}
-                                </p>
-                                {hasActivity ? (
-                                  <>
-                                    <p className="flex-1 text-xs text-slate-500">
-                                      {minutesToHHMM(total)} trabajadas
-                                      {row.totalCreditMinutes > 0 && (
-                                        <span className="ml-1 text-cyan-600">
-                                          (+{minutesToHHMM(row.totalCreditMinutes)} ajuste)
-                                        </span>
-                                      )}
-                                    </p>
-                                    <span
-                                      className={`text-[10px] font-semibold ${isComplete ? "text-emerald-600" : "text-amber-600"}`}
-                                    >
-                                      {isComplete ? "Completa" : "Incompleta"}
-                                    </span>
-                                  </>
-                                ) : (
-                                  <p className="text-xs text-slate-400">Sin registro</p>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="mt-3 flex flex-wrap gap-4 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                          <span>
-                            <span className="font-semibold text-indigo-700">{indivRecordedDays}</span> con registro
-                          </span>
-                          <span>
-                            <span className="font-semibold text-emerald-700">{indivCompletedDays}</span> jornadas completas
-                          </span>
-                          <span>
-                            <span className="font-semibold text-slate-700">
-                              {(detail.rows.length) - indivRecordedDays}
-                            </span> sin registro
-                          </span>
-                          {indivAvgDaily !== null && (
-                            <span>
-                              Promedio: <span className="font-semibold text-slate-700">{minutesToHHMM(indivAvgDaily)}</span>/día
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
                   {/* ── Expandable: credits/adjustments this week ── */}
                   {focusedSummary && focusedSummary.weekCredits.length > 0 && (
                     <div className="border-t border-slate-100">
@@ -1440,6 +1633,33 @@ export default function AdminHoursPage() {
             </div>
           )}
 
+          {/* ── Vista colaborador ── */}
+          {showCollabView && focusedSummary && (
+            <div className="overflow-hidden rounded-2xl border border-violet-200 bg-violet-50/40 shadow-md">
+              <div className="flex items-center gap-2 border-b border-violet-100 px-5 py-3">
+                <Eye size={14} className="text-violet-500" />
+                <p className="text-sm font-semibold text-violet-700">
+                  Vista colaborador — {getUserDisplayName(focusedSummary.user).split(" ")[0]}
+                </p>
+                <span className="ml-auto text-[10px] font-semibold text-violet-400">
+                  Así ve su propio horario
+                </span>
+              </div>
+              <div className="p-5">
+                <CollaboratorDashboard
+                  collaboratorName={getUserDisplayName(focusedSummary.user)}
+                  workedMinutes={focusedSummary.totalMinutes}
+                  expectedMinutes={focusedSummary.expectedMinutes}
+                  diffMinutes={focusedSummary.diffMinutes}
+                  completedDays={indivCompletedDays}
+                  expectedWorkDays={detail?.rows.length ?? 5}
+                  totalBalanceMinutes={indivBalance}
+                  chartData={collabChartData}
+                />
+              </div>
+            </div>
+          )}
+
           {/* ── Advanced management ── */}
           {focusedSummary && (
             <details className="group rounded-2xl border border-rose-200 bg-rose-50/40 p-4">
@@ -1480,6 +1700,37 @@ export default function AdminHoursPage() {
                         ? "Limpiando..."
                         : `Eliminar ${openRecordsCount > 0 ? openRecordsCount : ""} abierto(s)`}
                     </button>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-amber-100 bg-white p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-700">
+                        Corrección retroactiva de almuerzo
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Asigna 1:15 h de descanso a días cerrados con ≥4h trabajadas y sin almuerzo (excluye sábados y part-time).
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        disabled={revertingLunchFix || applyingLunchFix}
+                        onClick={() => void handleRevertWrongLunchFix()}
+                        className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {revertingLunchFix ? "Revirtiendo..." : "Revertir incorrectos"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={applyingLunchFix || revertingLunchFix}
+                        onClick={() => void handleRetroactiveLunchFix()}
+                        className="rounded-xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {applyingLunchFix ? "Aplicando..." : "Aplicar corrección"}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1528,40 +1779,7 @@ export default function AdminHoursPage() {
               Horas trabajadas vs objetivo — semana {formatISODate(weekStart)}
             </p>
             <div className="h-80">
-              {globalChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart
-                    data={globalChartData}
-                    margin={{ top: 10, right: 10, left: 0, bottom: 28 }}
-                  >
-                    <defs>
-                      <linearGradient id="blueBarGradReports" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#818cf8" stopOpacity={0.95} />
-                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0.85} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                    <XAxis
-                      dataKey="name"
-                      tick={{ fontSize: 11 }}
-                      interval={0}
-                      angle={-18}
-                      textAnchor="end"
-                      height={50}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={<GlobalHoursTooltip />} cursor={{ fill: "rgba(99,102,241,0.06)" }} />
-                    <Bar dataKey="expectedHours" fill="#e0e7ff" radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="workedHours" fill="url(#blueBarGradReports)" radius={[6, 6, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 text-sm text-slate-400">
-                  Sin datos suficientes esta semana.
-                </div>
-              )}
+              <HoursBarChart data={globalChartData} height={320} bottomMargin={28} gradientId="blueBarGradReports" />
             </div>
           </div>
 
@@ -1704,6 +1922,255 @@ export default function AdminHoursPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ── Menú contextual de día ── */}
+      {dayCtx && (
+        <div
+          id="day-ctx-menu"
+          className="fixed z-[200] min-w-[220px] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl"
+          style={{ top: dayCtx.y, left: dayCtx.x }}
+        >
+          <div className="border-b border-slate-100 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              {DAY_LABEL.format(new Date(`${dayCtx.dateISO}T00:00:00`))}
+            </p>
+          </div>
+
+          {dayCtx.phase === "menu" && (
+            <div className="py-1">
+              {holidayDateSet.has(dayCtx.dateISO) ? (
+                <button
+                  className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                  disabled={ctxSaving}
+                  onClick={() => void handleDeleteHoliday(dayCtx.dateISO)}
+                  type="button"
+                >
+                  <span>🗑️</span> Quitar feriado / día libre
+                </button>
+              ) : (
+                <>
+                  <button
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-slate-700 transition-colors hover:bg-violet-50 hover:text-violet-700"
+                    onClick={() => setDayCtx((prev) => prev ? { ...prev, phase: "feriado_name" } : null)}
+                    type="button"
+                  >
+                    <span>🏖️</span> Decretar feriado
+                  </button>
+                  <button
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-slate-700 transition-colors hover:bg-pink-50 hover:text-pink-700 disabled:opacity-50"
+                    disabled={ctxSaving}
+                    onClick={() => void handleDecreeDayOff(dayCtx.dateISO)}
+                    type="button"
+                  >
+                    <span>🌴</span> Día libre global
+                  </button>
+                </>
+              )}
+              {focusedSummary && (
+                <>
+                  <hr className="my-1 border-slate-100" />
+                  <p className="px-3 pt-1 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {getUserDisplayName(focusedSummary.user).split(" ")[0]}
+                  </p>
+                  <button
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-slate-700 transition-colors hover:bg-sky-50 hover:text-sky-700 disabled:opacity-50"
+                    disabled={ctxSaving}
+                    onClick={() => void handleAssignIndividualDayOff(dayCtx.dateISO)}
+                    type="button"
+                  >
+                    <span>🏖️</span> Asignar día libre
+                  </button>
+                  <button
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-slate-700 transition-colors hover:bg-violet-50 hover:text-violet-700 disabled:opacity-50"
+                    disabled={ctxSaving}
+                    onClick={() => openEditPhase(dayCtx.dateISO)}
+                    type="button"
+                  >
+                    <span>✏️</span> Editar horario del día
+                  </button>
+                  <button
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-slate-700 transition-colors hover:bg-indigo-50 hover:text-indigo-700 disabled:opacity-50"
+                    disabled={ctxSaving || !getDayRecord(dayCtx.dateISO)}
+                    onClick={() => setDayCtx((prev) => prev ? { ...prev, phase: "move_record", moveTargetDate: "" } : null)}
+                    type="button"
+                  >
+                    <span>📅</span> Mover registro a otro día
+                  </button>
+                  {new Date(`${dayCtx.dateISO}T12:00:00`).getDay() !== 6 && (
+                    <button
+                      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-slate-700 transition-colors hover:bg-amber-50 hover:text-amber-700 disabled:opacity-50"
+                      disabled={ctxSaving}
+                      onClick={() => void handleApplyLunchForDay(dayCtx.dateISO)}
+                      type="button"
+                    >
+                      <span>☕</span> Aplicar almuerzo 1:15 h
+                    </button>
+                  )}
+                  <button
+                    className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                    disabled={ctxSaving}
+                    onClick={() => void handleDeleteDayRecord(dayCtx.dateISO)}
+                    type="button"
+                  >
+                    <span>🗑️</span> Eliminar registro del día
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+
+          {dayCtx.phase === "edit_record" && (
+            <div className="space-y-2.5 px-3 py-3">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block text-[11px] font-semibold text-slate-500">
+                  Entrada
+                  <input
+                    autoFocus
+                    type="time"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-200"
+                    value={dayCtx.editCheckIn}
+                    onChange={(e) => setDayCtx((prev) => prev ? { ...prev, editCheckIn: e.target.value } : null)}
+                  />
+                </label>
+                <label className="block text-[11px] font-semibold text-slate-500">
+                  Salida
+                  <input
+                    type="time"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-200"
+                    value={dayCtx.editCheckOut}
+                    onChange={(e) => setDayCtx((prev) => prev ? { ...prev, editCheckOut: e.target.value } : null)}
+                  />
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block text-[11px] font-semibold text-slate-500">
+                  Inicio descanso
+                  <input
+                    type="time"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-200"
+                    value={dayCtx.editBreakStart}
+                    onChange={(e) => setDayCtx((prev) => prev ? { ...prev, editBreakStart: e.target.value } : null)}
+                  />
+                </label>
+                <label className="block text-[11px] font-semibold text-slate-500">
+                  Fin descanso
+                  <input
+                    type="time"
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-200"
+                    value={dayCtx.editBreakEnd}
+                    onChange={(e) => setDayCtx((prev) => prev ? { ...prev, editBreakEnd: e.target.value } : null)}
+                  />
+                </label>
+              </div>
+              {dayCtx.editCheckIn && dayCtx.editCheckOut && (() => {
+                const elapsed = Math.round((new Date(`${dayCtx.dateISO}T${dayCtx.editCheckOut}:00`).getTime() - new Date(`${dayCtx.dateISO}T${dayCtx.editCheckIn}:00`).getTime()) / 60000);
+                const breakMins = (dayCtx.editBreakStart && dayCtx.editBreakEnd)
+                  ? Math.max(0, Math.round((new Date(`${dayCtx.dateISO}T${dayCtx.editBreakEnd}:00`).getTime() - new Date(`${dayCtx.dateISO}T${dayCtx.editBreakStart}:00`).getTime()) / 60000))
+                  : 0;
+                return (
+                  <p className="text-[11px] text-slate-400">
+                    Total: {minutesToHHMM(Math.max(0, elapsed - breakMins))} h netas
+                    {breakMins > 0 && <span className="ml-1 text-amber-600">({minutesToHHMM(breakMins)} descanso)</span>}
+                  </p>
+                );
+              })()}
+              <div className="flex gap-2">
+                <button
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                  onClick={() => setDayCtx(null)}
+                  type="button"
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="flex-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+                  disabled={ctxSaving || !dayCtx.editCheckIn || !dayCtx.editCheckOut}
+                  onClick={() => void handleSaveEditRecord()}
+                  type="button"
+                >
+                  {ctxSaving ? "Guardando…" : "Guardar"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {dayCtx.phase === "move_record" && (
+            <div className="space-y-2.5 px-3 py-3">
+              <div>
+                <p className="text-[11px] font-semibold text-slate-500">Mover registro</p>
+                <p className="mt-0.5 text-[10px] text-slate-400">
+                  Desde: <span className="font-semibold">{DAY_LABEL.format(new Date(`${dayCtx.dateISO}T00:00:00`))}</span>
+                </p>
+              </div>
+              <label className="block text-[11px] font-semibold text-slate-500">
+                Nuevo día
+                <input
+                  autoFocus
+                  type="date"
+                  className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-200"
+                  value={dayCtx.moveTargetDate}
+                  onChange={(e) => setDayCtx((prev) => prev ? { ...prev, moveTargetDate: e.target.value } : null)}
+                />
+              </label>
+              <div className="flex gap-2">
+                <button
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                  onClick={() => setDayCtx(null)}
+                  type="button"
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="flex-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+                  disabled={ctxSaving || !dayCtx.moveTargetDate || dayCtx.moveTargetDate === dayCtx.dateISO}
+                  onClick={() => void handleMoveRecord()}
+                  type="button"
+                >
+                  {ctxSaving ? "Moviendo…" : "Mover"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {dayCtx.phase === "feriado_name" && (
+            <div className="space-y-2 px-3 py-3">
+              <label className="block text-[11px] font-semibold text-slate-500">
+                Nombre del feriado
+              </label>
+              <input
+                autoFocus
+                className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-200"
+                placeholder="Ej: Fiestas Patrias"
+                value={dayCtx.feriadoName}
+                onChange={(e) =>
+                  setDayCtx((prev) => prev ? { ...prev, feriadoName: e.target.value } : null)
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void handleDecreeFeriado(dayCtx.dateISO, dayCtx.feriadoName);
+                  if (e.key === "Escape") setDayCtx(null);
+                }}
+              />
+              <div className="flex gap-2">
+                <button
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                  onClick={() => setDayCtx(null)}
+                  type="button"
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="flex-1 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+                  disabled={ctxSaving || !dayCtx.feriadoName.trim()}
+                  onClick={() => void handleDecreeFeriado(dayCtx.dateISO, dayCtx.feriadoName)}
+                  type="button"
+                >
+                  {ctxSaving ? "Guardando…" : "Decretar"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

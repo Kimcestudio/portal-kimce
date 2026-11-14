@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  addDoc,
   collection,
   collectionGroup,
   deleteDoc,
@@ -11,6 +12,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
   startAfter,
   updateDoc,
   where,
@@ -273,7 +275,7 @@ export function useAdminRequestsMonitor(user: { uid?: string; role?: string } | 
     const unsubscribers = REQUEST_SOURCES.map(({ key, collectionName, mode }) => {
       const ref = mode === "group" ? collectionGroup(db, collectionName) : collection(db, collectionName);
       return onSnapshot(
-        query(ref),
+        query(ref, limit(200)),
         (snapshot) => {
           const nextRequests = snapshot.docs.map((docSnap) => mapDocToRequest(collectionName, docSnap));
           setRequestSources((prev) => ({ ...prev, [key]: nextRequests }));
@@ -492,6 +494,60 @@ export function useAdminRequestsMonitor(user: { uid?: string; role?: string } | 
 
   const correctionsPendingCount = correctionItems.filter((c) => c.status === "pending").length;
 
+  // --- Asignación directa admin ---
+  type AssignType = "DIA_LIBRE" | "VACACIONES" | "MEDICO";
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignDraft, setAssignDraft] = useState<{
+    uid: string;
+    type: AssignType;
+    date: string;
+    endDate: string;
+    reason: string;
+  }>({ uid: "", type: "DIA_LIBRE", date: formatISODate(new Date()), endDate: "", reason: "" });
+  const [assignLoading, setAssignLoading] = useState(false);
+
+  const handleAdminAssign = async () => {
+    if (!user?.uid || user.role !== "admin" || !assignDraft.uid || !assignDraft.date) return;
+    setAssignLoading(true);
+    try {
+      const weekKey = getWeekKey(assignDraft.date);
+      const weekKeys: string[] = [weekKey];
+      if (assignDraft.endDate && assignDraft.endDate > assignDraft.date) {
+        const cursor = new Date(`${assignDraft.date}T00:00:00`);
+        const end = new Date(`${assignDraft.endDate}T00:00:00`);
+        cursor.setDate(cursor.getDate() + 7);
+        while (cursor <= end) {
+          const wk = getWeekKey(formatISODate(cursor));
+          if (!weekKeys.includes(wk)) weekKeys.push(wk);
+          cursor.setDate(cursor.getDate() + 7);
+        }
+      }
+      await addDoc(collection(db, "hourRequests"), {
+        uid: assignDraft.uid,
+        type: assignDraft.type,
+        date: assignDraft.date,
+        endDate: assignDraft.endDate || null,
+        hours: null,
+        reason: assignDraft.reason || null,
+        status: "approved",
+        weekKey,
+        weekKeys,
+        createdAt: serverTimestamp(),
+        reviewedBy: user.uid,
+        reviewedAt: new Date().toISOString(),
+        assignedByAdmin: true,
+      });
+      setAssignOpen(false);
+      setAssignDraft({ uid: "", type: "DIA_LIBRE", date: formatISODate(new Date()), endDate: "", reason: "" });
+    } catch (error) {
+      const err = error as { code?: string };
+      console.error("[admin/requests] Error assigning day off", err?.code, error);
+      if (typeof window !== "undefined") window.alert("No se pudo asignar. Verifica permisos.");
+    } finally {
+      setAssignLoading(false);
+    }
+  };
+
   return {
     weekStart,
     setWeekStart,
@@ -524,5 +580,11 @@ export function useAdminRequestsMonitor(user: { uid?: string; role?: string } | 
     setCorrectionFilter,
     handleUpdateCorrection,
     correctionsPendingCount,
+    assignOpen,
+    setAssignOpen,
+    assignDraft,
+    setAssignDraft,
+    assignLoading,
+    handleAdminAssign,
   };
 }

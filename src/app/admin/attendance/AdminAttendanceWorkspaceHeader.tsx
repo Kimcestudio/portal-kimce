@@ -1,10 +1,13 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
+
 type WorkspaceMetric = {
   label: string;
   value: string;
   tone?: "neutral" | "indigo" | "amber" | "emerald" | "rose";
   helper?: string;
+  icon?: LucideIcon;
 };
 
 const toneClasses: Record<NonNullable<WorkspaceMetric["tone"]>, string> = {
@@ -16,9 +19,9 @@ const toneClasses: Record<NonNullable<WorkspaceMetric["tone"]>, string> = {
 };
 
 type AdminAttendanceWorkspaceHeaderProps = {
-  title: string;
-  subtitle: string;
-  contextLabel: string;
+  title?: string;
+  subtitle?: string;
+  contextLabel?: string;
   metrics: WorkspaceMetric[];
 };
 
@@ -28,36 +31,45 @@ export default function AdminAttendanceWorkspaceHeader({
   contextLabel,
   metrics,
 }: AdminAttendanceWorkspaceHeaderProps) {
-  return (
-    <div className="rounded-2xl bg-white p-6 shadow-[0_8px_24px_rgba(17,24,39,0.08)]">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
-            Supervisión semanal
-          </p>
-          <h2 className="mt-2 text-lg font-semibold text-slate-950">{title}</h2>
-          <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
-        </div>
-        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600">
-          {contextLabel}
-        </span>
-      </div>
+  const hasHeader = title || subtitle || contextLabel;
 
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <div
-            key={metric.label}
-            className={`rounded-2xl border px-4 py-4 ${toneClasses[metric.tone ?? "neutral"]}`}
-          >
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-current/70">
-              {metric.label}
-            </p>
-            <p className="mt-2 text-2xl font-semibold">{metric.value}</p>
-            {metric.helper ? (
-              <p className="mt-1 text-xs text-current/70">{metric.helper}</p>
-            ) : null}
+  return (
+    <div className="rounded-2xl bg-white p-5 shadow-[0_4px_16px_rgba(17,24,39,0.07)]">
+      {hasHeader ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            {title ? <h2 className="text-sm font-semibold text-slate-700">{title}</h2> : null}
+            {subtitle ? <p className="mt-0.5 text-xs text-slate-500">{subtitle}</p> : null}
           </div>
-        ))}
+          {contextLabel ? (
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">
+              {contextLabel}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {metrics.map((metric) => {
+          const Icon = metric.icon;
+          return (
+            <div
+              key={metric.label}
+              className={`rounded-2xl border px-4 py-4 ${toneClasses[metric.tone ?? "neutral"]}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-current/60">
+                  {metric.label}
+                </p>
+                {Icon ? <Icon size={16} className="shrink-0 opacity-40" /> : null}
+              </div>
+              <p className="mt-2 text-2xl font-semibold">{metric.value}</p>
+              {metric.helper ? (
+                <p className="mt-1 text-xs text-current/60">{metric.helper}</p>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

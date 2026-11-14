@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, getDoc, getDocFromServer, serverTimestamp, setDoc } from "firebase/firestore";
+import { atomicUserWrite } from "@/lib/user/syncProfile";
 import type { UserProfile } from "@/services/firebase/types";
 import {
   getStoredSession,
@@ -124,19 +125,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (snapshot.exists()) {
           const data = snapshot.data() as Partial<UserProfile>;
 
-          if (!data.role || !data.workScheduleId) {
+          // Clientes no necesitan workScheduleId — solo team members
+          const isClient = data.role === "client";
+          if (!data.role || (!isClient && !data.workScheduleId)) {
             await setDoc(
               userRef,
               {
                 role: data.role ?? "collab",
-                workScheduleId: data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID,
+                ...(isClient ? {} : { workScheduleId: data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID }),
                 updatedAt: serverTimestamp(),
               },
               { merge: true },
             );
 
             data.role = data.role ?? "collab";
-            data.workScheduleId = data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID;
+            if (!isClient) data.workScheduleId = data.workScheduleId ?? DEFAULT_WORK_SCHEDULE_ID;
           }
 
           nextProfile = {
@@ -145,6 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             displayName: data.displayName ?? localProfile?.displayName ?? "Usuario",
             photoURL: data.photoURL ?? localProfile?.photoURL ?? "",
             role: data.role ?? localProfile?.role ?? "collab",
+            brandIds: data.brandIds ?? localProfile?.brandIds,
             position: data.position ?? localProfile?.position ?? "Sin asignar",
             area: data.area ?? localProfile?.area ?? null,
             workScheduleId:
@@ -165,6 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             accountType: data.accountType ?? localProfile?.accountType,
             accountNumber: data.accountNumber ?? localProfile?.accountNumber,
             cci: data.cci ?? localProfile?.cci,
+            isAreaLead: data.isAreaLead ?? localProfile?.isAreaLead ?? false,
           };
 
           upsertUser(nextProfile);
@@ -209,7 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("No se pudo validar el usuario.");
     }
     const userRef = doc(db, "users", firebaseUid);
-    const snapshot = await getDoc(userRef);
+    const snapshot = await getDocFromServer(userRef);
     if (process.env.NODE_ENV !== "production") {
       console.log("[auth] Google uid", firebaseUid);
     }
@@ -345,24 +350,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const updated = updateUserProfile(profile.uid, payload);
     if (updated) setProfile(updated);
 
-    const userRef = doc(db, "users", profile.uid);
-    void setDoc(
-      userRef,
-      {
-        ...payload,
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true },
-    );
-    void setDoc(
-      doc(db, "userDirectory", profile.uid),
+    void atomicUserWrite(
+      profile.uid,
+      { ...payload },
       buildDirectoryProfile({
         ...nextProfile,
         ...payload,
         uid: profile.uid,
         email: (payload.email as string | undefined) ?? nextProfile.email,
       }),
-      { merge: true },
     );
   };
 

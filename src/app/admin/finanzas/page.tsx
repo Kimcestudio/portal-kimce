@@ -9,19 +9,21 @@ import FinanceHeroCard from "@/components/finance/FinanceHeroCard";
 import FinanceKpiCard from "@/components/finance/FinanceKpiCard";
 import CopyPreviousMonthModal from "@/components/finance/CopyPreviousMonthModal";
 import FinancePendingList from "@/components/finance/FinancePendingList";
-import FinanceMonthlyChart from "@/components/finance/FinanceMonthlyChart";
-import FinanceTrendLineChart from "@/components/finance/FinanceTrendLineChart";
-import FinanceChartCard from "@/components/finance/FinanceChartCard";
-import FinancePieChart from "@/components/finance/FinancePieChart";
-import FinanceBreakdownBarChart from "@/components/finance/FinanceBreakdownBarChart";
-import FinanceComparisonBarChart from "@/components/finance/FinanceComparisonBarChart";
-import FinanceModal, {
-  type CollaboratorFormValues,
-  type CollaboratorPaymentFormValues,
-  type ExpenseFormValues,
-  type IncomeFormValues,
-  type TransferFormValues,
+import dynamic from "next/dynamic";
+const FinanceMonthlyChart     = dynamic(() => import("@/components/finance/FinanceMonthlyChart"),     { ssr: false })
+const FinanceTrendLineChart   = dynamic(() => import("@/components/finance/FinanceTrendLineChart"),   { ssr: false })
+const FinanceChartCard        = dynamic(() => import("@/components/finance/FinanceChartCard"),        { ssr: false })
+const FinancePieChart         = dynamic(() => import("@/components/finance/FinancePieChart"),         { ssr: false })
+const FinanceBreakdownBarChart= dynamic(() => import("@/components/finance/FinanceBreakdownBarChart"),{ ssr: false })
+const FinanceComparisonBarChart=dynamic(() => import("@/components/finance/FinanceComparisonBarChart"),{ ssr: false })
+import type {
+  CollaboratorFormValues,
+  CollaboratorPaymentFormValues,
+  ExpenseFormValues,
+  IncomeFormValues,
+  TransferFormValues,
 } from "@/components/finance/FinanceModal";
+const FinanceModal = dynamic(() => import("@/components/finance/FinanceModal"), { ssr: false })
 import FinanceSkeleton from "@/components/finance/FinanceSkeleton";
 import {
   AccountsTab,
@@ -963,8 +965,8 @@ export default function FinanceModulePage() {
       rows.push([
         "Ingreso",
         movement.clientName,
-        movement.status,
-        `${movement.tax?.total ?? movement.amount}`,
+        getStatusLabel(movement.status),
+        formatCurrency(movement.tax?.total ?? movement.amount),
         movement.incomeDate,
       ]);
     });
@@ -972,8 +974,8 @@ export default function FinanceModulePage() {
       rows.push([
         "Gasto",
         expense.categoria,
-        expense.status,
-        `${expense.monto}`,
+        getStatusLabel(expense.status),
+        formatCurrency(expense.monto),
         expense.fechaGasto,
       ]);
     });
@@ -981,8 +983,8 @@ export default function FinanceModulePage() {
       rows.push([
         "Pago colaborador",
         collaboratorLookup.get(payment.colaboradorId) ?? "Colaborador",
-        payment.status,
-        `${payment.montoFinal}`,
+        getStatusLabel(payment.status),
+        formatCurrency(payment.montoFinal),
         payment.fechaPago,
       ]);
     });
@@ -990,8 +992,8 @@ export default function FinanceModulePage() {
       rows.push([
         "Transferencia",
         transfer.tipoMovimiento,
-        transfer.status,
-        `${transfer.monto}`,
+        getStatusLabel(transfer.status),
+        formatCurrency(transfer.monto),
         transfer.fecha,
       ]);
     });

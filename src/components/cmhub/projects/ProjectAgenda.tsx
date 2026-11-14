@@ -1,0 +1,14 @@
+'use client'
+import { useState } from 'react'
+import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
+import { today, validDate, type Task } from '@/cmhub/projects/domain'
+import type { Proyecto } from '@/cmhub/types'
+export default function ProjectAgenda({project,tasks}:{project:Proyecto;tasks:Task[]}) {
+  const [month,setMonth]=useState(()=>today().slice(0,7)),[selected,setSelected]=useState('')
+  const first=new Date(month+'-01T12:00:00Z'),offset=(first.getUTCDay()+6)%7
+  const count=new Date(Date.UTC(first.getUTCFullYear(),first.getUTCMonth()+1,0)).getUTCDate()
+  const dated=tasks.filter(t=>!t.isGroup&&validDate(t.fechaFin)).sort((a,b)=>a.fechaFin.localeCompare(b.fechaFin))
+  const agenda=selected?dated.filter(t=>t.fechaFin===selected):dated.filter(t=>t.estado!=='completado').slice(0,5)
+  function move(n:number){const d=new Date(first);d.setUTCMonth(d.getUTCMonth()+n);setMonth(d.toISOString().slice(0,7));setSelected('')}
+  return <section className="pw-agenda"><header><CalendarDays size={20}/><h2>{first.toLocaleDateString('es-PE',{month:'long',year:'numeric',timeZone:'UTC'})}</h2><button className="pw-button pw-icon" aria-label="Mes anterior" onClick={()=>move(-1)}><ChevronLeft size={17}/></button><button className="pw-button pw-icon" aria-label="Mes siguiente" onClick={()=>move(1)}><ChevronRight size={17}/></button></header><div className="pw-calendar-grid">{['L','M','X','J','V','S','D'].map(d=><span className="pw-muted" key={d}>{d}</span>)}{Array.from({length:offset},(_,i)=><span key={'empty'+i}/>)}{Array.from({length:count},(_,i)=>{const date=month+'-'+String(i+1).padStart(2,'0'),items=dated.filter(t=>t.fechaFin===date),inRange=validDate(project.fechaInicio)&&validDate(project.fechaFin||'')&&date>=project.fechaInicio&&date<=project.fechaFin!;return <button key={date} className="pw-calendar-day" data-range={inRange} data-selected={selected===date} aria-pressed={selected===date} aria-current={date===today()?'date':undefined} aria-label={`${date}, ${items.length} entregas`} onClick={()=>setSelected(selected===date?'':date)}>{i+1}{items.length>0&&<i/>}</button>})}</div><div className="pw-agenda-heading"><h3>{selected?'Entregas del día':'Agenda de entregas'}</h3>{selected&&<button className="pw-button" onClick={()=>setSelected('')}>Ver todas</button>}</div>{agenda.length===0?<p className="pw-muted">Sin entregas {selected?'para esta fecha':'pendientes'}.</p>:agenda.map(t=><div className="pw-agenda-item" data-state={t.estado} key={t.id}><span className="pw-pill" data-state={t.estado}>{t.milestone?'Hito':t.estado==='completado'?'Lista':t.fechaFin<today()?'Vencida':'Entrega'}</span><div><strong>{t.nombre}</strong><p className="pw-muted">{new Date(t.fechaFin+'T12:00:00Z').toLocaleDateString('es-PE',{day:'numeric',month:'short',timeZone:'UTC'})}</p></div></div>)}</section>
+}

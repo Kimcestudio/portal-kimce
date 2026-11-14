@@ -1,21 +1,19 @@
 "use client";
 
 import {
+  AlertTriangle,
   Calendar,
   Home,
   Mail,
   Users,
-  FileText,
   Clock,
-  Shield,
   Wallet,
-  BarChart3,
   LogOut,
   User,
-  ClipboardList,
   Bell,
-  BriefcaseBusiness,
-  Layers,
+  Sparkles,
+  LayoutDashboard,
+  Database,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
@@ -31,38 +29,37 @@ type NavItem = {
   label: string;
   href: string;
   action?: () => void;
+  highlight?: boolean;
 };
 
 const buildCollaboratorNavItems = (base: string): NavItem[] => [
-  { icon: Home, label: "Inicio", href: `${base}/dashboard` },
-  { icon: Clock, label: "Horario", href: `${base}/hours` },
-  { icon: Calendar, label: "Calendario", href: `${base}/calendar` },
-  { icon: FileText, label: "Documentos", href: `${base}/documents` },
-  { icon: Layers, label: "Contenidos", href: `${base}/contenidos` },
-  { icon: Users, label: "Equipo", href: `${base}/team` },
-  { icon: Mail, label: "Mensajes", href: `${base}/messages` },
-  { icon: ClipboardList, label: "Historial", href: `${base}/history` },
-  { icon: Shield, label: "Configuración", href: `${base}/settings` },
+  { icon: Home,     label: "Inicio",       href: `${base}/dashboard`  },
+  { icon: Sparkles, label: "Kimce Suite",  href: `${base}/contenidos`, highlight: true },
+  { icon: Clock,    label: "Horario",      href: `${base}/hours`      },
+  { icon: Calendar, label: "Calendario",   href: `${base}/calendar`   },
+  { icon: Users,    label: "Equipo",       href: `${base}/team`       },
 ];
 
-const buildAdminNavItems = (base: string): NavItem[] => [
-  { icon: Home, label: "Inicio Admin", href: base },
-  { icon: Mail, label: "Solicitudes", href: `${base}/requests` },
-  { icon: Users, label: "Usuarios y Roles", href: `${base}/users` },
-  { icon: Wallet, label: "Finanzas", href: `${base}/finanzas` },
-  { icon: BriefcaseBusiness, label: "Clientes", href: `${base}/clientes` },
-  { icon: Bell, label: "Anuncios", href: `${base}/anuncios` },
-  { icon: BarChart3, label: "Reportes", href: `${base}/reports` },
-  { icon: Clock, label: "Horarios", href: `${base}/hours` },
-  { icon: Calendar, label: "Calendario", href: `${base}/calendar` },
-  { icon: FileText, label: "Documentos", href: `${base}/documents` },
-  { icon: ClipboardList, label: "Gestión", href: `${base}/manage` },
-  { icon: Layers, label: "Contenidos", href: `${base}/contenidos` },
-  { icon: Shield, label: "Configuración", href: `${base}/settings` },
-];
+const buildAdminNavGroups = (base: string): { operativo: NavItem[]; administracion: NavItem[] } => ({
+  operativo: [
+    { icon: Mail,          label: "Solicitudes", href: `${base}/requests`   },
+    { icon: Clock,         label: "Horarios",    href: `${base}/hours`      },
+    { icon: AlertTriangle, label: "Alertas",     href: `${base}/attendance` },
+    { icon: Calendar,      label: "Calendario",  href: `${base}/calendar`   },
+  ],
+  administracion: [
+    { icon: Sparkles,        label: "Kimce Suite",     href: `${base}/contenidos`, highlight: true },
+    { icon: LayoutDashboard, label: "Overview",        href: `${base}/manage`   },
+    { icon: Users,           label: "Usuarios y Roles", href: `${base}/users`   },
+    { icon: Wallet,          label: "Finanzas",        href: `${base}/finanzas` },
+    { icon: Bell,            label: "Anuncios",        href: `${base}/anuncios` },
+    { icon: Database,        label: "Datos",           href: `${base}/settings` },
+  ],
+});
 
 function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel: boolean) {
   const Icon = item.icon;
+  const isHighlight = item.highlight;
   const layoutClass = showLabel ? "gap-3 px-3" : "justify-center px-0";
   const content = (
     <>
@@ -70,28 +67,41 @@ function renderNavItem(item: NavItem, isActive: boolean, key: string, showLabel:
         <span className="absolute left-0 top-1/2 z-20 hidden h-8 w-1 -translate-y-1/2 rounded-full bg-white/25 group-hover/sidebar:block" />
       ) : null}
       <div className="relative flex h-11 w-11 items-center justify-center">
-        <span
-          className={`absolute inset-0 rounded-full bg-[#5960dc] opacity-0 blur-md transition duration-200 ${
-            isActive ? "opacity-40" : "group-hover/sidebar:opacity-30"
-          }`}
-        />
-        <span
-          className={`absolute inset-1 rounded-full bg-[#4f56d3]/60 opacity-0 transition duration-200 ${
-            isActive ? "opacity-60" : "group-hover/sidebar:opacity-50"
-          }`}
-        />
+        {isHighlight && (
+          <span className={`suite-glow absolute inset-0 rounded-full bg-gradient-to-br from-[#a855f7] to-[#6366f1] blur-md ${isActive ? "opacity-60" : "opacity-30"}`} />
+        )}
+        {!isHighlight && (
+          <span
+            className={`absolute inset-0 rounded-full bg-[#5960dc] blur-md transition duration-200 ${
+              isActive ? "opacity-40" : "opacity-0 group-hover/sidebar:opacity-30"
+            }`}
+          />
+        )}
+        {!isHighlight && (
+          <span
+            className={`absolute inset-1 rounded-full bg-[#4f56d3]/60 transition duration-200 ${
+              isActive ? "opacity-60" : "opacity-0 group-hover/sidebar:opacity-50"
+            }`}
+          />
+        )}
         <div
-          className={`relative z-10 flex h-10 w-10 items-center justify-center rounded-full transition duration-200 ${
-            isActive
-              ? "bg-[#4f56d3] text-white shadow-glow"
-              : "bg-white/5 text-white/70 group-hover/sidebar:bg-[#2a3178]"
-          } group-hover/sidebar:scale-110`}
+          className={`relative z-10 flex h-10 w-10 items-center justify-center rounded-full transition duration-200 group-hover/sidebar:scale-110 ${isHighlight && isActive ? "suite-shimmer-wrap" : ""} ${
+            isHighlight
+              ? isActive
+                ? "bg-gradient-to-br from-[#a855f7] to-[#6366f1] text-white shadow-[0_0_20px_rgba(168,85,247,0.6)]"
+                : "bg-gradient-to-br from-[#7c3aed]/70 to-[#6366f1]/50 text-[#ddd6fe] group-hover/sidebar:from-[#a855f7] group-hover/sidebar:to-[#6366f1] group-hover/sidebar:text-white group-hover/sidebar:shadow-[0_0_20px_rgba(168,85,247,0.6)]"
+              : isActive
+                ? "bg-[#4f56d3] text-white shadow-glow"
+                : "bg-white/5 text-white/70 group-hover/sidebar:bg-[#2a3178]"
+          }`}
         >
-          <Icon size={18} className="transition duration-200 group-hover/sidebar:text-white" />
+          <Icon size={18} className={`transition duration-200 group-hover/sidebar:text-white ${isHighlight ? "suite-icon" : ""}`} />
         </div>
       </div>
       {showLabel ? (
-        <span className="whitespace-nowrap text-sm font-semibold text-white/90 opacity-0 -translate-x-2 transition-all duration-200 ease-out group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100">
+        <span className={`whitespace-nowrap text-sm font-semibold opacity-0 -translate-x-2 transition-all duration-200 ease-out group-hover/sidebar:translate-x-0 group-hover/sidebar:opacity-100 ${
+          isHighlight ? "text-[#e9d5ff]" : "text-white/90"
+        }`}>
           {item.label}
         </span>
       ) : null}
@@ -137,7 +147,7 @@ function Section({ title, items, showLabel }: { title: string; items: NavItem[];
       "/app/messages": ["/messages", "/app/messages"],
       "/app/history": ["/history", "/app/history"],
       "/app/settings": ["/settings", "/app/settings"],
-      "/admin": ["/admin/dashboard", "/admin/overview"],
+      "/admin/manage": ["/admin", "/admin/dashboard", "/admin/manage"],
     };
     const extraMatches = aliases[item.href] ?? [];
     if (extraMatches.some((alias) => pathname === alias || pathname.startsWith(`${alias}/`))) {
@@ -172,10 +182,9 @@ export default function SidebarNav() {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const base = profile?.role === "admin" && viewMode === "admin" ? "/admin" : "/app";
-  const visibleNavItems = useMemo(() => {
-    if (role === "ADMIN" && viewMode === "admin") return buildAdminNavItems(base);
-    return buildCollaboratorNavItems(base);
-  }, [base, role, viewMode]);
+  const isAdmin = role === "ADMIN" && viewMode === "admin";
+  const adminGroups = useMemo(() => buildAdminNavGroups(base), [base]);
+  const collabItems = useMemo(() => buildCollaboratorNavItems(base), [base]);
 
   return (
     <aside
@@ -249,7 +258,14 @@ export default function SidebarNav() {
           isExpanded ? "overflow-y-auto no-scrollbar" : "overflow-y-hidden"
         } ${isExpanded ? "translate-y-0" : "translate-y-1"}`}
       >
-        <Section title="GENERAL" items={visibleNavItems} showLabel={isExpanded} />
+        {isAdmin ? (
+          <>
+            <Section title="OPERATIVO"      items={adminGroups.operativo}      showLabel={isExpanded} />
+            <Section title="ADMINISTRACIÓN" items={adminGroups.administracion}  showLabel={isExpanded} />
+          </>
+        ) : (
+          <Section title="GENERAL" items={collabItems} showLabel={isExpanded} />
+        )}
       </nav>
       <footer className="mt-auto shrink-0 overflow-visible px-3 pb-4 pt-4">
         {isExpanded ? (

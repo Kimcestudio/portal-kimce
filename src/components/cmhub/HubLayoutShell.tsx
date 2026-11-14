@@ -2,6 +2,7 @@
 import { X } from 'lucide-react'
 import { useHubTheme } from '@/cmhub/theme'
 import { useHub } from '@/cmhub/context'
+import AttendanceReminderBanner from '@/components/attendance/AttendanceReminderBanner'
 
 export default function HubLayoutShell({ children }: { children: React.ReactNode }) {
   const { isDark } = useHubTheme()
@@ -12,6 +13,7 @@ export default function HubLayoutShell({ children }: { children: React.ReactNode
       className="fixed inset-0 z-20 flex flex-col transition-colors duration-200"
       style={{ background: isDark ? '#09090b' : '#f1f3f6' }}
     >
+      <AttendanceReminderBanner />
       {/* Banner "viendo como" */}
       {viewAs && (
         <div className="shrink-0 flex items-center justify-center gap-3 py-1.5 text-[12px] font-semibold"
