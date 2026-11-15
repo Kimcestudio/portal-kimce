@@ -25,6 +25,12 @@ const REPLY_TO     = 'kimcestudio@gmail.com'
 function nowISO() { return new Date().toISOString() }
 function uid()    { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7) }
 
+/** Date → { date: 'YYYY-MM-DD', time: 'HH:mm' } en hora de Lima (los proveedores entregan UTC) */
+function limaDateTime(d) {
+  const s = d.toLocaleString('sv-SE', { timeZone: 'America/Lima' })
+  return { date: s.slice(0, 10), time: s.slice(11, 16) }
+}
+
 /** Normalize Fathom / Zapier payload → internal meeting object */
 function normalizeFathomPayload(body) {
   const raw = body || {}
@@ -39,8 +45,7 @@ function normalizeFathomPayload(body) {
   const endRaw   = raw.end_time   || raw.ended_at   || null
   const startDate = startRaw ? new Date(startRaw) : new Date()
   const endDate   = endRaw   ? new Date(endRaw)   : null
-  const date      = startDate.toISOString().slice(0, 10)
-  const time      = startDate.toISOString().slice(11, 16)
+  const { date, time } = limaDateTime(startDate)
   const duration  = endDate ? Math.round((endDate - startDate) / 60000) : null
 
   let participants = []
@@ -492,8 +497,7 @@ function normalizeFirefliesMeeting(item) {
   } else {
     startDate = new Date(item.date || Date.now())
   }
-  const date = startDate.toISOString().slice(0, 10)
-  const time = startDate.toISOString().slice(11, 16)
+  const { date, time } = limaDateTime(startDate)
 
   // duration: Fireflies returns seconds
   const duration = item.duration ? Math.round(item.duration / 60) : null
@@ -1173,8 +1177,7 @@ function normalizeFathomMeeting(item) {
   const endRaw    = item.recording_end_time   || item.scheduled_end_time   || null
   const startDate = startRaw ? new Date(startRaw) : new Date()
   const endDate   = endRaw   ? new Date(endRaw)   : null
-  const date      = startDate.toISOString().slice(0, 10)
-  const time      = startDate.toISOString().slice(11, 16)
+  const { date, time } = limaDateTime(startDate)
   const duration  = endDate ? Math.round((endDate - startDate) / 60000) : (item.duration ?? null)
 
   // Summary (fetched via include_summary=true or nested object)
