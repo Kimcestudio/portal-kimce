@@ -516,7 +516,41 @@ export default function MeetingDetailPage() {
 
       {/* ── Tab: Resumen ── */}
       {tab === 'resumen' && (
-        <div className={`rounded-2xl border ${isDark ? 'border-white/8 bg-[#161820]' : 'border-slate-200 bg-white'}`}>
+        <div className="flex flex-col gap-3">
+          {/* Resumen original de Fathom */}
+          {meeting.fathomSummary ? (
+            <div className={`rounded-2xl border ${isDark ? 'border-white/8 bg-[#161820]' : 'border-slate-200 bg-white'}`}>
+              <div className={`flex items-center justify-between gap-3 px-5 py-3.5 border-b ${isDark ? 'border-white/8' : 'border-slate-100'}`}>
+                <div className="flex items-center gap-2">
+                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? 'bg-sky-500/20 text-sky-400' : 'bg-sky-50 text-sky-700'}`}>
+                    Fathom
+                  </span>
+                  <span className={`text-[11px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Resumen original</span>
+                </div>
+                <button
+                  onClick={() => copyToClipboard(meeting.fathomSummary!)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-colors ${isDark ? 'text-slate-400 hover:bg-white/8 hover:text-slate-200' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'}`}
+                >
+                  {copied ? <Check size={12} /> : <Copy size={12} />}
+                  {copied ? 'Copiado' : 'Copiar'}
+                </button>
+              </div>
+              <div className="px-5 py-4">
+                <div className={`text-[13.5px] leading-[1.8] whitespace-pre-wrap [&_strong]:font-semibold [&_ul]:pl-5 [&_li]:list-disc ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>
+                  {meeting.fathomSummary.split('\n').map((line, i) => {
+                    const stripped = line.replace(/^#{1,6}\s*/, '')
+                    if (/^#{1,6}\s/.test(line)) return <p key={i} className={`font-bold mt-3 mb-1 ${isDark ? 'text-slate-100' : 'text-slate-900'}`}>{stripped}</p>
+                    if (/^[-*]\s/.test(line)) return <p key={i} className="pl-4 before:content-['•'] before:mr-2 before:text-violet-400">{line.replace(/^[-*]\s/, '')}</p>
+                    if (!line.trim()) return <div key={i} className="h-2" />
+                    return <p key={i}>{line}</p>
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Resumen KIMCE AI (siempre visible si existe) */}
+          <div className={`rounded-2xl border ${isDark ? 'border-white/8 bg-[#161820]' : 'border-slate-200 bg-white'}`}>
           {meeting.summary ? (
             <>
               <div className={`flex items-center justify-between gap-3 px-5 py-3.5 border-b ${isDark ? 'border-white/8' : 'border-slate-100'}`}>
@@ -586,6 +620,7 @@ export default function MeetingDetailPage() {
               )}
             </div>
           )}
+          </div>
         </div>
       )}
 

@@ -1185,7 +1185,8 @@ function normalizeFathomMeeting(item) {
   const rawSummary = typeof summaryObj === 'string'
     ? summaryObj
     : (summaryObj.markdown_formatted || summaryObj.short_summary || summaryObj.overview || summaryObj.text || summaryObj.content || '')
-  const summary = stripMarkdown(rawSummary)
+  const fathomSummary = rawSummary.trim()   // resumen original con formato markdown de Fathom
+  const summary = stripMarkdown(rawSummary) // versión plana para contexto de IA
 
   // Transcript (fetched via include_transcript=true)
   let transcript = ''
@@ -1226,7 +1227,7 @@ function normalizeFathomMeeting(item) {
       .filter(Boolean)
   }
 
-  return { title, summary, transcript, recordingUrl, fathomId, date, time, duration, participants, actionItems }
+  return { title, summary, fathomSummary, transcript, recordingUrl, fathomId, date, time, duration, participants, actionItems }
 }
 
 /** Fetch all pages from GET /meetings since lastPolledAt */
@@ -1409,12 +1410,13 @@ async function runFathomPoll(apiKey, label, pollerDoc) {
         duration:     meeting.duration,
         platform:     'google_meet',
         participants: meeting.participants,
-        summary:      finalSummary,
-        transcript:   meeting.transcript,
-        recordingUrl: meeting.recordingUrl,
-        fathomId:     meeting.fathomId,
-        proyectoId:   resolvedProyectoId,
-        projectIds:   resolvedProyectoId ? [resolvedProyectoId] : [],
+        summary:       finalSummary,
+        fathomSummary: meeting.fathomSummary || '',
+        transcript:    meeting.transcript,
+        recordingUrl:  meeting.recordingUrl,
+        fathomId:      meeting.fathomId,
+        proyectoId:    resolvedProyectoId,
+        projectIds:    resolvedProyectoId ? [resolvedProyectoId] : [],
         actionItems,
         tasksCreated:  [],
         source:        'fathom',

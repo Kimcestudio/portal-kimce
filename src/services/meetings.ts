@@ -38,6 +38,7 @@ export interface HubReunion {
   platform: MeetingPlatform
   participants: MeetingParticipant[]
   summary: string
+  fathomSummary?: string
   transcript: string
   recordingUrl: string
   fathomId: string

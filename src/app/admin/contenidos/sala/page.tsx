@@ -367,6 +367,7 @@ function TabPresencia() {
   const [inviteParticipants, setInviteParticipants] = useState<string[]>([])
   const [inviteForm, setInviteForm] = useState({ title: '', date: '', startTime: '09:00', endTime: '10:00' })
   const [inviteStatus, setInviteStatus] = useState<'idle' | 'saving' | 'done'>('idle')
+  const [inviteError, setInviteError]   = useState('')
 
   const { setStatus } = useMyPresence(uid)
 
@@ -555,12 +556,12 @@ function TabPresencia() {
 
   async function handleCreateMeeting() {
     setInviteStatus('saving')
+    setInviteError('')
     const selectedMembers = team.filter(m => inviteParticipants.includes(m.id) && m.email)
     const attendees = [
       ...selectedMembers.map(m => ({ email: m.email!, displayName: m.name })),
       { email: 'fred@fireflies.ai', displayName: 'Fireflies Notetaker' },
     ]
-    // De-duplicate by email
     const seen = new Set<string>()
     const uniqueAttendees = attendees.filter(a => { if (seen.has(a.email)) return false; seen.add(a.email); return true })
     try {
@@ -575,8 +576,10 @@ function TabPresencia() {
       setInviteStatus('done')
       if (ev.htmlLink) window.open(ev.htmlLink, '_blank', 'noopener')
       setTimeout(() => { setInviteOpen(false); setInviteStatus('idle') }, 1800)
-    } catch {
+    } catch (err: unknown) {
       setInviteStatus('idle')
+      const msg = (err as { message?: string })?.message ?? 'No se pudo crear la reunión.'
+      setInviteError(msg)
     }
   }
 
@@ -907,8 +910,13 @@ function TabPresencia() {
                 <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 600 }}>Fireflies grabará automáticamente</span>
               </div>
             </div>
+            {inviteError && (
+              <p style={{ margin: '12px 0 0', fontSize: 12, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 10px' }}>
+                {inviteError}
+              </p>
+            )}
             <div style={{ display: 'flex', gap: 8, marginTop: 18 }}>
-              <button onClick={() => setInviteOpen(false)}
+              <button onClick={() => { setInviteOpen(false); setInviteError('') }}
                 style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1px solid #e5e7eb', background: 'transparent', fontSize: 13, fontWeight: 600, color: isDark ? '#94a3b8' : '#6b7280', cursor: 'pointer' }}>
                 Cancelar
               </button>
