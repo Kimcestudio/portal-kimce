@@ -6,6 +6,7 @@ import {
   ChevronRight, Copy, Check, X, Search,
   Calendar, Mic2, Download, Play, Eye, FolderOpen,
   Loader2, ExternalLink, RefreshCw, Link2Off,
+  Rows3, Layers, Sparkles, ChevronDown, Bot,
 } from 'lucide-react'
 import { useHub }      from '@/cmhub/context'
 import { useHubTheme } from '@/cmhub/theme'
@@ -79,8 +80,53 @@ const PLATFORM_CFG: Record<MeetingPlatform, { barCls: string; dotCls: string; gr
 // ── Types ─────────────────────────────────────────────────────────────────
 
 type FilterTab = 'todas' | 'semana' | 'sin_revisar' | 'con_grabacion'
+type ViewMode   = 'proyecto' | 'fecha'
 type MonthGroup = { label: string; key: string; meetings: HubReunion[] }
 interface ProyectoRef { id: string; nombre: string }
+
+interface ProyectoFull extends ProyectoRef {
+  brief?: string
+  briefUpdatedAt?: string
+  autoCreated?: boolean
+}
+
+type ProyectoGroup = {
+  id: string | null
+  nombre: string
+  brief: string
+  briefUpdatedAt: string
+  autoCreated: boolean
+  meetings: HubReunion[]
+}
+
+function groupByProject(meetings: HubReunion[], proyectos: ProyectoFull[]): ProyectoGroup[] {
+  const map = new Map<string | null, HubReunion[]>()
+  for (const m of meetings) {
+    const pid = m.projectIds?.[0] ?? m.proyectoId ?? null
+    if (!map.has(pid)) map.set(pid, [])
+    map.get(pid)!.push(m)
+  }
+  const groups: ProyectoGroup[] = []
+  for (const [pid, ms] of map.entries()) {
+    const proy = pid ? proyectos.find(p => p.id === pid) : null
+    groups.push({
+      id:             pid,
+      nombre:         proy?.nombre ?? (pid ? pid : 'Sin proyecto'),
+      brief:          proy?.brief ?? '',
+      briefUpdatedAt: proy?.briefUpdatedAt ?? '',
+      autoCreated:    proy?.autoCreated ?? false,
+      meetings:       ms,
+    })
+  }
+  // Sort: projects with meetings first (most recent meeting first), "Sin proyecto" last
+  return groups.sort((a, b) => {
+    if (a.id === null) return 1
+    if (b.id === null) return -1
+    const latA = a.meetings[0]?.date ?? ''
+    const latB = b.meetings[0]?.date ?? ''
+    return latB.localeCompare(latA)
+  })
+}
 
 function groupByMonth(meetings: HubReunion[]): MonthGroup[] {
   const map = new Map<string, HubReunion[]>()
@@ -332,6 +378,127 @@ function MonthGroupCard({
   )
 }
 
+// ── Proyecto group card ───────────────────────────────────────────────────
+
+function ProyectoGroupCard({
+  group, base, isDark, isAdmin, proyectos, onToggleReviewed,
+}: {
+  group: ProyectoGroup; base: string; isDark: boolean; isAdmin: boolean;
+  proyectos: ProyectoRef[]; onToggleReviewed: (m: HubReunion) => void;
+}) {
+  const [briefOpen, setBriefOpen] = useState(!!group.brief)
+  const totalItems    = group.meetings.reduce((s, m) => s + m.actionItems.length, 0)
+  const pendingItems  = group.meetings.reduce((s, m) => s + m.actionItems.filter(a => !a.done).length, 0)
+  const sinRevisar    = group.meetings.filter(m => m.status === 'pending_review').length
+
+  return (
+    <div>
+      {/* Group header */}
+      <div className="flex items-center gap-2 mb-2 px-1">
+        <div className="flex items-center gap-2 min-w-0">
+          {group.id === null ? (
+            <Link2Off size={13} className={isDark ? 'text-slate-600' : 'text-slate-400'} />
+          ) : (
+            <FolderOpen size={13} className={isDark ? 'text-violet-400' : 'text-violet-600'} />
+          )}
+          <span className={`text-[13px] font-bold truncate ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+            {group.nombre}
+          </span>
+          {group.autoCreated && (
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold flex-shrink-0 ${
+              isDark ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20' : 'bg-amber-50 text-amber-700 border border-amber-200'
+            }`}>
+              <Bot size={8} /> Auto-creado · pendiente de confirmar
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
+          <span className={`text-[11px] font-semibold tabular-nums ${isDark ? 'text-slate-600' : 'text-slate-400'}`}>
+            {group.meetings.length} {group.meetings.length === 1 ? 'reunión' : 'reuniones'}
+          </span>
+          {pendingItems > 0 && (
+            <span className={`flex items-center gap-1 text-[11px] font-semibold ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+              <AlertCircle size={10} /> {pendingItems} pend.
+            </span>
+          )}
+          {sinRevisar > 0 && (
+            <span className={`text-[11px] font-semibold ${isDark ? 'text-violet-400' : 'text-violet-600'}`}>
+              {sinRevisar} sin revisar
+            </span>
+          )}
+          {isAdmin && group.id && (
+            <button onClick={() => exportGroupCSV(group.nombre, group.meetings)}
+              className={`inline-flex items-center gap-1 text-[11px] font-semibold transition-colors ${
+                isDark ? 'text-slate-600 hover:text-slate-400' : 'text-slate-400 hover:text-slate-600'
+              }`}>
+              <Download size={10} /> CSV
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Container card */}
+      <div className={`rounded-2xl border overflow-hidden ${
+        isDark ? 'bg-[#161820] border-white/8' : 'bg-white border-slate-200 shadow-sm'
+      }`}>
+
+        {/* Brief section (collapsible) */}
+        {group.brief && (
+          <div className={`border-b ${isDark ? 'border-white/5' : 'border-slate-100'}`}>
+            <button
+              onClick={() => setBriefOpen(o => !o)}
+              className={`w-full flex items-center gap-2 px-4 py-2.5 text-left transition-colors ${
+                isDark ? 'hover:bg-white/4' : 'hover:bg-slate-50'
+              }`}
+            >
+              <Sparkles size={11} className={isDark ? 'text-violet-400' : 'text-violet-600'} />
+              <span className={`text-[11px] font-semibold flex-1 ${isDark ? 'text-violet-400' : 'text-violet-700'}`}>
+                Brief del proyecto
+              </span>
+              {group.briefUpdatedAt && (
+                <span className={`text-[10px] ${isDark ? 'text-slate-600' : 'text-slate-400'}`}>
+                  Actualizado {group.briefUpdatedAt.slice(0, 10)}
+                </span>
+              )}
+              <ChevronDown size={12} className={`transition-transform flex-shrink-0 ${briefOpen ? 'rotate-180' : ''} ${isDark ? 'text-slate-500' : 'text-slate-400'}`} />
+            </button>
+            {briefOpen && (
+              <div className={`px-4 pb-4 text-[12.5px] leading-relaxed whitespace-pre-wrap ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
+                {group.brief}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Column headers */}
+        <div className={`flex items-center gap-3 pl-5 pr-4 py-2 border-b ${
+          isDark ? 'border-white/5 bg-white/2' : 'border-slate-100 bg-slate-50/80'
+        }`}>
+          <div className="w-9 flex-shrink-0" />
+          <div className={`flex-1 text-[10px] font-bold uppercase tracking-widest ${isDark ? 'text-slate-600' : 'text-slate-400'}`}>
+            Reunión
+          </div>
+          <div className="hidden md:flex items-center gap-5 flex-shrink-0">
+            <div className={`w-[72px] text-right text-[10px] font-bold uppercase tracking-widest ${isDark ? 'text-slate-600' : 'text-slate-400'}`}>Equipo</div>
+            <div className={`w-14 text-center text-[10px] font-bold uppercase tracking-widest ${isDark ? 'text-slate-600' : 'text-slate-400'}`}>Pend.</div>
+            <div className={`w-[82px] text-center text-[10px] font-bold uppercase tracking-widest ${isDark ? 'text-slate-600' : 'text-slate-400'}`}>Estado</div>
+          </div>
+          <div className="w-[60px] flex-shrink-0" />
+        </div>
+
+        {/* Rows */}
+        {group.meetings.map((m, i) => (
+          <MeetingRow
+            key={m.id} m={m} base={base} isDark={isDark} isAdmin={isAdmin}
+            isLast={i === group.meetings.length - 1}
+            proyectos={proyectos} onToggleReviewed={onToggleReviewed}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Google Calendar sidebar ───────────────────────────────────────────────
 
 function CalendarSidebar({
@@ -550,6 +717,7 @@ export default function ReunionesPage() {
   const [loading, setLoading]     = useState(true)
   const [search, setSearch]       = useState('')
   const [filterTab, setFilterTab] = useState<FilterTab>('todas')
+  const [view, setView]           = useState<ViewMode>('proyecto')
   const [copied, setCopied]       = useState(false)
   const [showForm, setShowForm]   = useState(false)
   const [busy, setBusy]           = useState(false)
@@ -589,7 +757,11 @@ export default function ReunionesPage() {
     return list
   }, [past, search, filterTab])
 
-  const monthGroups = useMemo(() => groupByMonth(filtered), [filtered])
+  const monthGroups    = useMemo(() => groupByMonth(filtered), [filtered])
+  const proyectoGroups = useMemo(
+    () => groupByProject(past, proyectos as unknown as ProyectoFull[]),
+    [past, proyectos]
+  )
 
   const totalPending = useMemo(() => meetings.reduce((a, m) => a + m.actionItems.filter(i => !i.done).length, 0), [meetings])
   const thisWeekCnt  = useMemo(() => {
@@ -692,35 +864,61 @@ export default function ReunionesPage() {
         </details>
       )}
 
-      {/* ── Unified filter toolbar ── */}
-      <div className={`flex items-center gap-1 p-1 rounded-2xl border ${
-        isDark ? 'border-white/8 bg-white/3' : 'border-slate-200 bg-slate-50 shadow-sm'
-      }`}>
-        {FILTER_TABS.map(ft => (
-          <button key={ft.id} onClick={() => setFilterTab(ft.id)}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[12px] font-semibold transition-all whitespace-nowrap ${
-              filterTab === ft.id
-                ? 'bg-white shadow-sm text-violet-700 shadow-slate-200/80'
-                : isDark ? 'text-slate-500 hover:text-slate-300 hover:bg-white/5' : 'text-slate-500 hover:text-slate-700'
-            } ${isDark && filterTab === ft.id ? '!bg-violet-600 !text-white shadow-none' : ''}`}>
-            {ft.label}
-            {ft.count !== undefined && ft.count > 0 && (
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none ${
-                filterTab === ft.id
-                  ? isDark ? 'bg-white/20' : 'bg-violet-100 text-violet-600'
-                  : isDark ? 'bg-white/8 text-slate-400' : 'bg-slate-200 text-slate-500'
-              }`}>{ft.count}</span>
-            )}
-          </button>
-        ))}
-        <div className="flex-1" />
+      {/* ── View toggle + filter toolbar ── */}
+      <div className="flex items-center gap-2 flex-wrap">
+
+        {/* View segmented control */}
+        <div className={`flex items-center gap-0.5 p-1 rounded-xl border flex-shrink-0 ${
+          isDark ? 'border-white/8 bg-white/3' : 'border-slate-200 bg-slate-50'
+        }`}>
+          {([
+            { id: 'proyecto' as ViewMode, label: 'Por proyecto', icon: <Layers size={12} /> },
+            { id: 'fecha'    as ViewMode, label: 'Por fecha',    icon: <Rows3  size={12} /> },
+          ]).map(v => (
+            <button key={v.id} onClick={() => setView(v.id)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold transition-all ${
+                view === v.id
+                  ? isDark ? 'bg-violet-600 text-white' : 'bg-white shadow-sm text-violet-700 shadow-slate-200/80'
+                  : isDark ? 'text-slate-500 hover:text-slate-300 hover:bg-white/5' : 'text-slate-500 hover:text-slate-700'
+              }`}>
+              {v.icon}{v.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Filter tabs (only in fecha view) */}
+        {view === 'fecha' && (
+          <div className={`flex items-center gap-1 p-1 rounded-xl border flex-1 min-w-0 ${
+            isDark ? 'border-white/8 bg-white/3' : 'border-slate-200 bg-slate-50 shadow-sm'
+          }`}>
+            {FILTER_TABS.map(ft => (
+              <button key={ft.id} onClick={() => setFilterTab(ft.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-all whitespace-nowrap ${
+                  filterTab === ft.id
+                    ? isDark ? 'bg-violet-600 text-white' : 'bg-white shadow-sm text-violet-700 shadow-slate-200/80'
+                    : isDark ? 'text-slate-500 hover:text-slate-300 hover:bg-white/5' : 'text-slate-500 hover:text-slate-700'
+                }`}>
+                {ft.label}
+                {ft.count !== undefined && ft.count > 0 && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center leading-none ${
+                    filterTab === ft.id
+                      ? isDark ? 'bg-white/20' : 'bg-violet-100 text-violet-600'
+                      : isDark ? 'bg-white/8 text-slate-400' : 'bg-slate-200 text-slate-500'
+                  }`}>{ft.count}</span>
+                )}
+              </button>
+            ))}
+            <div className="flex-1" />
+          </div>
+        )}
+
         {/* Search */}
-        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-colors ${
-          isDark ? 'hover:bg-white/8' : 'hover:bg-white'
-        } ${search ? isDark ? 'bg-white/8' : 'bg-white shadow-sm' : ''}`}>
+        <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border transition-colors flex-shrink-0 ${
+          isDark ? 'border-white/8 bg-white/3 hover:bg-white/8' : 'border-slate-200 bg-slate-50 hover:bg-white'
+        } ${search ? isDark ? '!bg-white/8' : '!bg-white shadow-sm' : ''}`}>
           <Search size={12} className={isDark ? 'text-slate-500' : 'text-slate-400'} />
           <input type="search" placeholder="Buscar…" value={search} onChange={e => setSearch(e.target.value)}
-            className={`w-24 bg-transparent outline-none text-[12px] ${isDark ? 'text-slate-200 placeholder:text-slate-600' : 'text-slate-700 placeholder:text-slate-400'}`} />
+            className={`w-28 bg-transparent outline-none text-[12px] ${isDark ? 'text-slate-200 placeholder:text-slate-600' : 'text-slate-700 placeholder:text-slate-400'}`} />
           {search && (
             <button onClick={() => setSearch('')}>
               <X size={11} className={isDark ? 'text-slate-500' : 'text-slate-400'} />
@@ -738,39 +936,65 @@ export default function ReunionesPage() {
             <div className={`rounded-2xl border overflow-hidden ${isDark ? 'bg-[#161820] border-white/8' : 'bg-white border-slate-200 shadow-sm'}`}>
               {[1, 2, 3, 4].map(i => <RowSkeleton key={i} isDark={isDark} />)}
             </div>
-          ) : filtered.length === 0 ? (
-            <div className={`flex flex-col items-center gap-3 py-16 text-center rounded-2xl border ${
-              isDark ? 'bg-[#161820] border-white/8' : 'bg-white border-slate-200 shadow-sm'
-            }`}>
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-slate-50'}`}>
+          ) : view === 'proyecto' ? (
+            /* ── Vista por proyecto ── */
+            past.length === 0 ? (
+              <div className={`flex flex-col items-center gap-3 py-16 text-center rounded-2xl border ${isDark ? 'bg-[#161820] border-white/8' : 'bg-white border-slate-200 shadow-sm'}`}>
                 <Video size={24} className="opacity-30" />
+                <p className={`text-[15px] font-semibold ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>Sin reuniones</p>
+                <p className={`text-[12px] max-w-xs mx-auto ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Las grabaciones desde Fathom aparecerán aquí.</p>
               </div>
-              <div>
-                <p className={`text-[15px] font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
-                  {search ? 'Sin resultados' : filterTab === 'sin_revisar' ? 'Todo al día' : filterTab === 'con_grabacion' ? 'Sin grabaciones' : 'Sin reuniones'}
-                </p>
-                <p className={`text-[12px] max-w-xs mx-auto ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
-                  {search ? 'Prueba con otro título o nombre.'
-                    : filterTab === 'sin_revisar' ? 'Todas las reuniones están revisadas.'
-                    : 'Las grabaciones desde Fathom aparecerán aquí.'}
-                </p>
+            ) : (
+              <div className="flex flex-col gap-6">
+                {proyectoGroups
+                  .filter(g => !search || g.meetings.some(m =>
+                    m.title.toLowerCase().includes(search.toLowerCase()) ||
+                    m.participants.some(p => p.name.toLowerCase().includes(search.toLowerCase()))
+                  ))
+                  .map(g => (
+                    <ProyectoGroupCard
+                      key={g.id ?? '__sin_proyecto__'} group={g} base={base} isDark={isDark} isAdmin={isAdmin}
+                      proyectos={proyectosRef} onToggleReviewed={handleToggleReviewed}
+                    />
+                  ))}
               </div>
-              {(search || filterTab !== 'todas') && (
-                <button onClick={() => { setSearch(''); setFilterTab('todas') }}
-                  className={`text-[12px] font-semibold ${isDark ? 'text-violet-400' : 'text-violet-600'}`}>
-                  Ver todas
-                </button>
-              )}
-            </div>
+            )
           ) : (
-            <div className="flex flex-col gap-6">
-              {monthGroups.map(group => (
-                <MonthGroupCard
-                  key={group.key} group={group} base={base} isDark={isDark} isAdmin={isAdmin}
-                  proyectos={proyectosRef} onToggleReviewed={handleToggleReviewed}
-                />
-              ))}
-            </div>
+            /* ── Vista por fecha ── */
+            filtered.length === 0 ? (
+              <div className={`flex flex-col items-center gap-3 py-16 text-center rounded-2xl border ${
+                isDark ? 'bg-[#161820] border-white/8' : 'bg-white border-slate-200 shadow-sm'
+              }`}>
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-slate-50'}`}>
+                  <Video size={24} className="opacity-30" />
+                </div>
+                <div>
+                  <p className={`text-[15px] font-semibold mb-1 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
+                    {search ? 'Sin resultados' : filterTab === 'sin_revisar' ? 'Todo al día' : filterTab === 'con_grabacion' ? 'Sin grabaciones' : 'Sin reuniones'}
+                  </p>
+                  <p className={`text-[12px] max-w-xs mx-auto ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                    {search ? 'Prueba con otro título o nombre.'
+                      : filterTab === 'sin_revisar' ? 'Todas las reuniones están revisadas.'
+                      : 'Las grabaciones desde Fathom aparecerán aquí.'}
+                  </p>
+                </div>
+                {(search || filterTab !== 'todas') && (
+                  <button onClick={() => { setSearch(''); setFilterTab('todas') }}
+                    className={`text-[12px] font-semibold ${isDark ? 'text-violet-400' : 'text-violet-600'}`}>
+                    Ver todas
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-6">
+                {monthGroups.map(group => (
+                  <MonthGroupCard
+                    key={group.key} group={group} base={base} isDark={isDark} isAdmin={isAdmin}
+                    proyectos={proyectosRef} onToggleReviewed={handleToggleReviewed}
+                  />
+                ))}
+              </div>
+            )
           )}
         </div>
 
